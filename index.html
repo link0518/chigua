@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GossipSketch</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <!-- Importing handwritten style fonts and Material Symbols -->
+    <link href="https://fonts.googleapis.com/css2?family=Patrick+Hand&family=Zhi+Mang+Xing&family=Ma+Shan+Zheng&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              paper: '#f9f7f1',
+              ink: '#2c2c2c',
+              "border-ink": "#000000",
+              pencil: '#555555',
+              highlight: '#fff59d',
+              alert: '#fca5a5',
+              "accent-blue": "#b3e5fc",
+              "accent-pink": "#ffcdd2",
+            },
+            fontFamily: {
+              hand: ['"Zhi Mang Xing"', '"Patrick Hand"', 'cursive'],
+              sans: ['"Noto Sans SC"', 'sans-serif'],
+              display: ['"Ma Shan Zheng"', 'cursive'],
+            },
+            boxShadow: {
+              'sketch': '2px 2px 0px 0px #000000',
+              'sketch-lg': '5px 5px 0px 0px #000000',
+              'sketch-hover': '4px 4px 0px 0px #000000',
+              'sketch-active': '0px 0px 0px 0px #000000',
+            },
+            borderRadius: {
+              "sketch": "2px 255px 3px 25px / 255px 5px 225px 3px",
+            },
+            animation: {
+              'wiggle': 'wiggle 0.3s ease-in-out',
+            },
+            keyframes: {
+              wiggle: {
+                '0%, 100%': { transform: 'rotate(-1deg)' },
+                '50%': { transform: 'rotate(1deg)' },
+              }
+            }
+          },
+        },
+      }
+    </script>
+    <style>
+      body {
+        background-color: #f9f7f1;
+        color: #2c2c2c;
+        /* Custom paper texture and dot grid */
+        background-image: 
+            radial-gradient(#d1d5db 1px, transparent 1px),
+            linear-gradient(to right, #f9f7f1, #f9f7f1); 
+        background-size: 24px 24px, 100% 100%;
+      }
+      
+      /* Material Symbols adjustment */
+      .material-symbols-outlined {
+        font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      }
+
+      /* Custom doodle border utility */
+      .doodle-border {
+         border-radius: 255px 15px 225px 15px / 15px 225px 15px 255px;
+         border-width: 2px;
+         border-style: solid;
+         border-color: black;
+      }
+
+      /* Custom scrollbar */
+      ::-webkit-scrollbar {
+        width: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #f9f7f1; 
+        border-left: 1px solid #000;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #000; 
+        border-radius: 4px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #444; 
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "recharts": "https://esm.sh/recharts@^3.7.0",
+    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
+    "react": "https://esm.sh/react@^19.2.3",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+  <body>
+    <div id="root"></div>
+  <script type="module" src="/index.tsx"></script>
+</body>
+</html>

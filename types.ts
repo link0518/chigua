@@ -1,0 +1,61 @@
+export enum ViewType {
+  HOME = 'HOME',
+  SUBMISSION = 'SUBMISSION',
+  FEED = 'FEED',
+  ADMIN = 'ADMIN',
+  NOT_FOUND = 'NOT_FOUND'
+}
+
+export interface Post {
+  id: string;
+  content: string;
+  author: string;
+  timestamp: string;
+  location?: string;
+  likes: number;
+  comments: number;
+  tags?: string[];
+  rank?: number;
+  isHot?: boolean;
+  imageUrl?: string;
+  createdAt?: number; // Unix timestamp for sorting
+  viewerReaction?: 'like' | 'dislike' | null;
+}
+
+export interface Report {
+  id: string;
+  targetId: string;
+  reason: string;
+  contentSnippet: string;
+  timestamp: string;
+  status: 'pending' | 'resolved' | 'ignored';
+  riskLevel: 'low' | 'medium' | 'high';
+}
+
+export interface Comment {
+  id: string;
+  postId: string;
+  content: string;
+  author: string;
+  timestamp: string;
+  createdAt?: number;
+}
+
+export interface AdminPost {
+  id: string;
+  content: string;
+  author: string;
+  timestamp: string;
+  createdAt: number;
+  likes: number;
+  comments: number;
+  reports: number;
+  deleted: boolean;
+  deletedAt?: number | null;
+  hotScore?: number;
+}
+
+export interface ChartDataPoint {
+  name: string;
+  value: number;
+}

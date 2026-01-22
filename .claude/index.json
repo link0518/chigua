@@ -1,0 +1,251 @@
+{
+  "version": "1.0.0",
+  "projectName": "吃瓜社 (GossipSketch)",
+  "scanTimestamp": "2026-01-22T13:04:48+0800",
+  "scanDuration": "自适应扫描完成",
+  "totalFiles": 17,
+  "scannedFiles": 17,
+  "coveragePercent": 100,
+  "truncated": false,
+  "ignoreRules": [
+    "node_modules/**",
+    ".git/**",
+    ".github/**",
+    "dist/**",
+    "build/**",
+    ".next/**",
+    "__pycache__/**",
+    "*.lock",
+    "*.log",
+    "*.bin",
+    "*.pdf",
+    "*.png",
+    "*.jpg",
+    "*.jpeg",
+    "*.gif",
+    "*.mp4",
+    "*.zip",
+    "*.tar",
+    "*.gz",
+    "logs/**",
+    "npm-debug.log*",
+    "yarn-debug.log*",
+    "yarn-error.log*",
+    "pnpm-debug.log*",
+    "lerna-debug.log*",
+    "dist-ssr/**",
+    "*.local",
+    ".vscode/**",
+    "!.vscode/extensions.json",
+    ".idea/**",
+    ".DS_Store",
+    "*.suo",
+    "*.ntvs*",
+    "*.njsproj",
+    "*.sln",
+    "*.sw?"
+  ],
+  "ignoredStats": {
+    "totalIgnored": 0,
+    "reasons": {
+      "nodeModules": "未检测到",
+      "git": "未计入统计",
+      "buildArtifacts": "未检测到"
+    }
+  },
+  "modules": [
+    {
+      "path": "components/",
+      "name": "UI组件模块",
+      "language": "TypeScript/TSX",
+      "type": "module",
+      "entry": ["HomeView.tsx", "SubmissionView.tsx", "FeedView.tsx", "AdminDashboard.tsx", "SketchUI.tsx"],
+      "interfaces": {
+        "exported": [
+          "HomeView (视图组件)",
+          "SubmissionView (视图组件)",
+          "FeedView (视图组件)",
+          "AdminDashboard (视图组件)",
+          "SketchButton (UI组件)",
+          "SketchCard (UI组件)",
+          "Badge (UI组件)",
+          "Tape (UI组件)",
+          "roughBorderClass (工具)",
+          "roughBorderClassSm (工具)"
+        ],
+        "imported": [
+          "../types (ViewType, Post, Report, ChartDataPoint)",
+          "react",
+          "lucide-react",
+          "recharts"
+        ]
+      },
+      "tests": {
+        "exists": false,
+        "coverage": 0,
+        "frameworks": []
+      },
+      "dataModels": [
+        "Post (8个字段: id, content, author, timestamp, location, likes, comments, tags, rank, isHot, imageUrl)",
+        "Report (6个字段: id, targetId, reason, contentSnippet, timestamp, status, riskLevel)",
+        "ViewType (枚举: HOME, SUBMISSION, FEED, ADMIN)"
+      ],
+      "importantPaths": [
+        "components/HomeView.tsx",
+        "components/SubmissionView.tsx",
+        "components/FeedView.tsx",
+        "components/AdminDashboard.tsx",
+        "components/SketchUI.tsx"
+      ],
+      "coverage": {
+        "filesScanned": 5,
+        "totalFiles": 5,
+        "percent": 100
+      },
+      "gaps": {
+        "missingTests": true,
+        "missingDocs": false,
+        "missingInterfaces": false,
+        "missingDataModels": false
+      }
+    },
+    {
+      "path": "./",
+      "name": "应用核心",
+      "language": "TypeScript",
+      "type": "root",
+      "entry": ["index.tsx"],
+      "interfaces": {
+        "exported": [
+          "App (主应用组件)",
+          "ViewType (枚举)",
+          "Post (接口)",
+          "Report (接口)",
+          "ChartDataPoint (接口)"
+        ],
+        "imported": [
+          "react",
+          "react-dom",
+          "./components/*",
+          "./types"
+        ]
+      },
+      "tests": {
+        "exists": false,
+        "coverage": 0,
+        "frameworks": []
+      },
+      "config": {
+        "vite": "vite.config.ts",
+        "typescript": "tsconfig.json",
+        "package": "package.json",
+        "env": ".env.local",
+        "git": ".gitignore"
+      },
+      "importantPaths": [
+        "App.tsx",
+        "index.tsx",
+        "types.ts",
+        "index.html",
+        "vite.config.ts",
+        "tsconfig.json",
+        "package.json"
+      ],
+      "coverage": {
+        "filesScanned": 12,
+        "totalFiles": 12,
+        "percent": 100
+      },
+      "gaps": {
+        "missingTests": true,
+        "missingDocs": false,
+        "missingRouter": true,
+        "missingStateManagement": true,
+        "missingBackendIntegration": true
+      }
+    }
+  ],
+  "techStack": {
+    "frontend": {
+      "framework": "React",
+      "version": "19.2.3",
+      "language": "TypeScript",
+      "languageVersion": "5.8.2"
+    },
+    "buildTool": {
+      "name": "Vite",
+      "version": "6.2.0"
+    },
+    "styling": {
+      "solution": "TailwindCSS",
+      "version": "3.x (CDN)",
+      "customTheme": true
+    },
+    "libraries": {
+      "charts": "recharts@3.7.0",
+      "icons": "lucide-react@0.562.0 + Material Symbols",
+      "fonts": ["Zhi Mang Xing", "Patrick Hand", "Ma Shan Zheng", "Noto Sans SC"]
+    },
+    "apiIntegration": {
+      "gemini": "Gemini API (通过 GEMINI_API_KEY)"
+    }
+  },
+  "qualityTools": {
+    "linter": null,
+    "formatter": null,
+    "testing": null,
+    "typeChecker": "TypeScript 5.8.2"
+  },
+  "nextSteps": {
+    "priority1": [
+      "添加 ESLint 与 Prettier 配置",
+      "编写核心组件的单元测试（Vitest + React Testing Library）",
+      "将 Mock 数据迁移到独立的数据文件"
+    ],
+    "priority2": [
+      "引入 React Router 实现真实路由",
+      "集成真实后端 API",
+      "添加错误边界与加载状态"
+    ],
+    "priority3": [
+      "实现状态管理（Zustand 或 Context API）",
+      "优化性能（React.memo、代码分割）",
+      "增强无障碍支持（ARIA 标签、键盘导航）"
+    ],
+    "recommendedScans": [
+      "无 - 当前项目较小，已完整扫描"
+    ]
+  },
+  "fileBreakdown": {
+    "byType": {
+      "tsx": 6,
+      "ts": 2,
+      "json": 4,
+      "html": 1,
+      "md": 1,
+      "env": 1,
+      "gitignore": 1,
+      "other": 1
+    },
+    "byLanguage": {
+      "TypeScript/TSX": 8,
+      "JSON": 4,
+      "HTML": 1,
+      "Markdown": 1,
+      "Config": 3
+    }
+  },
+  "documentation": {
+    "rootCLAUDE": "D:\\common\\Cursorwork\\吃瓜\\CLAUDE.md",
+    "moduleCLAUDEs": [
+      "D:\\common\\Cursorwork\\吃瓜\\components\\CLAUDE.md"
+    ]
+  },
+  "warnings": [],
+  "metadata": {
+    "generator": "Claude Code 自适应架构师",
+    "version": "1.0.0",
+    "strategy": "阶段B: 模块优先扫描（中等强度）",
+    "reason": "项目文件数较少（17个），适合中等强度全量扫描"
+  }
+}

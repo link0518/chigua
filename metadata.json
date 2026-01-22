@@ -1,0 +1,5 @@
+{
+  "name": "GossipSketch",
+  "description": "A playful, hand-drawn style anonymous social application featuring submission, feed, and admin dashboard views.",
+  "requestFramePermissions": []
+}
