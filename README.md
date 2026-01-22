@@ -67,6 +67,14 @@ pm2 start npm --name chigua-api -- run server
 pm2 serve dist 4396 --spa --name chigua-web
 ```
 
+## 一键部署脚本
+```bash
+chmod +x deploy.sh
+./deploy.sh
+```
+可选环境变量：
+- `DOMAIN`：Caddy 站点地址（默认 `:80`，例如 `DOMAIN=example.com ./deploy.sh`）
+
 ## 反向代理（必需）
 前端请求 `/api`，需反代到 `4395`。
 
