@@ -246,7 +246,7 @@ const seedSamplePosts = () => {
   incrementDailyStat(formatDateKey(), 'posts', samples.length);
 };
 
-seedSamplePosts();
+// 示例数据已改为手动执行 init-data 脚本
 
 const requireAdmin = (req, res, next) => {
   if (!req.session?.admin) {

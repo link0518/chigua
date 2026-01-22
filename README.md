@@ -41,6 +41,12 @@ npm run init-data
 - 不会覆盖已有管理员
 - 使用固定 ID 与 `INSERT OR IGNORE`，重复执行不会插入重复数据
 
+## 清理测试数据（保留管理员）
+```bash
+npm run reset-data
+npm run init-data
+```
+
 ## 本地开发
 ```bash
 npm run server   # API 服务 4395
