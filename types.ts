@@ -78,6 +78,18 @@ export interface BanEntry {
   type: 'session' | 'ip';
 }
 
+export interface FeedbackMessage {
+  id: string;
+  content: string;
+  email: string;
+  wechat?: string | null;
+  qq?: string | null;
+  createdAt: number;
+  readAt?: number | null;
+  sessionId?: string | null;
+  ip?: string | null;
+}
+
 export interface ChartDataPoint {
   name: string;
   value: number;

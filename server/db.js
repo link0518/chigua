@@ -95,6 +95,18 @@ CREATE TABLE IF NOT EXISTS banned_ips (
   banned_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS feedback_messages (
+  id TEXT PRIMARY KEY,
+  content TEXT NOT NULL,
+  email TEXT NOT NULL,
+  wechat TEXT,
+  qq TEXT,
+  created_at INTEGER NOT NULL,
+  session_id TEXT,
+  ip TEXT,
+  read_at INTEGER
+);
+
 CREATE TABLE IF NOT EXISTS post_edits (
   id TEXT PRIMARY KEY,
   post_id TEXT NOT NULL,
@@ -140,6 +152,8 @@ CREATE INDEX IF NOT EXISTS idx_posts_deleted ON posts(deleted);
 CREATE INDEX IF NOT EXISTS idx_comments_post_id ON comments(post_id);
 CREATE INDEX IF NOT EXISTS idx_comments_created_at ON comments(created_at);
 CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status);
+CREATE INDEX IF NOT EXISTS idx_feedback_created_at ON feedback_messages(created_at);
+CREATE INDEX IF NOT EXISTS idx_feedback_read_at ON feedback_messages(read_at);
 CREATE INDEX IF NOT EXISTS idx_post_edits_post_id ON post_edits(post_id);
 CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_created_at ON admin_audit_logs(created_at);
 CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_action ON admin_audit_logs(action);

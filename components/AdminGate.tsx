@@ -16,7 +16,7 @@ const AdminGate: React.FC = () => {
 
   if (!state.adminSession.checked) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh]">
+      <div className="admin-font flex flex-col items-center justify-center min-h-[60vh]">
         <div className="font-hand text-xl text-pencil">正在检查登录状态...</div>
       </div>
     );
@@ -48,7 +48,7 @@ const AdminGate: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-[70vh] p-4">
+    <div className="admin-font flex flex-col items-center justify-center min-h-[70vh] p-4">
       <div className="max-w-md w-full">
         <SketchCard rotate className="relative">
           <Tape />

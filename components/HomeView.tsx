@@ -4,6 +4,8 @@ import ReportModal from './ReportModal';
 import CommentModal from './CommentModal';
 import MarkdownRenderer from './MarkdownRenderer';
 import { api } from '../api';
+import Modal from './Modal';
+import { SketchButton } from './SketchUI';
 
 const HomeView: React.FC = () => {
   const {
@@ -21,6 +23,13 @@ const HomeView: React.FC = () => {
   const [animate, setAnimate] = useState(false);
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [commentModalOpen, setCommentModalOpen] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [feedbackContent, setFeedbackContent] = useState('');
+  const [feedbackEmail, setFeedbackEmail] = useState('');
+  const [feedbackWechat, setFeedbackWechat] = useState('');
+  const [feedbackQq, setFeedbackQq] = useState('');
+  const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
+  const [mascotClicks, setMascotClicks] = useState(0);
   const [loading, setLoading] = useState(true);
 
   const posts = getHomePosts();
@@ -158,12 +167,64 @@ const HomeView: React.FC = () => {
     }
   };
 
+  const handleMascotClick = () => {
+    setMascotClicks((prev) => {
+      const next = prev + 1;
+      if (next >= 5) {
+        setFeedbackOpen(true);
+        return 0;
+      }
+      return next;
+    });
+  };
+
+  const resetFeedbackForm = () => {
+    setFeedbackContent('');
+    setFeedbackEmail('');
+    setFeedbackWechat('');
+    setFeedbackQq('');
+  };
+
+  const closeFeedbackModal = () => {
+    setFeedbackOpen(false);
+    setFeedbackSubmitting(false);
+    resetFeedbackForm();
+  };
+
+  const handleFeedbackSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const content = feedbackContent.trim();
+    const email = feedbackEmail.trim();
+    const wechat = feedbackWechat.trim();
+    const qq = feedbackQq.trim();
+
+    if (!content) {
+      showToast('内容不能为空哦！', 'warning');
+      return;
+    }
+    if (!email) {
+      showToast('邮箱不能为空哦！', 'warning');
+      return;
+    }
+    setFeedbackSubmitting(true);
+    try {
+      await api.createFeedback(content, email, wechat, qq);
+      showToast('留言已发送！', 'success');
+      closeFeedbackModal();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '留言失败，请稍后重试';
+      showToast(message, 'error');
+      setFeedbackSubmitting(false);
+    }
+  };
+
   return (
     <div className="flex-grow w-full max-w-2xl mx-auto px-4 py-8 flex flex-col justify-center min-h-[80vh] relative">
       <img
         src="/chxb.png"
         alt="吉祥物"
-        className="mascot-float hidden md:block fixed right-6 bottom-6 w-28 h-28 object-contain drop-shadow-md pointer-events-none select-none z-10"
+        className="mascot-float hidden md:block fixed right-6 bottom-6 w-28 h-28 object-contain drop-shadow-md select-none z-10 cursor-pointer"
+        onClick={handleMascotClick}
       />
 
       {/* Card Container */}
@@ -287,6 +348,76 @@ const HomeView: React.FC = () => {
         postId={currentPost.id}
         contentPreview={currentPost.content.substring(0, 80)}
       />
+
+      <Modal
+        isOpen={feedbackOpen}
+        onClose={closeFeedbackModal}
+        title="给开发者留言"
+      >
+        <form className="flex flex-col gap-4" onSubmit={handleFeedbackSubmit}>
+          <div>
+            <label className="text-xs text-pencil font-sans">留言内容（必填）</label>
+            <textarea
+              value={feedbackContent}
+              onChange={(e) => setFeedbackContent(e.target.value)}
+              className="w-full mt-2 h-28 resize-none border-2 border-gray-200 rounded-lg p-3 text-sm font-sans focus:border-ink outline-none"
+              placeholder="说点什么吧..."
+              maxLength={2100}
+            />
+          </div>
+          <div>
+            <label className="text-xs text-pencil font-sans">邮箱（必填）</label>
+            <input
+              type="email"
+              value={feedbackEmail}
+              onChange={(e) => setFeedbackEmail(e.target.value)}
+              className="w-full mt-2 h-10 border-2 border-gray-200 rounded-lg px-3 text-sm font-sans focus:border-ink outline-none"
+              placeholder="name@example.com"
+            />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-pencil font-sans">微信（可选）</label>
+              <input
+                type="text"
+                value={feedbackWechat}
+                onChange={(e) => setFeedbackWechat(e.target.value)}
+                className="w-full mt-2 h-10 border-2 border-gray-200 rounded-lg px-3 text-sm font-sans focus:border-ink outline-none"
+                placeholder="微信号"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-pencil font-sans">QQ（可选）</label>
+              <input
+                type="text"
+                value={feedbackQq}
+                onChange={(e) => setFeedbackQq(e.target.value)}
+                className="w-full mt-2 h-10 border-2 border-gray-200 rounded-lg px-3 text-sm font-sans focus:border-ink outline-none"
+                placeholder="QQ号"
+              />
+            </div>
+          </div>
+          <p className="text-xs text-pencil font-sans">为避免滥用，每小时仅可留言一次。</p>
+          <div className="flex gap-3">
+            <SketchButton
+              type="button"
+              variant="secondary"
+              className="flex-1"
+              onClick={closeFeedbackModal}
+            >
+              取消
+            </SketchButton>
+            <SketchButton
+              type="submit"
+              variant="primary"
+              className="flex-1"
+              disabled={feedbackSubmitting}
+            >
+              {feedbackSubmitting ? '发送中...' : '发送留言'}
+            </SketchButton>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 };

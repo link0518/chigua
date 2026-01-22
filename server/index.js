@@ -126,6 +126,7 @@ const RATE_LIMITS = {
   comment: { limit: 1, windowMs: 10 * 1000, message: '评论过于频繁，请稍后再试' },
   report: { limit: 1, windowMs: 60 * 1000, message: '举报过于频繁，请稍后再试' },
 };
+const FEEDBACK_LIMIT_MS = 60 * 60 * 1000;
 
 const rateBuckets = new Map();
 
@@ -351,6 +352,87 @@ const hotScoreSql = '(views_count * 0.2 + likes_count * 3 + comments_count * 2)'
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
+});
+
+app.post('/api/feedback', (req, res) => {
+  const content = String(req.body?.content || '').trim();
+  const email = String(req.body?.email || '').trim();
+  const wechat = String(req.body?.wechat || '').trim();
+  const qq = String(req.body?.qq || '').trim();
+
+  if (!content) {
+    return res.status(400).json({ error: '内容不能为空' });
+  }
+
+  if (!email) {
+    return res.status(400).json({ error: '邮箱不能为空' });
+  }
+
+  if (content.length > 2000) {
+    return res.status(400).json({ error: '内容超过字数限制' });
+  }
+
+  if (email.length > 200 || wechat.length > 100 || qq.length > 50) {
+    return res.status(400).json({ error: '联系方式过长' });
+  }
+
+  if (!email.includes('@')) {
+    return res.status(400).json({ error: '邮箱格式不正确' });
+  }
+
+  const clientIp = getClientIp(req);
+  if (isBanned(req.sessionID, clientIp)) {
+    return res.status(403).json({ error: '账号已被封禁，无法留言' });
+  }
+
+  const now = Date.now();
+  let lastCreatedAt = 0;
+  if (req.sessionID) {
+    const lastBySession = db
+      .prepare('SELECT created_at FROM feedback_messages WHERE session_id = ? ORDER BY created_at DESC LIMIT 1')
+      .get(req.sessionID);
+    if (lastBySession?.created_at) {
+      lastCreatedAt = Math.max(lastCreatedAt, lastBySession.created_at);
+    }
+  }
+  if (clientIp) {
+    const lastByIp = db
+      .prepare('SELECT created_at FROM feedback_messages WHERE ip = ? ORDER BY created_at DESC LIMIT 1')
+      .get(clientIp);
+    if (lastByIp?.created_at) {
+      lastCreatedAt = Math.max(lastCreatedAt, lastByIp.created_at);
+    }
+  }
+  if (lastCreatedAt && now - lastCreatedAt < FEEDBACK_LIMIT_MS) {
+    return res.status(429).json({ error: '留言过于频繁，请稍后再试' });
+  }
+
+  const feedbackId = crypto.randomUUID();
+  db.prepare(
+    `
+    INSERT INTO feedback_messages (
+      id,
+      content,
+      email,
+      wechat,
+      qq,
+      created_at,
+      session_id,
+      ip
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `
+  ).run(
+    feedbackId,
+    content,
+    email,
+    wechat || null,
+    qq || null,
+    now,
+    req.sessionID || null,
+    clientIp || null
+  );
+
+  return res.status(201).json({ ok: true });
 });
 
 app.get('/api/posts/home', (req, res) => {
@@ -1191,6 +1273,162 @@ app.get('/api/admin/posts', requireAdmin, (req, res) => {
     page,
     limit,
   });
+});
+
+app.get('/api/admin/feedback', requireAdmin, (req, res) => {
+  const status = String(req.query.status || 'unread').trim();
+  const search = String(req.query.search || '').trim();
+  const page = Math.max(Number(req.query.page || 1), 1);
+  const limit = Math.min(Math.max(Number(req.query.limit || 10), 1), 50);
+  const offset = (page - 1) * limit;
+
+  const conditions = [];
+  const params = [];
+
+  if (status === 'unread') {
+    conditions.push('read_at IS NULL');
+  } else if (status === 'read') {
+    conditions.push('read_at IS NOT NULL');
+  }
+
+  if (search) {
+    conditions.push('(content LIKE ? OR email LIKE ? OR wechat LIKE ? OR qq LIKE ? OR session_id LIKE ? OR ip LIKE ?)');
+    const keyword = `%${search}%`;
+    params.push(keyword, keyword, keyword, keyword, keyword, keyword);
+  }
+
+  const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+  const rows = db
+    .prepare(
+      `
+      SELECT *
+      FROM feedback_messages
+      ${whereClause}
+      ORDER BY created_at DESC
+      LIMIT ? OFFSET ?
+      `
+    )
+    .all(...params, limit, offset);
+
+  const totalRow = db
+    .prepare(`SELECT COUNT(1) AS count FROM feedback_messages ${whereClause}`)
+    .get(...params);
+
+  const items = rows.map((row) => ({
+    id: row.id,
+    content: row.content,
+    email: row.email,
+    wechat: row.wechat,
+    qq: row.qq,
+    createdAt: row.created_at,
+    readAt: row.read_at,
+    sessionId: row.session_id || null,
+    ip: row.ip || null,
+  }));
+
+  return res.json({
+    items,
+    total: totalRow?.count || 0,
+    page,
+    limit,
+  });
+});
+
+app.post('/api/admin/feedback/:id/action', requireAdmin, (req, res) => {
+  const feedbackId = String(req.params.id || '').trim();
+  const action = String(req.body?.action || '').trim();
+  const reason = String(req.body?.reason || '').trim();
+
+  if (!feedbackId) {
+    return res.status(400).json({ error: '留言不存在' });
+  }
+
+  if (!['read', 'delete', 'ban'].includes(action)) {
+    return res.status(400).json({ error: '无效操作' });
+  }
+
+  const row = db.prepare('SELECT * FROM feedback_messages WHERE id = ?').get(feedbackId);
+  if (!row) {
+    return res.status(404).json({ error: '留言不存在' });
+  }
+
+  const now = Date.now();
+
+  if (action === 'read') {
+    if (!row.read_at) {
+      db.prepare('UPDATE feedback_messages SET read_at = ? WHERE id = ?').run(now, feedbackId);
+    }
+    logAdminAction(req, {
+      action: 'feedback_read',
+      targetType: 'feedback',
+      targetId: feedbackId,
+      before: { readAt: row.read_at || null },
+      after: { readAt: row.read_at || now },
+      reason,
+    });
+    return res.json({ id: feedbackId, readAt: row.read_at || now });
+  }
+
+  if (action === 'delete') {
+    db.prepare('DELETE FROM feedback_messages WHERE id = ?').run(feedbackId);
+    logAdminAction(req, {
+      action: 'feedback_delete',
+      targetType: 'feedback',
+      targetId: feedbackId,
+      before: {
+        content: row.content,
+        email: row.email,
+        wechat: row.wechat,
+        qq: row.qq,
+        readAt: row.read_at || null,
+      },
+      after: null,
+      reason,
+    });
+    return res.json({ id: feedbackId, deleted: true });
+  }
+
+  const sessionId = row.session_id;
+  const ip = row.ip;
+  if (!sessionId && !ip) {
+    return res.status(400).json({ error: '无法获取封禁标识' });
+  }
+
+  if (sessionId) {
+    db.prepare('INSERT OR IGNORE INTO banned_sessions (session_id, banned_at) VALUES (?, ?)')
+      .run(sessionId, now);
+    logAdminAction(req, {
+      action: 'ban_session',
+      targetType: 'session',
+      targetId: sessionId,
+      before: null,
+      after: { banned: true },
+      reason,
+    });
+  }
+  if (ip) {
+    db.prepare('INSERT OR IGNORE INTO banned_ips (ip, banned_at) VALUES (?, ?)')
+      .run(ip, now);
+    logAdminAction(req, {
+      action: 'ban_ip',
+      targetType: 'ip',
+      targetId: ip,
+      before: null,
+      after: { banned: true },
+      reason,
+    });
+  }
+  logAdminAction(req, {
+    action: 'feedback_ban',
+    targetType: 'feedback',
+    targetId: feedbackId,
+    before: null,
+    after: { sessionId: sessionId || null, ip: ip || null },
+    reason,
+  });
+
+  return res.json({ id: feedbackId, sessionBanned: Boolean(sessionId), ipBanned: Boolean(ip) });
 });
 
 app.get('/api/admin/bans', requireAdmin, (req, res) => {

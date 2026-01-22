@@ -12,6 +12,14 @@ body {
   background-position: -1px -1px;
 }
 
+.admin-font,
+.admin-font .font-hand,
+.admin-font .font-display,
+.admin-font .font-sans,
+.admin-font .font-mono {
+  font-family: 'Source Han Sans', 'Source Han Sans SC', 'Noto Sans CJK SC', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+}
+
 .material-symbols-outlined {
   font-variation-settings: 'FILL' 0, 'wght' 500, 'GRAD' 0, 'opsz' 24;
 }

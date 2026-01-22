@@ -51,6 +51,10 @@ export const api = {
     method: 'POST',
     body: JSON.stringify({ postId, reason }),
   }),
+  createFeedback: (content, email, wechat = '', qq = '') => apiFetch('/feedback', {
+    method: 'POST',
+    body: JSON.stringify({ content, email, wechat, qq }),
+  }),
   getReports: (status?: string, search?: string) => apiFetch(`/reports${toQuery({ status, search })}`),
   handleReport: (reportId, action, reason = '') => apiFetch(`/reports/${reportId}/action`, {
     method: 'POST',
@@ -76,6 +80,11 @@ export const api = {
   batchAdminReports: (action, reportIds, reason = '') => apiFetch('/admin/reports/batch', {
     method: 'POST',
     body: JSON.stringify({ action, reportIds, reason }),
+  }),
+  getAdminFeedback: (params = {}) => apiFetch(`/admin/feedback${toQuery(params)}`),
+  handleAdminFeedback: (feedbackId, action, reason = '') => apiFetch(`/admin/feedback/${feedbackId}/action`, {
+    method: 'POST',
+    body: JSON.stringify({ action, reason }),
   }),
   getAdminBans: () => apiFetch('/admin/bans'),
   handleAdminBan: (action, type, value, reason = '') => apiFetch('/admin/bans/action', {

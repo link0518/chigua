@@ -3,21 +3,22 @@ import {
   BarChart, Bar, XAxis, Tooltip, ResponsiveContainer,
   LineChart, Line
 } from 'recharts';
-import { Flag, Gavel, BarChart2, Bell, Search, Trash2, Ban, Eye, EyeOff, LayoutDashboard, LogOut, CheckCircle, XCircle, FileText, PenSquare, Pencil, RotateCcw, Shield, ClipboardList } from 'lucide-react';
+import { Flag, Gavel, BarChart2, Bell, Search, Trash2, Ban, Eye, EyeOff, LayoutDashboard, LogOut, CheckCircle, XCircle, FileText, PenSquare, Pencil, RotateCcw, Shield, ClipboardList, MessageSquare } from 'lucide-react';
 import { SketchButton, Badge, roughBorderClassSm } from './SketchUI';
-import { AdminAuditLog, AdminPost, Report } from '../types';
+import { AdminAuditLog, AdminPost, FeedbackMessage, Report } from '../types';
 import { useApp } from '../store/AppContext';
 import Modal from './Modal';
 import { api } from '../api';
 import MarkdownRenderer from './MarkdownRenderer';
 
-type AdminView = 'overview' | 'reports' | 'processed' | 'stats' | 'posts' | 'compose' | 'bans' | 'audit';
+type AdminView = 'overview' | 'reports' | 'processed' | 'stats' | 'posts' | 'compose' | 'bans' | 'audit' | 'feedback';
 type PostStatusFilter = 'all' | 'active' | 'deleted';
 type PostSort = 'time' | 'hot' | 'reports';
 
 const WEEK_DAYS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
 const POST_PAGE_SIZE = 10;
 const AUDIT_PAGE_SIZE = 12;
+const FEEDBACK_PAGE_SIZE = 8;
 
 const StatCard: React.FC<{ title: string; value: string; trend: string; trendUp: boolean; icon: React.ReactNode; color?: string }> = ({ title, value, trend, trendUp, icon, color = 'bg-white' }) => (
   <div className={`${color} p-6 border-2 border-ink shadow-sketch relative overflow-hidden group hover:-translate-y-1 transition-transform duration-200 sticky-curl ${roughBorderClassSm}`}>
@@ -75,6 +76,19 @@ const AdminDashboard: React.FC = () => {
   const [auditTotal, setAuditTotal] = useState(0);
   const [auditLoading, setAuditLoading] = useState(false);
   const [auditDetail, setAuditDetail] = useState<{ isOpen: boolean; log: AdminAuditLog | null }>({ isOpen: false, log: null });
+  const [feedbackItems, setFeedbackItems] = useState<FeedbackMessage[]>([]);
+  const [feedbackStatus, setFeedbackStatus] = useState<'all' | 'unread' | 'read'>('unread');
+  const [feedbackSearch, setFeedbackSearch] = useState('');
+  const [feedbackPage, setFeedbackPage] = useState(1);
+  const [feedbackTotal, setFeedbackTotal] = useState(0);
+  const [feedbackLoading, setFeedbackLoading] = useState(false);
+  const [feedbackActionModal, setFeedbackActionModal] = useState<{
+    isOpen: boolean;
+    feedbackId: string;
+    action: 'delete' | 'ban';
+    content: string;
+    reason: string;
+  }>({ isOpen: false, feedbackId: '', action: 'delete', content: '', reason: '' });
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
     reportId: string;
@@ -176,6 +190,25 @@ const AdminDashboard: React.FC = () => {
     }
   }, [auditPage, auditSearch, showToast]);
 
+  const fetchFeedback = useCallback(async () => {
+    setFeedbackLoading(true);
+    try {
+      const data = await api.getAdminFeedback({
+        status: feedbackStatus,
+        search: feedbackSearch.trim(),
+        page: feedbackPage,
+        limit: FEEDBACK_PAGE_SIZE,
+      });
+      setFeedbackItems(data.items || []);
+      setFeedbackTotal(data.total || 0);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '留言加载失败';
+      showToast(message, 'error');
+    } finally {
+      setFeedbackLoading(false);
+    }
+  }, [feedbackPage, feedbackSearch, feedbackStatus, showToast]);
+
   useEffect(() => {
     if (currentView !== 'posts') {
       return;
@@ -202,6 +235,16 @@ const AdminDashboard: React.FC = () => {
     }, 300);
     return () => clearTimeout(timer);
   }, [currentView, fetchAuditLogs]);
+
+  useEffect(() => {
+    if (currentView !== 'feedback') {
+      return;
+    }
+    const timer = setTimeout(() => {
+      fetchFeedback().catch(() => { });
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [currentView, fetchFeedback]);
 
   useEffect(() => {
     setSelectedPosts(new Set());
@@ -425,6 +468,44 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
+  const handleFeedbackRead = async (feedbackId: string) => {
+    try {
+      await api.handleAdminFeedback(feedbackId, 'read');
+      showToast('已标记已读', 'success');
+      await fetchFeedback();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '标记失败';
+      showToast(message, 'error');
+    }
+  };
+
+  const openFeedbackActionModal = (message: FeedbackMessage, action: 'delete' | 'ban') => {
+    setFeedbackActionModal({
+      isOpen: true,
+      feedbackId: message.id,
+      action,
+      content: message.content,
+      reason: '',
+    });
+  };
+
+  const confirmFeedbackAction = async () => {
+    const { feedbackId, action, reason } = feedbackActionModal;
+    try {
+      await api.handleAdminFeedback(feedbackId, action, reason);
+      showToast(action === 'delete' ? '留言已删除' : '已封禁该用户', 'success');
+      setFeedbackActionModal({ isOpen: false, feedbackId: '', action: 'delete', content: '', reason: '' });
+      await fetchFeedback();
+      if (action === 'ban') {
+        fetchBans().catch(() => { });
+        loadStats().catch(() => { });
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '操作失败';
+      showToast(message, 'error');
+    }
+  };
+
   const handleComposeSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     const trimmed = composeText.trim();
@@ -472,10 +553,12 @@ const AdminDashboard: React.FC = () => {
   const isPostView = currentView === 'posts';
   const isBanView = currentView === 'bans';
   const isAuditView = currentView === 'audit';
+  const isFeedbackView = currentView === 'feedback';
   const totalAuditPages = Math.max(Math.ceil(auditTotal / AUDIT_PAGE_SIZE), 1);
+  const totalFeedbackPages = Math.max(Math.ceil(feedbackTotal / FEEDBACK_PAGE_SIZE), 1);
 
   return (
-    <div className="flex min-h-screen bg-paper overflow-hidden">
+    <div className="admin-font flex min-h-screen bg-paper overflow-hidden">
       {/* Sidebar */}
       <aside className="w-64 flex-shrink-0 flex flex-col border-r-2 border-ink bg-paper z-20 hidden md:flex">
         <div className="p-6">
@@ -493,6 +576,7 @@ const AdminDashboard: React.FC = () => {
             <NavItem view="overview" icon={<LayoutDashboard size={18} />} label="概览" />
             <NavItem view="posts" icon={<FileText size={18} />} label="帖子管理" />
             <NavItem view="compose" icon={<PenSquare size={18} />} label="后台投稿" />
+            <NavItem view="feedback" icon={<MessageSquare size={18} />} label="留言管理" />
             <NavItem view="reports" icon={<Flag size={18} />} label="待处理举报" badge={pendingReports.length} />
             <NavItem view="processed" icon={<Gavel size={18} />} label="已处理" badge={processedReports.length} />
             <NavItem view="bans" icon={<Shield size={18} />} label="封禁管理" />
@@ -520,6 +604,7 @@ const AdminDashboard: React.FC = () => {
             {currentView === 'overview' && <><LayoutDashboard /> 概览</>}
             {currentView === 'posts' && <><FileText /> 帖子管理</>}
             {currentView === 'compose' && <><PenSquare /> 后台投稿</>}
+            {currentView === 'feedback' && <><MessageSquare /> 留言管理</>}
             {currentView === 'reports' && <><Flag /> 待处理举报</>}
             {currentView === 'processed' && <><Gavel /> 已处理</>}
             {currentView === 'bans' && <><Shield /> 封禁管理</>}
@@ -527,12 +612,12 @@ const AdminDashboard: React.FC = () => {
             {currentView === 'stats' && <><BarChart2 /> 数据统计</>}
           </h2>
           <div className="flex items-center gap-4">
-            {(isReportView || isPostView || isAuditView) && (
+            {(isReportView || isPostView || isAuditView || isFeedbackView) && (
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-pencil w-4 h-4" />
                 <input
                   type="text"
-                  value={isPostView ? postSearch : isAuditView ? auditSearch : searchQuery}
+                  value={isPostView ? postSearch : isAuditView ? auditSearch : isFeedbackView ? feedbackSearch : searchQuery}
                   onChange={(e) => {
                     if (isPostView) {
                       setPostSearch(e.target.value);
@@ -540,11 +625,14 @@ const AdminDashboard: React.FC = () => {
                     } else if (isAuditView) {
                       setAuditSearch(e.target.value);
                       setAuditPage(1);
+                    } else if (isFeedbackView) {
+                      setFeedbackSearch(e.target.value);
+                      setFeedbackPage(1);
                     } else {
                       setSearchQuery(e.target.value);
                     }
                   }}
-                  placeholder={isPostView ? '搜索帖子内容...' : isAuditView ? '搜索操作/目标/管理员...' : '搜索 ID 或内容...'}
+                  placeholder={isPostView ? '搜索帖子内容...' : isAuditView ? '搜索操作/目标/管理员...' : isFeedbackView ? '搜索内容或联系方式...' : '搜索 ID 或内容...'}
                   className="pl-9 pr-4 py-2 rounded-full border-2 border-ink bg-white text-sm focus:shadow-sketch-sm outline-none transition-all w-64 font-sans"
                 />
               </div>
@@ -921,6 +1009,121 @@ const AdminDashboard: React.FC = () => {
                     </SketchButton>
                   </div>
                 </form>
+              </section>
+            )}
+
+            {/* Feedback View */}
+            {currentView === 'feedback' && (
+              <section>
+                <div className="flex flex-col gap-3 mb-6">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="text-xs text-pencil font-sans">状态</span>
+                    {(['unread', 'read', 'all'] as const).map((status) => (
+                      <button
+                        key={status}
+                        onClick={() => {
+                          setFeedbackStatus(status);
+                          setFeedbackPage(1);
+                        }}
+                        className={`px-3 py-1 text-xs font-bold rounded-full border-2 transition-all ${feedbackStatus === status ? 'border-ink bg-highlight' : 'border-transparent bg-white hover:border-ink'
+                          }`}
+                      >
+                        {status === 'unread' ? '未读' : status === 'read' ? '已读' : '全部'}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex items-center justify-between text-xs text-pencil font-sans">
+                    <span>共 {feedbackTotal} 条</span>
+                    <span>第 {feedbackPage} / {totalFeedbackPages} 页</span>
+                  </div>
+                </div>
+
+                {feedbackLoading ? (
+                  <div className="text-center py-16 bg-white border-2 border-ink rounded-lg">
+                    <span className="text-6xl mb-4 block">💬</span>
+                    <h3 className="font-display text-2xl text-ink mb-2">正在加载留言</h3>
+                    <p className="font-hand text-lg text-pencil">请稍等片刻</p>
+                  </div>
+                ) : feedbackItems.length === 0 ? (
+                  <div className="text-center py-16 bg-white border-2 border-ink rounded-lg">
+                    <span className="text-6xl mb-4 block">📭</span>
+                    <h3 className="font-display text-2xl text-ink mb-2">暂无留言</h3>
+                    <p className="font-hand text-lg text-pencil">试试调整筛选条件</p>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-4">
+                    {feedbackItems.map((message) => (
+                      <div key={message.id} className="bg-white p-5 rounded-lg border-2 border-ink shadow-sketch-sm">
+                        <div className="flex flex-col md:flex-row gap-6 justify-between items-start">
+                          <div className="flex-1">
+                            <div className="flex flex-wrap items-center gap-3 text-xs font-sans text-pencil mb-2">
+                              <span className="bg-gray-100 border border-ink text-ink text-[10px] font-bold px-2 py-0.5 rounded font-sans">ID: #{message.id}</span>
+                              <span>{formatTimestamp(message.createdAt)}</span>
+                              <Badge color={message.readAt ? 'bg-gray-200' : 'bg-highlight'}>
+                                {message.readAt ? '已读' : '未读'}
+                              </Badge>
+                            </div>
+                            <p className="text-ink text-base leading-relaxed font-sans font-semibold">"{message.content}"</p>
+                            <div className="flex flex-wrap items-center gap-4 text-xs text-pencil font-sans mt-3">
+                              <span>邮箱：{message.email}</span>
+                              {message.wechat && <span>微信：{message.wechat}</span>}
+                              {message.qq && <span>QQ：{message.qq}</span>}
+                              {message.sessionId && <span>Session：{message.sessionId}</span>}
+                              {message.ip && <span>IP：{message.ip}</span>}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 min-w-fit mt-2 md:mt-0 font-sans">
+                            {!message.readAt && (
+                              <SketchButton
+                                variant="secondary"
+                                className="h-10 px-3 text-xs flex items-center gap-1"
+                                onClick={() => handleFeedbackRead(message.id)}
+                              >
+                                标记已读
+                              </SketchButton>
+                            )}
+                            <SketchButton
+                              variant="secondary"
+                              className="h-10 px-3 text-xs flex items-center gap-1"
+                              onClick={() => openFeedbackActionModal(message, 'ban')}
+                            >
+                              封禁
+                            </SketchButton>
+                            <SketchButton
+                              variant="danger"
+                              className="h-10 px-3 text-xs flex items-center gap-1"
+                              onClick={() => openFeedbackActionModal(message, 'delete')}
+                            >
+                              删除
+                            </SketchButton>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {feedbackItems.length > 0 && (
+                  <div className="flex items-center justify-center gap-4 mt-6">
+                    <SketchButton
+                      variant="secondary"
+                      className="px-4 py-2 text-sm"
+                      disabled={feedbackPage <= 1}
+                      onClick={() => setFeedbackPage((prev) => Math.max(prev - 1, 1))}
+                    >
+                      上一页
+                    </SketchButton>
+                    <span className="text-xs text-pencil font-sans">第 {feedbackPage} / {totalFeedbackPages} 页</span>
+                    <SketchButton
+                      variant="secondary"
+                      className="px-4 py-2 text-sm"
+                      disabled={feedbackPage >= totalFeedbackPages}
+                      onClick={() => setFeedbackPage((prev) => Math.min(prev + 1, totalFeedbackPages))}
+                    >
+                      下一页
+                    </SketchButton>
+                  </div>
+                )}
               </section>
             )}
 
@@ -1327,6 +1530,46 @@ const AdminDashboard: React.FC = () => {
               onClick={confirmBulkReportAction}
             >
               确认标记
+            </SketchButton>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={feedbackActionModal.isOpen}
+        onClose={() => setFeedbackActionModal({ isOpen: false, feedbackId: '', action: 'delete', content: '', reason: '' })}
+        title="确认操作"
+      >
+        <div className="flex flex-col gap-4">
+          <p className="font-hand text-lg text-ink">
+            确定要 <strong className="text-red-600">{feedbackActionModal.action === 'delete' ? '删除留言' : '封禁用户'}</strong> 吗？
+          </p>
+          <div className="p-3 bg-gray-50 border border-dashed border-ink rounded-lg">
+            <p className="text-sm text-pencil font-sans line-clamp-2">"{feedbackActionModal.content}"</p>
+          </div>
+          <div>
+            <label className="text-xs text-pencil font-sans">处理理由（可选）</label>
+            <textarea
+              value={feedbackActionModal.reason}
+              onChange={(e) => setFeedbackActionModal((prev) => ({ ...prev, reason: e.target.value }))}
+              className="w-full mt-2 h-20 resize-none border-2 border-gray-200 rounded-lg p-2 text-sm font-sans focus:border-ink outline-none"
+              placeholder="填写理由便于审计追溯"
+            />
+          </div>
+          <div className="flex gap-3 mt-2">
+            <SketchButton
+              variant="secondary"
+              className="flex-1"
+              onClick={() => setFeedbackActionModal({ isOpen: false, feedbackId: '', action: 'delete', content: '', reason: '' })}
+            >
+              取消
+            </SketchButton>
+            <SketchButton
+              variant={feedbackActionModal.action === 'delete' ? 'danger' : 'secondary'}
+              className="flex-1"
+              onClick={confirmFeedbackAction}
+            >
+              确认{feedbackActionModal.action === 'delete' ? '删除' : '封禁'}
             </SketchButton>
           </div>
         </div>
