@@ -121,6 +121,56 @@ const containsSensitiveWord = (text) => {
   return words.some((word) => normalizedText.includes(word));
 };
 
+const RATE_LIMITS = {
+  post: { limit: 2, windowMs: 30 * 60 * 1000, message: '发帖过于频繁，请稍后再试' },
+  comment: { limit: 1, windowMs: 10 * 1000, message: '评论过于频繁，请稍后再试' },
+  report: { limit: 1, windowMs: 60 * 1000, message: '举报过于频繁，请稍后再试' },
+};
+
+const rateBuckets = new Map();
+
+const getClientIp = (req) => {
+  const forwarded = req.headers['x-forwarded-for'];
+  if (typeof forwarded === 'string' && forwarded.trim()) {
+    return forwarded.split(',')[0].trim();
+  }
+  if (Array.isArray(forwarded) && forwarded.length) {
+    return forwarded[0].trim();
+  }
+  return req.socket?.remoteAddress || req.ip || 'unknown';
+};
+
+const allowRate = (key, limit, windowMs) => {
+  const now = Date.now();
+  const bucket = rateBuckets.get(key) || [];
+  const nextBucket = bucket.filter((timestamp) => now - timestamp < windowMs);
+  if (nextBucket.length >= limit) {
+    rateBuckets.set(key, nextBucket);
+    return false;
+  }
+  nextBucket.push(now);
+  rateBuckets.set(key, nextBucket);
+  return true;
+};
+
+const enforceRateLimit = (req, res, action) => {
+  const config = RATE_LIMITS[action];
+  if (!config) {
+    return true;
+  }
+  const sessionId = req.sessionID || 'unknown';
+  const ip = getClientIp(req);
+  const sessionKey = `${action}:session:${sessionId}`;
+  const ipKey = `${action}:ip:${ip}`;
+  const allowedBySession = allowRate(sessionKey, config.limit, config.windowMs);
+  const allowedByIp = allowRate(ipKey, config.limit, config.windowMs);
+  if (!allowedBySession || !allowedByIp) {
+    res.status(429).json({ error: config.message });
+    return false;
+  }
+  return true;
+};
+
 const seedSamplePosts = () => {
   const existing = db.prepare('SELECT COUNT(1) AS count FROM posts').get();
   if (existing?.count > 0) {
@@ -327,6 +377,10 @@ app.post('/api/posts', (req, res) => {
     return res.status(400).json({ error: '内容包含敏感词，请修改后再提交' });
   }
 
+  if (!enforceRateLimit(req, res, 'post')) {
+    return;
+  }
+
   const banned = db.prepare('SELECT 1 FROM banned_sessions WHERE session_id = ?').get(req.sessionID);
   if (banned) {
     return res.status(403).json({ error: '账号已被封禁，无法投稿' });
@@ -517,6 +571,10 @@ app.post('/api/posts/:id/comments', (req, res) => {
     return res.status(400).json({ error: '评论包含敏感词，请修改后再提交' });
   }
 
+  if (!enforceRateLimit(req, res, 'comment')) {
+    return;
+  }
+
   const banned = db.prepare('SELECT 1 FROM banned_sessions WHERE session_id = ?').get(req.sessionID);
   if (banned) {
     return res.status(403).json({ error: '账号已被封禁，无法评论' });
@@ -563,6 +621,10 @@ app.post('/api/reports', (req, res) => {
     return res.status(400).json({ error: '参数不完整' });
   }
 
+  if (!enforceRateLimit(req, res, 'report')) {
+    return;
+  }
+
   const post = db.prepare('SELECT content FROM posts WHERE id = ? AND deleted = 0').get(postId);
   if (!post) {
     return res.status(404).json({ error: '内容不存在' });
@@ -572,10 +634,18 @@ app.post('/api/reports', (req, res) => {
   const reportId = crypto.randomUUID();
   const now = Date.now();
 
+  const sessionId = req.sessionID || 'unknown';
+  const reportSessionResult = db
+    .prepare('INSERT OR IGNORE INTO report_sessions (post_id, session_id, created_at) VALUES (?, ?, ?)')
+    .run(postId, sessionId, now);
+  if (reportSessionResult.changes === 0) {
+    return res.status(409).json({ error: '你已举报过该内容' });
+  }
+
   db.prepare(
     `
-    INSERT INTO reports (id, post_id, reason, content_snippet, created_at, status, risk_level)
-    VALUES (?, ?, ?, ?, ?, 'pending', ?)
+      INSERT INTO reports (id, post_id, reason, content_snippet, created_at, status, risk_level)
+      VALUES (?, ?, ?, ?, ?, 'pending', ?)
     `
   ).run(reportId, postId, reason, snippet, now, resolveRiskLevel(reason));
 

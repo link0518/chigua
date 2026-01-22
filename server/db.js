@@ -77,6 +77,14 @@ CREATE TABLE IF NOT EXISTS reports (
   FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS report_sessions (
+  post_id TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (post_id, session_id),
+  FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS banned_sessions (
   session_id TEXT PRIMARY KEY,
   banned_at INTEGER NOT NULL

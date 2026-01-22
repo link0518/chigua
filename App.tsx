@@ -113,9 +113,9 @@ const App: React.FC = () => {
               className="flex items-center gap-3 cursor-pointer group"
               onClick={() => navigate(ViewType.HOME)}
             >
-              <div className="size-12 flex items-center justify-center rounded-full border-2 border-black bg-highlight shadow-sketch group-hover:rotate-12 transition-transform duration-300">
-                <span className="material-symbols-outlined text-black text-[28px]">visibility</span>
-              </div>
+                <div className="size-12 flex items-center justify-center rounded-full border-2 border-black bg-alert shadow-sketch group-hover:rotate-12 transition-transform duration-300">
+                  <span className="text-black text-[22px] font-sans font-bold">瓜</span>
+                </div>
               <h1 className="text-black text-3xl font-display font-bold tracking-widest relative">
                 JX3瓜田
                 <span className="absolute -bottom-1 left-0 w-full h-[6px] bg-marker-green/50 -rotate-1 rounded-full"></span>
@@ -170,9 +170,17 @@ const App: React.FC = () => {
 
       {/* Footer only for non-admin */}
       {currentView !== ViewType.ADMIN && (
-        <footer className="w-full border-t-2 border-black bg-white py-6 doodle-border !border-x-0 !border-b-0 !rounded-none mt-auto">
-          <div className="max-w-2xl mx-auto px-4 text-center">
-            <p className="font-hand font-bold text-lg text-gray-500">© 2026 JX3瓜田 - 纯粹的吃瓜体验</p>
+        <footer className="w-full border-t-2 border-black bg-paper/90 py-4 mt-auto">
+          <div className="max-w-3xl mx-auto px-4">
+            <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-xs font-sans text-pencil">
+
+
+              <span>纯匿名</span>
+              <span>·</span>
+              <span>理性吃瓜</span>
+              <span>·</span>
+              <span>© 2026 JX3瓜田</span>
+            </div>
           </div>
         </footer>
       )}
