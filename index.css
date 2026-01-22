@@ -71,6 +71,27 @@ body {
   transform: rotate(3deg);
 }
 
+.mascot-float {
+  animation: mascot-float 4.2s ease-in-out infinite;
+  will-change: transform;
+}
+
+@keyframes mascot-float {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-1deg);
+  }
+  50% {
+    transform: translateY(-10px) rotate(2deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mascot-float {
+    animation: none;
+  }
+}
+
 ::-webkit-scrollbar {
   width: 10px;
 }

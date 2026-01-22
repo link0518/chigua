@@ -159,7 +159,12 @@ const HomeView: React.FC = () => {
   };
 
   return (
-    <div className="flex-grow w-full max-w-2xl mx-auto px-4 py-8 flex flex-col justify-center min-h-[80vh]">
+    <div className="flex-grow w-full max-w-2xl mx-auto px-4 py-8 flex flex-col justify-center min-h-[80vh] relative">
+      <img
+        src="/chxb.png"
+        alt="吉祥物"
+        className="mascot-float hidden md:block fixed right-6 bottom-6 w-28 h-28 object-contain drop-shadow-md pointer-events-none select-none z-10"
+      />
 
       {/* Card Container */}
       <article className={`group relative w-full my-auto transition-all duration-200 ${animate ? 'opacity-0 translate-x-10' : 'opacity-100 translate-x-0'}`}>
