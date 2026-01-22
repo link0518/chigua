@@ -377,8 +377,7 @@ app.post('/api/posts', (req, res) => {
     return res.status(400).json({ error: '内容包含敏感词，请修改后再提交' });
   }
 
-  const isAdmin = Boolean(req.session?.admin);
-  if (!isAdmin && !enforceRateLimit(req, res, 'post')) {
+  if (!enforceRateLimit(req, res, 'post')) {
     return;
   }
 
@@ -729,6 +728,55 @@ app.post('/api/reports/:id/action', requireAdmin, (req, res) => {
   }
 
   return res.json({ status: nextStatus, action });
+});
+
+app.post('/api/admin/posts', requireAdmin, (req, res) => {
+  const content = String(req.body?.content || '').trim();
+  const tags = Array.isArray(req.body?.tags) ? req.body.tags : [];
+
+  if (!content) {
+    return res.status(400).json({ error: '内容不能为空' });
+  }
+
+  if (content.length > 2000) {
+    return res.status(400).json({ error: '内容超过字数限制' });
+  }
+
+  if (containsSensitiveWord(content)) {
+    return res.status(400).json({ error: '内容包含敏感词，请修改后再提交' });
+  }
+
+  const banned = db.prepare('SELECT 1 FROM banned_sessions WHERE session_id = ?').get(req.sessionID);
+  if (banned) {
+    return res.status(403).json({ error: '账号已被封禁，无法投稿' });
+  }
+
+  const now = Date.now();
+  const postId = crypto.randomUUID();
+
+  db.prepare(
+    `
+    INSERT INTO posts (id, content, author, tags, created_at, session_id)
+    VALUES (?, ?, ?, ?, ?, ?)
+    `
+  ).run(postId, content, '匿名', JSON.stringify(tags), now, req.sessionID);
+
+  incrementDailyStat(formatDateKey(), 'posts', 1);
+
+  const row = db
+    .prepare(
+      `
+      SELECT posts.*, ${hotScoreSql} AS hot_score, pr.reaction AS viewer_reaction
+      FROM posts
+      LEFT JOIN post_reactions pr
+        ON pr.post_id = posts.id
+        AND pr.session_id = ?
+      WHERE posts.id = ?
+      `
+    )
+    .get(req.sessionID, postId);
+
+  return res.status(201).json({ post: mapPostRow(row, false) });
 });
 
 app.get('/api/admin/posts', requireAdmin, (req, res) => {

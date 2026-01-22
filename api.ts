@@ -57,6 +57,10 @@ export const api = {
     body: JSON.stringify({ action }),
   }),
   getAdminPosts: (params = {}) => apiFetch(`/admin/posts${toQuery(params)}`),
+  createAdminPost: (content, tags = []) => apiFetch('/admin/posts', {
+    method: 'POST',
+    body: JSON.stringify({ content, tags }),
+  }),
   handleAdminPost: (postId, action) => apiFetch(`/admin/posts/${postId}/action`, {
     method: 'POST',
     body: JSON.stringify({ action }),

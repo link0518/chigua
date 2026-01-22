@@ -3,14 +3,15 @@ import {
   BarChart, Bar, XAxis, Tooltip, ResponsiveContainer,
   LineChart, Line
 } from 'recharts';
-import { Flag, Gavel, BarChart2, Bell, Search, Trash2, Ban, EyeOff, LayoutDashboard, LogOut, CheckCircle, XCircle, FileText, RotateCcw } from 'lucide-react';
+import { Flag, Gavel, BarChart2, Bell, Search, Trash2, Ban, Eye, EyeOff, LayoutDashboard, LogOut, CheckCircle, XCircle, FileText, PenSquare, RotateCcw } from 'lucide-react';
 import { SketchButton, Badge, roughBorderClassSm } from './SketchUI';
 import { AdminPost, Report } from '../types';
 import { useApp } from '../store/AppContext';
 import Modal from './Modal';
 import { api } from '../api';
+import MarkdownRenderer from './MarkdownRenderer';
 
-type AdminView = 'overview' | 'reports' | 'processed' | 'stats' | 'posts';
+type AdminView = 'overview' | 'reports' | 'processed' | 'stats' | 'posts' | 'compose';
 type PostStatusFilter = 'all' | 'active' | 'deleted';
 type PostSort = 'time' | 'hot' | 'reports';
 
@@ -43,6 +44,9 @@ const AdminDashboard: React.FC = () => {
   const [postTotal, setPostTotal] = useState(0);
   const [postItems, setPostItems] = useState<AdminPost[]>([]);
   const [postLoading, setPostLoading] = useState(false);
+  const [composeText, setComposeText] = useState('');
+  const [composePreview, setComposePreview] = useState(false);
+  const [composeSubmitting, setComposeSubmitting] = useState(false);
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
     reportId: string;
@@ -55,6 +59,7 @@ const AdminDashboard: React.FC = () => {
     action: 'delete' | 'restore';
     content: string;
   }>({ isOpen: false, postId: '', action: 'delete', content: '' });
+  const composeMaxLength = 2000;
 
   useEffect(() => {
     loadReports().catch(() => { });
@@ -167,6 +172,32 @@ const AdminDashboard: React.FC = () => {
 
   const getPostActionLabel = (action: 'delete' | 'restore') => (action === 'delete' ? '删除帖子' : '恢复帖子');
 
+  const handleComposeSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const trimmed = composeText.trim();
+    if (!trimmed) {
+      showToast('内容不能为空哦！', 'warning');
+      return;
+    }
+    if (trimmed.length > composeMaxLength) {
+      showToast('内容超过字数限制！', 'error');
+      return;
+    }
+    setComposeSubmitting(true);
+    try {
+      await api.createAdminPost(trimmed, []);
+      showToast('投稿成功！', 'success');
+      setComposeText('');
+      setComposePreview(false);
+      loadStats().catch(() => { });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '投稿失败，请稍后重试';
+      showToast(message, 'error');
+    } finally {
+      setComposeSubmitting(false);
+    }
+  };
+
   const NavItem: React.FC<{ view: AdminView; icon: React.ReactNode; label: string; badge?: number }> = ({ view, icon, label, badge }) => (
     <button
       onClick={() => setCurrentView(view)}
@@ -205,6 +236,7 @@ const AdminDashboard: React.FC = () => {
           <nav className="flex flex-col gap-3 font-sans font-bold text-sm">
             <NavItem view="overview" icon={<LayoutDashboard size={18} />} label="概览" />
             <NavItem view="posts" icon={<FileText size={18} />} label="帖子管理" />
+            <NavItem view="compose" icon={<PenSquare size={18} />} label="后台投稿" />
             <NavItem view="reports" icon={<Flag size={18} />} label="待处理举报" badge={pendingReports.length} />
             <NavItem view="processed" icon={<Gavel size={18} />} label="已处理" badge={processedReports.length} />
             <NavItem view="stats" icon={<BarChart2 size={18} />} label="数据统计" />
@@ -229,6 +261,7 @@ const AdminDashboard: React.FC = () => {
           <h2 className="text-2xl font-display flex items-center gap-2">
             {currentView === 'overview' && <><LayoutDashboard /> 概览</>}
             {currentView === 'posts' && <><FileText /> 帖子管理</>}
+            {currentView === 'compose' && <><PenSquare /> 后台投稿</>}
             {currentView === 'reports' && <><Flag /> 待处理举报</>}
             {currentView === 'processed' && <><Gavel /> 已处理</>}
             {currentView === 'stats' && <><BarChart2 /> 数据统计</>}
@@ -502,6 +535,69 @@ const AdminDashboard: React.FC = () => {
                     </SketchButton>
                   </div>
                 )}
+              </section>
+            )}
+
+            {/* Compose View */}
+            {currentView === 'compose' && (
+              <section>
+                <form
+                  onSubmit={handleComposeSubmit}
+                  className="bg-white p-6 border-2 border-ink rounded-lg shadow-sketch-sm"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+                    <div>
+                      <h3 className="font-display text-xl">后台投稿</h3>
+                      <p className="text-xs text-pencil font-sans">支持 Markdown，内容仅管理员可投递</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setComposePreview(!composePreview)}
+                      className="flex items-center gap-1 px-3 py-1 text-sm font-hand font-bold text-pencil hover:text-ink border-2 border-gray-200 hover:border-ink rounded-full transition-all"
+                    >
+                      {composePreview ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      {composePreview ? '编辑' : '预览'}
+                    </button>
+                  </div>
+
+                  <div className="min-h-[280px] mb-4">
+                    {composePreview ? (
+                      <div className="w-full h-full min-h-[280px] p-4 border-2 border-dashed border-gray-300 rounded-lg bg-gray-50 overflow-auto">
+                        {composeText.trim() ? (
+                          <MarkdownRenderer content={composeText} className="font-sans text-lg text-ink" />
+                        ) : (
+                          <p className="text-pencil/50 font-hand text-xl">预览区域（请先输入内容）</p>
+                        )}
+                      </div>
+                    ) : (
+                      <textarea
+                        value={composeText}
+                        onChange={(e) => setComposeText(e.target.value)}
+                        placeholder="在后台发布内容... 支持 Markdown"
+                        maxLength={composeMaxLength + 100}
+                        className="w-full min-h-[280px] resize-none bg-transparent border-2 border-gray-200 rounded-lg outline-none font-sans text-lg leading-8 text-ink placeholder:text-pencil/40 p-4 focus:border-ink transition-colors"
+                      />
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <span className={`font-hand text-lg ${composeText.length > composeMaxLength ? 'text-red-500 font-bold' : composeText.length > composeMaxLength * 0.9 ? 'text-yellow-600' : 'text-pencil'}`}>
+                        {composeText.length} / {composeMaxLength}
+                      </span>
+                      {composeText.length > composeMaxLength && (
+                        <span className="text-red-500 text-sm font-hand">超出限制！</span>
+                      )}
+                    </div>
+                    <SketchButton
+                      type="submit"
+                      className="h-10 px-6 text-sm"
+                      disabled={composeSubmitting || !composeText.trim() || composeText.length > composeMaxLength}
+                    >
+                      {composeSubmitting ? '发布中...' : '发布'}
+                    </SketchButton>
+                  </div>
+                </form>
               </section>
             )}
 
