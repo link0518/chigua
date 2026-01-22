@@ -65,7 +65,7 @@ const HomeView: React.FC = () => {
 
   useEffect(() => {
     if (currentPost?.id) {
-      viewPost(currentPost.id).catch(() => {});
+      viewPost(currentPost.id).catch(() => { });
     }
   }, [currentPost?.id, viewPost]);
 
@@ -165,10 +165,13 @@ const HomeView: React.FC = () => {
       <article className={`group relative w-full my-auto transition-all duration-200 ${animate ? 'opacity-0 translate-x-10' : 'opacity-100 translate-x-0'}`}>
 
         {/* Shadow/Layer effect */}
-        <div className="absolute inset-0 bg-gray-200 translate-x-2 translate-y-2 rounded-lg doodle-border !rounded-lg opacity-100 transition-opacity"></div>
+        <div className="absolute inset-0 bg-gray-200 translate-x-2 translate-y-3 rounded-lg doodle-border !rounded-lg opacity-100 transition-opacity"></div>
+
+        {/* Tape Effect */}
+        <div className="tape-mask"></div>
 
         {/* Main Card Content */}
-        <div className="relative flex flex-col gap-4 rounded-lg border-2 border-black bg-white p-8 doodle-border !rounded-lg hover:-translate-y-0.5 transition-transform duration-200">
+        <div className="relative flex flex-col gap-4 rounded-lg border-2 border-black bg-white p-8 doodle-border !rounded-lg hover:-translate-y-1 transition-transform duration-200 shadow-paper">
 
           {/* Header */}
           <div className="flex items-center justify-between mb-2">
@@ -179,17 +182,23 @@ const HomeView: React.FC = () => {
               <div className="flex flex-col">
                 <span className="font-hand font-bold text-xl text-pencil">匿名用户</span>
                 <span className="text-xs text-gray-400 font-mono flex items-center gap-1">
-                   {currentPost.timestamp}
+                  {currentPost.timestamp}
                 </span>
               </div>
             </div>
             {/* Tags */}
-            <div className="flex gap-1">
+            <div className="flex gap-2">
               {currentPost.isHot && (
-                <span className="bg-highlight border border-ink px-2 py-0.5 text-xs font-bold rounded-md">🔥 热门</span>
+                <span className="bg-alert border border-ink px-2 py-0.5 text-xs font-bold rounded-sm shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] transform -rotate-1">🔥 热门</span>
               )}
-              {currentPost.tags?.slice(0, 2).map(tag => (
-                <span key={tag} className="bg-gray-100 border border-ink px-2 py-0.5 text-xs font-bold rounded-md">{tag}</span>
+              {currentPost.tags?.slice(0, 2).map((tag, i) => (
+                <span
+                  key={tag}
+                  className={`border border-ink px-2 py-0.5 text-xs font-bold rounded-sm shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] ${['bg-marker-blue', 'bg-marker-green', 'bg-marker-purple', 'bg-marker-orange'][i % 4]
+                    } transform ${i % 2 === 0 ? 'rotate-1' : '-rotate-1'}`}
+                >
+                  {tag}
+                </span>
               ))}
             </div>
           </div>
@@ -222,8 +231,8 @@ const HomeView: React.FC = () => {
             </div>
             <div className="flex items-center gap-6">
               <button
-                 onClick={() => setCommentModalOpen((prev) => !prev)}
-                 className={`flex items-center gap-1.5 group/btn transition-colors ${commentModalOpen ? 'text-blue-600' : 'hover:text-blue-600'}`}
+                onClick={() => setCommentModalOpen((prev) => !prev)}
+                className={`flex items-center gap-1.5 group/btn transition-colors ${commentModalOpen ? 'text-blue-600' : 'hover:text-blue-600'}`}
               >
                 <span className="material-symbols-outlined text-[22px]">chat_bubble</span>
                 <span className="font-hand font-bold text-base">{currentPost.comments}</span>
@@ -252,9 +261,9 @@ const HomeView: React.FC = () => {
       <div className="flex justify-center mt-10 mb-4">
         <button
           onClick={handleNext}
-          className="group relative flex items-center gap-3 px-10 py-3 bg-white border-[3px] border-black rounded-full shadow-sketch hover:shadow-sketch-hover hover:-translate-y-1 hover:bg-highlight transition-all duration-200 active:shadow-sketch-active active:translate-y-[2px] transform -rotate-1"
+          className="group relative flex items-center gap-3 px-10 py-4 bg-white border-[3px] border-black rounded-full shadow-sketch-lg hover:shadow-sketch-hover hover:-translate-y-1 hover:bg-highlight transition-all duration-200 active:shadow-sketch-active active:translate-y-[4px] transform -rotate-1"
         >
-          <span className="font-hand font-bold text-2xl tracking-widest pt-1">下一个瓜</span>
+          <span className="font-hand font-bold text-2xl tracking-widest pt-1 group-hover:animate-wiggle">下一个瓜</span>
           <span className="material-symbols-outlined text-3xl group-hover:rotate-12 transition-transform">arrow_forward</span>
         </button>
       </div>

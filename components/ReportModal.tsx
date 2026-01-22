@@ -56,7 +56,7 @@ const ReportModal: React.FC<ReportModalProps> = ({
         {/* Content Preview */}
         {contentPreview && (
           <div className="p-3 bg-gray-50 border border-dashed border-ink rounded-lg">
-            <p className="text-sm text-pencil font-hand line-clamp-2">"{contentPreview}"</p>
+            <p className="text-sm text-pencil font-sans line-clamp-2">"{contentPreview}"</p>
           </div>
         )}
 

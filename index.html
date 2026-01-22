@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>GossipSketch</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -19,10 +20,12 @@
               ink: '#2c2c2c',
               "border-ink": "#000000",
               pencil: '#555555',
-              highlight: '#fff59d',
-              alert: '#fca5a5',
-              "accent-blue": "#b3e5fc",
-              "accent-pink": "#ffcdd2",
+              highlight: '#fff59d', // Yellow marker
+              alert: '#fca5a5',     // Red marker
+              "marker-blue": "#81d4fa",
+              "marker-green": "#a5d6a7",
+              "marker-purple": "#ce93d8",
+              "marker-orange": "#ffcc80",
             },
             fontFamily: {
               hand: ['"Zhi Mang Xing"', '"Patrick Hand"', 'cursive'],
@@ -31,20 +34,27 @@
             },
             boxShadow: {
               'sketch': '2px 2px 0px 0px #000000',
-              'sketch-lg': '5px 5px 0px 0px #000000',
-              'sketch-hover': '4px 4px 0px 0px #000000',
+              'sketch-lg': '4px 4px 0px 0px #000000',
+              'sketch-hover': '3px 3px 0px 0px #000000',
               'sketch-active': '0px 0px 0px 0px #000000',
+              'paper': '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05), 2px 2px 0px 0px #000000',
             },
             borderRadius: {
               "sketch": "2px 255px 3px 25px / 255px 5px 225px 3px",
+              "tape": "2px 5px 2px 5px / 20px 2px 20px 2px",
             },
             animation: {
-              'wiggle': 'wiggle 0.3s ease-in-out',
+              'wiggle': 'wiggle 0.4s ease-in-out',
+              'float': 'float 3s ease-in-out infinite',
             },
             keyframes: {
               wiggle: {
-                '0%, 100%': { transform: 'rotate(-1deg)' },
-                '50%': { transform: 'rotate(1deg)' },
+                '0%, 100%': { transform: 'rotate(-2deg)' },
+                '50%': { transform: 'rotate(2deg)' },
+              },
+              float: {
+                '0%, 100%': { transform: 'translateY(0)' },
+                '50%': { transform: 'translateY(-5px)' },
               }
             }
           },
@@ -55,16 +65,17 @@
       body {
         background-color: #f9f7f1;
         color: #2c2c2c;
-        /* Custom paper texture and dot grid */
+        /* Improved Grid Paper Texture */
         background-image: 
-            radial-gradient(#d1d5db 1px, transparent 1px),
-            linear-gradient(to right, #f9f7f1, #f9f7f1); 
-        background-size: 24px 24px, 100% 100%;
+            linear-gradient(#e5e7eb 1px, transparent 1px),
+            linear-gradient(90deg, #e5e7eb 1px, transparent 1px);
+        background-size: 20px 20px;
+        background-position: -1px -1px;
       }
       
       /* Material Symbols adjustment */
       .material-symbols-outlined {
-        font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        font-variation-settings: 'FILL' 0, 'wght' 500, 'GRAD' 0, 'opsz' 24;
       }
 
       /* Custom doodle border utility */
@@ -75,20 +86,69 @@
          border-color: black;
       }
 
+      /* Tape Effect */
+      .tape-mask {
+        position: absolute;
+        top: -15px;
+        left: 50%;
+        transform: translateX(-50%) rotate(-2deg);
+        width: 120px;
+        height: 35px;
+        background-color: rgba(255, 255, 255, 0.6);
+        border-left: 1px dashed rgba(0,0,0,0.1);
+        border-right: 1px dashed rgba(0,0,0,0.1);
+        box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        opacity: 0.7;
+        z-index: 10;
+        pointer-events: none;
+        backdrop-filter: blur(2px);
+      }
+      .tape-mask::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: repeating-linear-gradient(
+          45deg,
+          transparent,
+          transparent 2px,
+          rgba(255,255,255,0.3) 2px,
+          rgba(255,255,255,0.3) 4px
+        );
+      }
+
+      /* Sticky Note curl effect */
+      .sticky-curl {
+        position: relative;
+      }
+      .sticky-curl::after {
+        content: "";
+        position: absolute;
+        bottom: 12px;
+        right: 12px;
+        width: 30px;
+        height: 30px;
+        background: linear-gradient(135deg, transparent 50%, rgba(0,0,0,0.1) 50.1%);
+        box-shadow: -2px -2px 5px rgba(0,0,0,0.1);
+        z-index: 1;
+        pointer-events: none;
+        transform: rotate(3deg);
+      }
+
       /* Custom scrollbar */
       ::-webkit-scrollbar {
-        width: 8px;
+        width: 10px;
       }
       ::-webkit-scrollbar-track {
-        background: #f9f7f1; 
-        border-left: 1px solid #000;
+        background: transparent; 
+        border-left: 2px solid #000;
       }
       ::-webkit-scrollbar-thumb {
-        background: #000; 
-        border-radius: 4px;
+        background: #2c2c2c; 
+        border: 2px solid #f9f7f1;
+        border-radius: 10px;
       }
       ::-webkit-scrollbar-thumb:hover {
-        background: #444; 
+        background: #555; 
       }
     </style>
   <script type="importmap">

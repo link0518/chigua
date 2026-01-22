@@ -105,17 +105,21 @@ const App: React.FC = () => {
     <div className="min-h-screen flex flex-col font-sans selection:bg-highlight selection:text-black">
       {/* Top Navigation */}
       {currentView !== ViewType.ADMIN && (
-        <header className="sticky top-0 z-50 w-full border-b-2 border-black bg-[#f9f7f1]/95 backdrop-blur-sm px-4 md:px-6 py-4 doodle-border !border-x-0 !border-t-0 !rounded-none">
+        <header className="sticky top-0 z-50 w-full border-b-2 border-black bg-[#f9f7f1] px-4 md:px-6 py-3 shadow-[0_4px_0_0_rgba(0,0,0,0.1)]">
+          <div className="absolute top-full left-0 w-full h-2 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAiIGhlaWdodD0iMTAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHBhdGggZD0iTTAgMTAgTTEwIDAgTDIwIDEwIiBmaWxsPSJub25lIiBzdHJva2U9IiMwMDAiIHN0cm9rZS13aWR0aD0iMSIvPjwvc3ZnPg==')] opacity-10"></div>
           <div className="max-w-3xl mx-auto flex items-center justify-between gap-4">
             {/* Logo */}
             <div
-              className="flex items-center gap-4 cursor-pointer"
+              className="flex items-center gap-3 cursor-pointer group"
               onClick={() => navigate(ViewType.HOME)}
             >
-              <div className="size-10 flex items-center justify-center rounded-full border-2 border-black bg-highlight shadow-sketch transform -rotate-3">
-                <span className="material-symbols-outlined text-black text-[24px]">visibility</span>
+              <div className="size-12 flex items-center justify-center rounded-full border-2 border-black bg-highlight shadow-sketch group-hover:rotate-12 transition-transform duration-300">
+                <span className="material-symbols-outlined text-black text-[28px]">visibility</span>
               </div>
-              <h1 className="text-black text-3xl font-hand font-bold tracking-widest -rotate-1 hidden sm:block">JX3瓜田</h1>
+              <h1 className="text-black text-3xl font-display font-bold tracking-widest relative">
+                JX3瓜田
+                <span className="absolute -bottom-1 left-0 w-full h-[6px] bg-marker-green/50 -rotate-1 rounded-full"></span>
+              </h1>
             </div>
 
             <div className="flex items-center gap-6">
@@ -128,10 +132,10 @@ const App: React.FC = () => {
               {/* Action Button */}
               <button
                 onClick={() => navigate(ViewType.SUBMISSION)}
-                className="flex items-center justify-center rounded-full px-4 md:px-6 py-2 bg-black text-white hover:bg-gray-800 transition-all shadow-sketch active:shadow-sketch-active active:translate-x-[2px] active:translate-y-[2px] transform rotate-1"
+                className="flex items-center justify-center rounded-full px-5 py-2.5 bg-black text-white hover:bg-ink/90 transition-all shadow-sketch active:shadow-sketch-active active:translate-x-[2px] active:translate-y-[2px] transform rotate-1 hover:-rotate-1"
               >
                 <span className="flex items-center gap-2 font-hand text-lg font-bold">
-                  <span className="material-symbols-outlined text-[18px]">edit</span>
+                  <span className="material-symbols-outlined text-[20px]">edit</span>
                   <span className="hidden md:inline">投稿</span>
                   <span className="md:hidden">投稿</span>
                 </span>

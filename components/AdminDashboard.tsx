@@ -17,15 +17,15 @@ type PostSort = 'time' | 'hot' | 'reports';
 const WEEK_DAYS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
 const POST_PAGE_SIZE = 10;
 
-const StatCard: React.FC<{ title: string; value: string; trend: string; trendUp: boolean; icon: React.ReactNode }> = ({ title, value, trend, trendUp, icon }) => (
-  <div className={`bg-white p-6 border-2 border-ink shadow-sketch relative overflow-hidden group hover:-translate-y-1 transition-transform duration-200 ${roughBorderClassSm}`}>
-    <div className="absolute -right-4 -top-4 text-gray-100 rotate-12 group-hover:rotate-0 transition-transform scale-150 opacity-50">
+const StatCard: React.FC<{ title: string; value: string; trend: string; trendUp: boolean; icon: React.ReactNode; color?: string }> = ({ title, value, trend, trendUp, icon, color = 'bg-white' }) => (
+  <div className={`${color} p-6 border-2 border-ink shadow-sketch relative overflow-hidden group hover:-translate-y-1 transition-transform duration-200 sticky-curl ${roughBorderClassSm}`}>
+    <div className="absolute -right-4 -top-4 text-ink/10 rotate-12 group-hover:rotate-0 transition-transform scale-150 opacity-100">
       {icon}
     </div>
     <p className="text-pencil text-sm font-bold mb-2 uppercase tracking-wider font-sans">{title}</p>
     <div className="flex items-end gap-3 relative z-10">
       <span className="text-5xl font-display text-ink">{value}</span>
-      <span className={`text-xs font-bold border border-ink px-2 py-1 rounded-full mb-2 ${trendUp ? 'bg-alert' : 'bg-gray-200'}`}>
+      <span className={`text-xs font-bold border border-ink px-2 py-1 rounded-sm shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] ${trendUp ? 'bg-alert' : 'bg-gray-200'}`}>
         {trend}
       </span>
     </div>
@@ -114,7 +114,7 @@ const AdminDashboard: React.FC = () => {
       return;
     }
     const timer = setTimeout(() => {
-      fetchAdminPosts().catch(() => {});
+      fetchAdminPosts().catch(() => { });
     }, 300);
     return () => clearTimeout(timer);
   }, [currentView, fetchAdminPosts]);
@@ -171,8 +171,8 @@ const AdminDashboard: React.FC = () => {
     <button
       onClick={() => setCurrentView(view)}
       className={`flex items-center gap-3 px-4 py-3 rounded-lg border-2 transition-all w-full text-left ${currentView === view
-          ? 'border-ink bg-highlight shadow-sketch-sm'
-          : 'border-transparent hover:border-ink hover:bg-white'
+        ? 'border-ink bg-highlight shadow-sketch-sm'
+        : 'border-transparent hover:border-ink hover:bg-white'
         }`}
     >
       {icon}
@@ -202,13 +202,13 @@ const AdminDashboard: React.FC = () => {
             </div>
           </div>
 
-           <nav className="flex flex-col gap-3 font-sans font-bold text-sm">
-             <NavItem view="overview" icon={<LayoutDashboard size={18} />} label="概览" />
-             <NavItem view="posts" icon={<FileText size={18} />} label="帖子管理" />
-             <NavItem view="reports" icon={<Flag size={18} />} label="待处理举报" badge={pendingReports.length} />
-             <NavItem view="processed" icon={<Gavel size={18} />} label="已处理" badge={processedReports.length} />
-             <NavItem view="stats" icon={<BarChart2 size={18} />} label="数据统计" />
-           </nav>
+          <nav className="flex flex-col gap-3 font-sans font-bold text-sm">
+            <NavItem view="overview" icon={<LayoutDashboard size={18} />} label="概览" />
+            <NavItem view="posts" icon={<FileText size={18} />} label="帖子管理" />
+            <NavItem view="reports" icon={<Flag size={18} />} label="待处理举报" badge={pendingReports.length} />
+            <NavItem view="processed" icon={<Gavel size={18} />} label="已处理" badge={processedReports.length} />
+            <NavItem view="stats" icon={<BarChart2 size={18} />} label="数据统计" />
+          </nav>
         </div>
         <div className="mt-auto p-6 border-t-2 border-ink/10">
           <button
@@ -226,36 +226,36 @@ const AdminDashboard: React.FC = () => {
       <main className="flex-1 flex flex-col h-screen overflow-hidden">
         {/* Header */}
         <header className="h-20 flex items-center justify-between px-8 border-b-2 border-ink bg-paper/90 backdrop-blur-sm z-10">
-           <h2 className="text-2xl font-display flex items-center gap-2">
-             {currentView === 'overview' && <><LayoutDashboard /> 概览</>}
-             {currentView === 'posts' && <><FileText /> 帖子管理</>}
-             {currentView === 'reports' && <><Flag /> 待处理举报</>}
-             {currentView === 'processed' && <><Gavel /> 已处理</>}
-             {currentView === 'stats' && <><BarChart2 /> 数据统计</>}
-           </h2>
-           <div className="flex items-center gap-4">
-             {(isReportView || isPostView) && (
-               <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-pencil w-4 h-4" />
-                  <input
-                    type="text"
-                    value={isPostView ? postSearch : searchQuery}
-                    onChange={(e) => {
-                      if (isPostView) {
-                        setPostSearch(e.target.value);
-                        setPostPage(1);
-                      } else {
-                        setSearchQuery(e.target.value);
-                      }
-                    }}
-                    placeholder={isPostView ? '搜索帖子内容...' : '搜索 ID 或内容...'}
-                    className="pl-9 pr-4 py-2 rounded-full border-2 border-ink bg-white text-sm focus:shadow-sketch-sm outline-none transition-all w-64 font-sans"
-                  />
-               </div>
-             )}
-             <button className="relative p-2 border-2 border-transparent hover:border-ink rounded-full hover:bg-highlight transition-all">
-               <Bell size={20} />
-               {pendingReports.length > 0 && (
+          <h2 className="text-2xl font-display flex items-center gap-2">
+            {currentView === 'overview' && <><LayoutDashboard /> 概览</>}
+            {currentView === 'posts' && <><FileText /> 帖子管理</>}
+            {currentView === 'reports' && <><Flag /> 待处理举报</>}
+            {currentView === 'processed' && <><Gavel /> 已处理</>}
+            {currentView === 'stats' && <><BarChart2 /> 数据统计</>}
+          </h2>
+          <div className="flex items-center gap-4">
+            {(isReportView || isPostView) && (
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-pencil w-4 h-4" />
+                <input
+                  type="text"
+                  value={isPostView ? postSearch : searchQuery}
+                  onChange={(e) => {
+                    if (isPostView) {
+                      setPostSearch(e.target.value);
+                      setPostPage(1);
+                    } else {
+                      setSearchQuery(e.target.value);
+                    }
+                  }}
+                  placeholder={isPostView ? '搜索帖子内容...' : '搜索 ID 或内容...'}
+                  className="pl-9 pr-4 py-2 rounded-full border-2 border-ink bg-white text-sm focus:shadow-sketch-sm outline-none transition-all w-64 font-sans"
+                />
+              </div>
+            )}
+            <button className="relative p-2 border-2 border-transparent hover:border-ink rounded-full hover:bg-highlight transition-all">
+              <Bell size={20} />
+              {pendingReports.length > 0 && (
                 <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border border-ink"></span>
               )}
             </button>
@@ -277,6 +277,7 @@ const AdminDashboard: React.FC = () => {
                     trend={state.stats.todayReports > 10 ? '+15%' : '-5%'}
                     trendUp={state.stats.todayReports > 10}
                     icon={<Flag size={80} />}
+                    color="bg-marker-orange"
                   />
                   <StatCard
                     title="待处理"
@@ -284,6 +285,7 @@ const AdminDashboard: React.FC = () => {
                     trend={pendingReports.length > 0 ? '需处理' : '已清空'}
                     trendUp={pendingReports.length > 0}
                     icon={<Gavel size={80} />}
+                    color="bg-highlight"
                   />
                   <StatCard
                     title="封禁用户"
@@ -291,6 +293,7 @@ const AdminDashboard: React.FC = () => {
                     trend="+1"
                     trendUp={false}
                     icon={<Ban size={80} />}
+                    color="bg-marker-blue"
                   />
                   <StatCard
                     title="总帖子数"
@@ -298,6 +301,7 @@ const AdminDashboard: React.FC = () => {
                     trend="活跃"
                     trendUp={true}
                     icon={<BarChart2 size={80} />}
+                    color="bg-marker-green"
                   />
                 </section>
 
@@ -371,140 +375,138 @@ const AdminDashboard: React.FC = () => {
                   </section>
                 )}
               </>
-             )}
+            )}
 
-             {/* Posts View */}
-             {currentView === 'posts' && (
-               <section>
-                 <div className="flex flex-col gap-3 mb-6">
-                   <div className="flex flex-wrap items-center gap-3">
-                     <span className="text-xs text-pencil font-sans">状态</span>
-                     {(['all', 'active', 'deleted'] as PostStatusFilter[]).map((status) => (
-                       <button
-                         key={status}
-                         onClick={() => {
-                           setPostStatus(status);
-                           setPostPage(1);
-                         }}
-                         className={`px-3 py-1 text-xs font-bold rounded-full border-2 transition-all ${
-                           postStatus === status ? 'border-ink bg-highlight' : 'border-transparent bg-white hover:border-ink'
-                         }`}
-                       >
-                         {status === 'all' ? '全部' : status === 'active' ? '未删除' : '已删除'}
-                       </button>
-                     ))}
-                   </div>
-                   <div className="flex flex-wrap items-center gap-3">
-                     <span className="text-xs text-pencil font-sans">排序</span>
-                     {(['time', 'hot', 'reports'] as PostSort[]).map((sort) => (
-                       <button
-                         key={sort}
-                         onClick={() => {
-                           setPostSort(sort);
-                           setPostPage(1);
-                         }}
-                         className={`px-3 py-1 text-xs font-bold rounded-full border-2 transition-all ${
-                           postSort === sort ? 'border-ink bg-highlight' : 'border-transparent bg-white hover:border-ink'
-                         }`}
-                       >
-                         {sort === 'time' ? '时间' : sort === 'hot' ? '热度' : '举报数'}
-                       </button>
-                     ))}
-                   </div>
-                   <div className="flex items-center justify-between text-xs text-pencil font-sans">
-                     <span>共 {postTotal} 条</span>
-                     <span>第 {postPage} / {totalPostPages} 页</span>
-                   </div>
-                 </div>
+            {/* Posts View */}
+            {currentView === 'posts' && (
+              <section>
+                <div className="flex flex-col gap-3 mb-6">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="text-xs text-pencil font-sans">状态</span>
+                    {(['all', 'active', 'deleted'] as PostStatusFilter[]).map((status) => (
+                      <button
+                        key={status}
+                        onClick={() => {
+                          setPostStatus(status);
+                          setPostPage(1);
+                        }}
+                        className={`px-3 py-1 text-xs font-bold rounded-full border-2 transition-all ${postStatus === status ? 'border-ink bg-highlight' : 'border-transparent bg-white hover:border-ink'
+                          }`}
+                      >
+                        {status === 'all' ? '全部' : status === 'active' ? '未删除' : '已删除'}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="text-xs text-pencil font-sans">排序</span>
+                    {(['time', 'hot', 'reports'] as PostSort[]).map((sort) => (
+                      <button
+                        key={sort}
+                        onClick={() => {
+                          setPostSort(sort);
+                          setPostPage(1);
+                        }}
+                        className={`px-3 py-1 text-xs font-bold rounded-full border-2 transition-all ${postSort === sort ? 'border-ink bg-highlight' : 'border-transparent bg-white hover:border-ink'
+                          }`}
+                      >
+                        {sort === 'time' ? '时间' : sort === 'hot' ? '热度' : '举报数'}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex items-center justify-between text-xs text-pencil font-sans">
+                    <span>共 {postTotal} 条</span>
+                    <span>第 {postPage} / {totalPostPages} 页</span>
+                  </div>
+                </div>
 
-                 {postLoading ? (
-                   <div className="text-center py-16 bg-white border-2 border-ink rounded-lg">
-                     <span className="text-6xl mb-4 block">⏳</span>
-                     <h3 className="font-display text-2xl text-ink mb-2">正在加载帖子</h3>
-                     <p className="font-hand text-lg text-pencil">请稍等片刻</p>
-                   </div>
-                 ) : postItems.length === 0 ? (
-                   <div className="text-center py-16 bg-white border-2 border-ink rounded-lg">
-                     <span className="text-6xl mb-4 block">🗂️</span>
-                     <h3 className="font-display text-2xl text-ink mb-2">暂无帖子</h3>
-                     <p className="font-hand text-lg text-pencil">调整筛选条件试试</p>
-                   </div>
-                 ) : (
-                   <div className="flex flex-col gap-4">
-                     {postItems.map((post) => (
-                       <div key={post.id} className="bg-white p-5 rounded-lg border-2 border-ink shadow-sketch-sm hover:shadow-sketch transition-all">
-                         <div className="flex flex-col md:flex-row gap-6 justify-between items-start">
-                           <div className="flex-1">
-                             <div className="flex items-center gap-3 mb-3 flex-wrap">
-                               <span className="bg-gray-100 border border-ink text-ink text-[10px] font-bold px-2 py-0.5 rounded font-sans">ID: #{post.id}</span>
-                               <span className="text-pencil text-xs font-bold font-sans">{post.timestamp}</span>
-                               <Badge color={post.deleted ? 'bg-gray-200' : 'bg-highlight'}>
-                                 {post.deleted ? '已删除' : '正常'}
-                               </Badge>
-                               <span className="text-ink text-xs flex items-center gap-1 border border-ink px-2 py-0.5 rounded font-bold font-sans">
-                                 举报 {post.reports}
-                               </span>
-                             </div>
-                             <p className="text-ink text-base leading-relaxed font-hand font-bold line-clamp-2">
-                               "{post.content}"
-                             </p>
-                             <div className="flex flex-wrap items-center gap-4 text-xs text-pencil font-sans mt-3">
-                               <span>点赞 {post.likes}</span>
-                               <span>评论 {post.comments}</span>
-                               <span>举报 {post.reports}</span>
-                             </div>
-                           </div>
-                           <div className="flex items-center gap-2 min-w-fit mt-2 md:mt-0 font-sans">
-                             {post.deleted ? (
-                               <SketchButton
-                                 variant="secondary"
-                                 className="h-10 px-3 text-xs flex items-center gap-1"
-                                 onClick={() => handlePostAction(post.id, 'restore', post.content)}
-                               >
-                                 <RotateCcw size={14} /> 恢复
-                               </SketchButton>
-                             ) : (
-                               <SketchButton
-                                 variant="danger"
-                                 className="h-10 px-3 text-xs flex items-center gap-1"
-                                 onClick={() => handlePostAction(post.id, 'delete', post.content)}
-                               >
-                                 <Trash2 size={14} /> 删除
-                               </SketchButton>
-                             )}
-                           </div>
-                         </div>
-                       </div>
-                     ))}
-                   </div>
-                 )}
+                {postLoading ? (
+                  <div className="text-center py-16 bg-white border-2 border-ink rounded-lg">
+                    <span className="text-6xl mb-4 block">⏳</span>
+                    <h3 className="font-display text-2xl text-ink mb-2">正在加载帖子</h3>
+                    <p className="font-hand text-lg text-pencil">请稍等片刻</p>
+                  </div>
+                ) : postItems.length === 0 ? (
+                  <div className="text-center py-16 bg-white border-2 border-ink rounded-lg">
+                    <span className="text-6xl mb-4 block">🗂️</span>
+                    <h3 className="font-display text-2xl text-ink mb-2">暂无帖子</h3>
+                    <p className="font-hand text-lg text-pencil">调整筛选条件试试</p>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-4">
+                    {postItems.map((post) => (
+                      <div key={post.id} className="bg-white p-5 rounded-lg border-2 border-ink shadow-sketch-sm hover:shadow-sketch transition-all">
+                        <div className="flex flex-col md:flex-row gap-6 justify-between items-start">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-3 flex-wrap">
+                              <span className="bg-gray-100 border border-ink text-ink text-[10px] font-bold px-2 py-0.5 rounded font-sans">ID: #{post.id}</span>
+                              <span className="text-pencil text-xs font-bold font-sans">{post.timestamp}</span>
+                              <Badge color={post.deleted ? 'bg-gray-200' : 'bg-highlight'}>
+                                {post.deleted ? '已删除' : '正常'}
+                              </Badge>
+                              <span className="text-ink text-xs flex items-center gap-1 border border-ink px-2 py-0.5 rounded font-bold font-sans">
+                                举报 {post.reports}
+                              </span>
+                            </div>
+                            <p className="text-ink text-base leading-relaxed font-sans font-semibold line-clamp-2">
+                              "{post.content}"
+                            </p>
+                            <div className="flex flex-wrap items-center gap-4 text-xs text-pencil font-sans mt-3">
+                              <span>点赞 {post.likes}</span>
+                              <span>评论 {post.comments}</span>
+                              <span>举报 {post.reports}</span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 min-w-fit mt-2 md:mt-0 font-sans">
+                            {post.deleted ? (
+                              <SketchButton
+                                variant="secondary"
+                                className="h-10 px-3 text-xs flex items-center gap-1"
+                                onClick={() => handlePostAction(post.id, 'restore', post.content)}
+                              >
+                                <RotateCcw size={14} /> 恢复
+                              </SketchButton>
+                            ) : (
+                              <SketchButton
+                                variant="danger"
+                                className="h-10 px-3 text-xs flex items-center gap-1"
+                                onClick={() => handlePostAction(post.id, 'delete', post.content)}
+                              >
+                                <Trash2 size={14} /> 删除
+                              </SketchButton>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
-                 {postItems.length > 0 && (
-                   <div className="flex items-center justify-center gap-4 mt-6">
-                     <SketchButton
-                       variant="secondary"
-                       className="px-4 py-2 text-sm"
-                       disabled={postPage <= 1}
-                       onClick={() => setPostPage((prev) => Math.max(prev - 1, 1))}
-                     >
-                       上一页
-                     </SketchButton>
-                     <span className="text-xs text-pencil font-sans">第 {postPage} / {totalPostPages} 页</span>
-                     <SketchButton
-                       variant="secondary"
-                       className="px-4 py-2 text-sm"
-                       disabled={postPage >= totalPostPages}
-                       onClick={() => setPostPage((prev) => Math.min(prev + 1, totalPostPages))}
-                     >
-                       下一页
-                     </SketchButton>
-                   </div>
-                 )}
-               </section>
-             )}
+                {postItems.length > 0 && (
+                  <div className="flex items-center justify-center gap-4 mt-6">
+                    <SketchButton
+                      variant="secondary"
+                      className="px-4 py-2 text-sm"
+                      disabled={postPage <= 1}
+                      onClick={() => setPostPage((prev) => Math.max(prev - 1, 1))}
+                    >
+                      上一页
+                    </SketchButton>
+                    <span className="text-xs text-pencil font-sans">第 {postPage} / {totalPostPages} 页</span>
+                    <SketchButton
+                      variant="secondary"
+                      className="px-4 py-2 text-sm"
+                      disabled={postPage >= totalPostPages}
+                      onClick={() => setPostPage((prev) => Math.min(prev + 1, totalPostPages))}
+                    >
+                      下一页
+                    </SketchButton>
+                  </div>
+                )}
+              </section>
+            )}
 
-             {/* Reports View */}
-             {(currentView === 'reports' || currentView === 'processed') && (
+            {/* Reports View */}
+            {(currentView === 'reports' || currentView === 'processed') && (
               <section>
                 <div className="flex items-center justify-between mb-6">
                   <h2 className="text-xl font-display flex items-center gap-2">
@@ -592,7 +594,7 @@ const AdminDashboard: React.FC = () => {
             确定要 <strong className="text-red-600">{getActionLabel(confirmModal.action)}</strong> 吗？
           </p>
           <div className="p-3 bg-gray-50 border border-dashed border-ink rounded-lg">
-            <p className="text-sm text-pencil font-hand line-clamp-2">"{confirmModal.content}"</p>
+            <p className="text-sm text-pencil font-sans line-clamp-2">"{confirmModal.content}"</p>
           </div>
           <div className="flex gap-3 mt-2">
             <SketchButton
@@ -623,7 +625,7 @@ const AdminDashboard: React.FC = () => {
             确定要 <strong className="text-red-600">{getPostActionLabel(postConfirmModal.action)}</strong> 吗？
           </p>
           <div className="p-3 bg-gray-50 border border-dashed border-ink rounded-lg">
-            <p className="text-sm text-pencil font-hand line-clamp-2">"{postConfirmModal.content}"</p>
+            <p className="text-sm text-pencil font-sans line-clamp-2">"{postConfirmModal.content}"</p>
           </div>
           <div className="flex gap-3 mt-2">
             <SketchButton
@@ -679,7 +681,7 @@ const ReportCard: React.FC<{
               </span>
             )}
           </div>
-          <p className="text-ink text-base leading-relaxed font-hand font-bold">
+          <p className="text-ink text-base leading-relaxed font-sans font-semibold">
             "{report.contentSnippet}"
           </p>
         </div>
