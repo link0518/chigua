@@ -53,6 +53,29 @@ export interface AdminPost {
   deleted: boolean;
   deletedAt?: number | null;
   hotScore?: number;
+  sessionId?: string | null;
+  ip?: string | null;
+}
+
+export interface AdminAuditLog {
+  id: number;
+  adminId?: number | null;
+  adminUsername?: string | null;
+  action: string;
+  targetType: string;
+  targetId: string;
+  before?: string | null;
+  after?: string | null;
+  reason?: string | null;
+  ip?: string | null;
+  sessionId?: string | null;
+  createdAt: number;
+}
+
+export interface BanEntry {
+  value: string;
+  bannedAt: number;
+  type: 'session' | 'ip';
 }
 
 export interface ChartDataPoint {

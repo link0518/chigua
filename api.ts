@@ -51,20 +51,38 @@ export const api = {
     method: 'POST',
     body: JSON.stringify({ postId, reason }),
   }),
-  getReports: (status, search) => apiFetch(`/reports${toQuery({ status, search })}`),
-  handleReport: (reportId, action) => apiFetch(`/reports/${reportId}/action`, {
+  getReports: (status?: string, search?: string) => apiFetch(`/reports${toQuery({ status, search })}`),
+  handleReport: (reportId, action, reason = '') => apiFetch(`/reports/${reportId}/action`, {
     method: 'POST',
-    body: JSON.stringify({ action }),
+    body: JSON.stringify({ action, reason }),
   }),
   getAdminPosts: (params = {}) => apiFetch(`/admin/posts${toQuery(params)}`),
   createAdminPost: (content, tags = []) => apiFetch('/admin/posts', {
     method: 'POST',
     body: JSON.stringify({ content, tags }),
   }),
-  handleAdminPost: (postId, action) => apiFetch(`/admin/posts/${postId}/action`, {
+  updateAdminPost: (postId, content, reason = '') => apiFetch(`/admin/posts/${postId}/edit`, {
     method: 'POST',
-    body: JSON.stringify({ action }),
+    body: JSON.stringify({ content, reason }),
   }),
+  batchAdminPosts: (action, postIds, reason = '') => apiFetch('/admin/posts/batch', {
+    method: 'POST',
+    body: JSON.stringify({ action, postIds, reason }),
+  }),
+  handleAdminPost: (postId, action, reason = '') => apiFetch(`/admin/posts/${postId}/action`, {
+    method: 'POST',
+    body: JSON.stringify({ action, reason }),
+  }),
+  batchAdminReports: (action, reportIds, reason = '') => apiFetch('/admin/reports/batch', {
+    method: 'POST',
+    body: JSON.stringify({ action, reportIds, reason }),
+  }),
+  getAdminBans: () => apiFetch('/admin/bans'),
+  handleAdminBan: (action, type, value, reason = '') => apiFetch('/admin/bans/action', {
+    method: 'POST',
+    body: JSON.stringify({ action, type, value, reason }),
+  }),
+  getAdminAuditLogs: (params = {}) => apiFetch(`/admin/audit-logs${toQuery(params)}`),
   getAdminSession: () => apiFetch('/admin/session'),
   adminLogin: (username, password) => apiFetch('/admin/login', {
     method: 'POST',

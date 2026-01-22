@@ -42,7 +42,7 @@ interface AppContextType {
   dislikePost: (postId: string) => Promise<void>;
   deletePost: (postId: string) => void;
   reportPost: (postId: string, reason: string) => Promise<void>;
-  handleReport: (reportId: string, action: 'ignore' | 'delete' | 'ban') => Promise<void>;
+  handleReport: (reportId: string, action: 'ignore' | 'delete' | 'ban', reason?: string) => Promise<void>;
   showToast: (message: string, type?: Toast['type']) => void;
   removeToast: (id: string) => void;
   isLiked: (postId: string) => boolean;
@@ -321,9 +321,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     await api.reportPost(postId, reason);
   }, []);
 
-  const handleReport = useCallback(async (reportId: string, action: 'ignore' | 'delete' | 'ban') => {
+  const handleReport = useCallback(async (reportId: string, action: 'ignore' | 'delete' | 'ban', reason = '') => {
     const report = state.reports.find((item) => item.id === reportId);
-    await api.handleReport(reportId, action);
+    await api.handleReport(reportId, action, reason);
     if (action !== 'ignore' && report?.targetId) {
       deletePost(report.targetId);
     }

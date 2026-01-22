@@ -140,6 +140,48 @@ const getClientIp = (req) => {
   return req.socket?.remoteAddress || req.ip || 'unknown';
 };
 
+const AUDIT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+
+const logAdminAction = (req, payload) => {
+  const admin = req.session?.admin;
+  if (!admin) {
+    return;
+  }
+  const now = Date.now();
+  const beforeJson = payload.before ? JSON.stringify(payload.before) : null;
+  const afterJson = payload.after ? JSON.stringify(payload.after) : null;
+  db.prepare(
+    `
+    INSERT INTO admin_audit_logs (
+      admin_id,
+      admin_username,
+      action,
+      target_type,
+      target_id,
+      before_json,
+      after_json,
+      reason,
+      ip,
+      session_id,
+      created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `
+  ).run(
+    admin.id || null,
+    admin.username || null,
+    payload.action,
+    payload.targetType,
+    payload.targetId,
+    beforeJson,
+    afterJson,
+    payload.reason || null,
+    getClientIp(req),
+    req.sessionID || null,
+    now
+  );
+  db.prepare('DELETE FROM admin_audit_logs WHERE created_at < ?').run(now - AUDIT_RETENTION_MS);
+};
+
 const allowRate = (key, limit, windowMs) => {
   const now = Date.now();
   const bucket = rateBuckets.get(key) || [];
@@ -169,6 +211,22 @@ const enforceRateLimit = (req, res, action) => {
     return false;
   }
   return true;
+};
+
+const isBanned = (sessionId, ip) => {
+  if (sessionId) {
+    const bySession = db.prepare('SELECT 1 FROM banned_sessions WHERE session_id = ?').get(sessionId);
+    if (bySession) {
+      return true;
+    }
+  }
+  if (ip) {
+    const byIp = db.prepare('SELECT 1 FROM banned_ips WHERE ip = ?').get(ip);
+    if (byIp) {
+      return true;
+    }
+  }
+  return false;
 };
 
 const seedSamplePosts = () => {
@@ -381,8 +439,8 @@ app.post('/api/posts', (req, res) => {
     return;
   }
 
-  const banned = db.prepare('SELECT 1 FROM banned_sessions WHERE session_id = ?').get(req.sessionID);
-  if (banned) {
+  const clientIp = getClientIp(req);
+  if (isBanned(req.sessionID, clientIp)) {
     return res.status(403).json({ error: '账号已被封禁，无法投稿' });
   }
 
@@ -391,10 +449,10 @@ app.post('/api/posts', (req, res) => {
 
   db.prepare(
     `
-    INSERT INTO posts (id, content, author, tags, created_at, session_id)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO posts (id, content, author, tags, created_at, session_id, ip)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
     `
-  ).run(postId, content, '匿名', JSON.stringify(tags), now, req.sessionID);
+  ).run(postId, content, '匿名', JSON.stringify(tags), now, req.sessionID, clientIp);
 
   incrementDailyStat(formatDateKey(), 'posts', 1);
 
@@ -575,8 +633,8 @@ app.post('/api/posts/:id/comments', (req, res) => {
     return;
   }
 
-  const banned = db.prepare('SELECT 1 FROM banned_sessions WHERE session_id = ?').get(req.sessionID);
-  if (banned) {
+  const clientIp = getClientIp(req);
+  if (isBanned(req.sessionID, clientIp)) {
     return res.status(403).json({ error: '账号已被封禁，无法评论' });
   }
 
@@ -700,6 +758,7 @@ app.get('/api/reports', requireAdmin, (req, res) => {
 app.post('/api/reports/:id/action', requireAdmin, (req, res) => {
   const reportId = req.params.id;
   const action = String(req.body?.action || '').trim();
+  const reason = String(req.body?.reason || '').trim();
 
   if (!['ignore', 'delete', 'ban'].includes(action)) {
     return res.status(400).json({ error: '无效操作' });
@@ -718,21 +777,102 @@ app.post('/api/reports/:id/action', requireAdmin, (req, res) => {
   ).run(nextStatus, action, now, reportId);
 
   if (action === 'delete' || action === 'ban') {
-    const post = db.prepare('SELECT session_id FROM posts WHERE id = ?').get(report.post_id);
+    const post = db.prepare('SELECT session_id, ip FROM posts WHERE id = ?').get(report.post_id);
     db.prepare('UPDATE posts SET deleted = 1, deleted_at = ? WHERE id = ?').run(now, report.post_id);
 
     if (action === 'ban' && post?.session_id) {
       db.prepare('INSERT OR IGNORE INTO banned_sessions (session_id, banned_at) VALUES (?, ?)')
         .run(post.session_id, now);
     }
+    if (action === 'ban' && post?.ip) {
+      db.prepare('INSERT OR IGNORE INTO banned_ips (ip, banned_at) VALUES (?, ?)')
+        .run(post.ip, now);
+    }
+  }
+
+  logAdminAction(req, {
+    action: `report_${action}`,
+    targetType: 'report',
+    targetId: reportId,
+    before: { status: report.status, action: report.action || null },
+    after: { status: nextStatus, action },
+    reason,
+  });
+
+  if (action === 'ban') {
+    const post = db.prepare('SELECT session_id, ip FROM posts WHERE id = ?').get(report.post_id);
+    if (post?.session_id) {
+      logAdminAction(req, {
+        action: 'ban_session',
+        targetType: 'session',
+        targetId: post.session_id,
+        before: null,
+        after: { banned: true },
+        reason,
+      });
+    }
+    if (post?.ip) {
+      logAdminAction(req, {
+        action: 'ban_ip',
+        targetType: 'ip',
+        targetId: post.ip,
+        before: null,
+        after: { banned: true },
+        reason,
+      });
+    }
   }
 
   return res.json({ status: nextStatus, action });
 });
 
+app.post('/api/admin/reports/batch', requireAdmin, (req, res) => {
+  const action = String(req.body?.action || '').trim();
+  const reason = String(req.body?.reason || '').trim();
+  const reportIds = Array.isArray(req.body?.reportIds) ? req.body.reportIds : [];
+
+  if (action !== 'resolve') {
+    return res.status(400).json({ error: '无效操作' });
+  }
+
+  const ids = Array.from(new Set(reportIds.map((id) => String(id || '').trim()).filter(Boolean)));
+  if (!ids.length) {
+    return res.status(400).json({ error: '未选择举报' });
+  }
+  if (ids.length > 200) {
+    return res.status(400).json({ error: '批量操作数量过多' });
+  }
+
+  const placeholders = ids.map(() => '?').join(',');
+  const rows = db
+    .prepare(`SELECT id, status, action FROM reports WHERE id IN (${placeholders})`)
+    .all(...ids);
+
+  const now = Date.now();
+  const result = db
+    .prepare(`UPDATE reports SET status = 'resolved', action = 'reviewed', resolved_at = ? WHERE id IN (${placeholders}) AND status = 'pending'`)
+    .run(now, ...ids);
+
+  rows
+    .filter((row) => row.status === 'pending')
+    .forEach((row) => {
+      logAdminAction(req, {
+        action: 'report_resolve',
+        targetType: 'report',
+        targetId: row.id,
+        before: { status: row.status, action: row.action || null },
+        after: { status: 'resolved', action: 'reviewed' },
+        reason,
+      });
+    });
+
+  return res.json({ updated: result.changes || 0 });
+});
+
 app.post('/api/admin/posts', requireAdmin, (req, res) => {
   const content = String(req.body?.content || '').trim();
   const tags = Array.isArray(req.body?.tags) ? req.body.tags : [];
+  const reason = String(req.body?.reason || '').trim();
 
   if (!content) {
     return res.status(400).json({ error: '内容不能为空' });
@@ -746,8 +886,8 @@ app.post('/api/admin/posts', requireAdmin, (req, res) => {
     return res.status(400).json({ error: '内容包含敏感词，请修改后再提交' });
   }
 
-  const banned = db.prepare('SELECT 1 FROM banned_sessions WHERE session_id = ?').get(req.sessionID);
-  if (banned) {
+  const clientIp = getClientIp(req);
+  if (isBanned(req.sessionID, clientIp)) {
     return res.status(403).json({ error: '账号已被封禁，无法投稿' });
   }
 
@@ -756,10 +896,10 @@ app.post('/api/admin/posts', requireAdmin, (req, res) => {
 
   db.prepare(
     `
-    INSERT INTO posts (id, content, author, tags, created_at, session_id)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO posts (id, content, author, tags, created_at, session_id, ip)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
     `
-  ).run(postId, content, '匿名', JSON.stringify(tags), now, req.sessionID);
+  ).run(postId, content, '匿名', JSON.stringify(tags), now, req.sessionID, clientIp);
 
   incrementDailyStat(formatDateKey(), 'posts', 1);
 
@@ -776,7 +916,205 @@ app.post('/api/admin/posts', requireAdmin, (req, res) => {
     )
     .get(req.sessionID, postId);
 
+  logAdminAction(req, {
+    action: 'post_create',
+    targetType: 'post',
+    targetId: postId,
+    before: null,
+    after: { content },
+    reason,
+  });
+
   return res.status(201).json({ post: mapPostRow(row, false) });
+});
+
+app.post('/api/admin/posts/:id/edit', requireAdmin, (req, res) => {
+  const postId = String(req.params.id || '').trim();
+  const content = String(req.body?.content || '').trim();
+  const reason = String(req.body?.reason || '').trim();
+
+  if (!postId) {
+    return res.status(400).json({ error: '帖子不存在' });
+  }
+
+  if (!content) {
+    return res.status(400).json({ error: '内容不能为空' });
+  }
+
+  if (content.length > 2000) {
+    return res.status(400).json({ error: '内容超过字数限制' });
+  }
+
+  if (containsSensitiveWord(content)) {
+    return res.status(400).json({ error: '内容包含敏感词，请修改后再提交' });
+  }
+
+  const existing = db.prepare('SELECT id, content, deleted FROM posts WHERE id = ?').get(postId);
+  if (!existing) {
+    return res.status(404).json({ error: '帖子不存在' });
+  }
+
+  if (existing.content === content) {
+    return res.json({ id: postId, content });
+  }
+
+  const now = Date.now();
+  const editId = crypto.randomUUID();
+  const admin = req.session?.admin;
+
+  db.prepare('UPDATE posts SET content = ?, updated_at = ? WHERE id = ?')
+    .run(content, now, postId);
+
+  db.prepare(
+    `
+    INSERT INTO post_edits (
+      id,
+      post_id,
+      editor_id,
+      editor_username,
+      before_content,
+      after_content,
+      created_at,
+      reason
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `
+  ).run(
+    editId,
+    postId,
+    admin?.id || null,
+    admin?.username || null,
+    existing.content,
+    content,
+    now,
+    reason || null
+  );
+
+  logAdminAction(req, {
+    action: 'post_edit',
+    targetType: 'post',
+    targetId: postId,
+    before: { content: existing.content },
+    after: { content },
+    reason,
+  });
+
+  return res.json({ id: postId, content });
+});
+
+app.post('/api/admin/posts/batch', requireAdmin, (req, res) => {
+  const action = String(req.body?.action || '').trim();
+  const reason = String(req.body?.reason || '').trim();
+  const postIds = Array.isArray(req.body?.postIds) ? req.body.postIds : [];
+
+  if (!['delete', 'restore', 'ban', 'unban'].includes(action)) {
+    return res.status(400).json({ error: '无效操作' });
+  }
+
+  const ids = Array.from(new Set(postIds.map((id) => String(id || '').trim()).filter(Boolean)));
+  if (!ids.length) {
+    return res.status(400).json({ error: '未选择帖子' });
+  }
+  if (ids.length > 100) {
+    return res.status(400).json({ error: '批量操作数量过多' });
+  }
+
+  const placeholders = ids.map(() => '?').join(',');
+  const rows = db
+    .prepare(`SELECT id, content, deleted, session_id, ip FROM posts WHERE id IN (${placeholders})`)
+    .all(...ids);
+
+  const now = Date.now();
+
+  if (action === 'delete' || action === 'restore') {
+    const deleted = action === 'delete' ? 1 : 0;
+    const deletedAt = action === 'delete' ? now : null;
+    db.prepare(`UPDATE posts SET deleted = ?, deleted_at = ? WHERE id IN (${placeholders})`)
+      .run(deleted, deletedAt, ...ids);
+
+    rows.forEach((row) => {
+      logAdminAction(req, {
+        action: action === 'delete' ? 'post_delete' : 'post_restore',
+        targetType: 'post',
+        targetId: row.id,
+        before: { deleted: row.deleted === 1 },
+        after: { deleted: action === 'delete' },
+        reason,
+      });
+    });
+
+    return res.json({ updated: rows.length });
+  }
+
+  const sessionIds = Array.from(new Set(rows.map((row) => row.session_id).filter(Boolean)));
+  const ips = Array.from(new Set(rows.map((row) => row.ip).filter(Boolean)));
+
+  if (action === 'ban') {
+    sessionIds.forEach((sessionId) => {
+      db.prepare('INSERT OR IGNORE INTO banned_sessions (session_id, banned_at) VALUES (?, ?)')
+        .run(sessionId, now);
+      logAdminAction(req, {
+        action: 'ban_session',
+        targetType: 'session',
+        targetId: sessionId,
+        before: null,
+        after: { banned: true },
+        reason,
+      });
+    });
+    ips.forEach((ip) => {
+      db.prepare('INSERT OR IGNORE INTO banned_ips (ip, banned_at) VALUES (?, ?)')
+        .run(ip, now);
+      logAdminAction(req, {
+        action: 'ban_ip',
+        targetType: 'ip',
+        targetId: ip,
+        before: null,
+        after: { banned: true },
+        reason,
+      });
+    });
+    logAdminAction(req, {
+      action: 'post_batch_ban',
+      targetType: 'post_batch',
+      targetId: ids.join(','),
+      before: null,
+      after: { posts: ids.length, sessions: sessionIds.length, ips: ips.length },
+      reason,
+    });
+    return res.json({ updated: ids.length, sessions: sessionIds.length, ips: ips.length });
+  }
+
+  sessionIds.forEach((sessionId) => {
+    db.prepare('DELETE FROM banned_sessions WHERE session_id = ?').run(sessionId);
+    logAdminAction(req, {
+      action: 'unban_session',
+      targetType: 'session',
+      targetId: sessionId,
+      before: { banned: true },
+      after: { banned: false },
+      reason,
+    });
+  });
+  ips.forEach((ip) => {
+    db.prepare('DELETE FROM banned_ips WHERE ip = ?').run(ip);
+    logAdminAction(req, {
+      action: 'unban_ip',
+      targetType: 'ip',
+      targetId: ip,
+      before: { banned: true },
+      after: { banned: false },
+      reason,
+    });
+  });
+  logAdminAction(req, {
+    action: 'post_batch_unban',
+    targetType: 'post_batch',
+    targetId: ids.join(','),
+    before: null,
+    after: { posts: ids.length, sessions: sessionIds.length, ips: ips.length },
+    reason,
+  });
+  return res.json({ updated: ids.length, sessions: sessionIds.length, ips: ips.length });
 });
 
 app.get('/api/admin/posts', requireAdmin, (req, res) => {
@@ -843,6 +1181,148 @@ app.get('/api/admin/posts', requireAdmin, (req, res) => {
     deleted: row.deleted === 1,
     deletedAt: row.deleted_at || null,
     hotScore: row.hot_score,
+    sessionId: row.session_id || null,
+    ip: row.ip || null,
+  }));
+
+  return res.json({
+    items,
+    total: totalRow?.count || 0,
+    page,
+    limit,
+  });
+});
+
+app.get('/api/admin/bans', requireAdmin, (req, res) => {
+  const sessions = db
+    .prepare('SELECT session_id, banned_at FROM banned_sessions ORDER BY banned_at DESC')
+    .all()
+    .map((row) => ({
+      sessionId: row.session_id,
+      bannedAt: row.banned_at,
+    }));
+
+  const ips = db
+    .prepare('SELECT ip, banned_at FROM banned_ips ORDER BY banned_at DESC')
+    .all()
+    .map((row) => ({
+      ip: row.ip,
+      bannedAt: row.banned_at,
+    }));
+
+  return res.json({ sessions, ips });
+});
+
+app.post('/api/admin/bans/action', requireAdmin, (req, res) => {
+  const action = String(req.body?.action || '').trim();
+  const type = String(req.body?.type || '').trim();
+  const value = String(req.body?.value || '').trim();
+  const reason = String(req.body?.reason || '').trim();
+
+  if (!['ban', 'unban'].includes(action) || !['session', 'ip'].includes(type) || !value) {
+    return res.status(400).json({ error: '无效操作' });
+  }
+
+  const now = Date.now();
+  if (type === 'session') {
+    if (action === 'ban') {
+      db.prepare('INSERT OR IGNORE INTO banned_sessions (session_id, banned_at) VALUES (?, ?)')
+        .run(value, now);
+      logAdminAction(req, {
+        action: 'ban_session',
+        targetType: 'session',
+        targetId: value,
+        before: null,
+        after: { banned: true },
+        reason,
+      });
+    } else {
+      db.prepare('DELETE FROM banned_sessions WHERE session_id = ?').run(value);
+      logAdminAction(req, {
+        action: 'unban_session',
+        targetType: 'session',
+        targetId: value,
+        before: { banned: true },
+        after: { banned: false },
+        reason,
+      });
+    }
+  } else {
+    if (action === 'ban') {
+      db.prepare('INSERT OR IGNORE INTO banned_ips (ip, banned_at) VALUES (?, ?)')
+        .run(value, now);
+      logAdminAction(req, {
+        action: 'ban_ip',
+        targetType: 'ip',
+        targetId: value,
+        before: null,
+        after: { banned: true },
+        reason,
+      });
+    } else {
+      db.prepare('DELETE FROM banned_ips WHERE ip = ?').run(value);
+      logAdminAction(req, {
+        action: 'unban_ip',
+        targetType: 'ip',
+        targetId: value,
+        before: { banned: true },
+        after: { banned: false },
+        reason,
+      });
+    }
+  }
+
+  return res.json({ ok: true });
+});
+
+app.get('/api/admin/audit-logs', requireAdmin, (req, res) => {
+  const search = String(req.query.search || '').trim();
+  const page = Math.max(Number(req.query.page || 1), 1);
+  const limit = Math.min(Math.max(Number(req.query.limit || 20), 1), 100);
+  const offset = (page - 1) * limit;
+  const now = Date.now();
+  db.prepare('DELETE FROM admin_audit_logs WHERE created_at < ?').run(now - AUDIT_RETENTION_MS);
+
+  const conditions = [];
+  const params = [];
+
+  if (search) {
+    conditions.push('(admin_username LIKE ? OR action LIKE ? OR target_id LIKE ? OR target_type LIKE ?)');
+    const keyword = `%${search}%`;
+    params.push(keyword, keyword, keyword, keyword);
+  }
+
+  const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+  const rows = db
+    .prepare(
+      `
+      SELECT *
+      FROM admin_audit_logs
+      ${whereClause}
+      ORDER BY created_at DESC
+      LIMIT ? OFFSET ?
+      `
+    )
+    .all(...params, limit, offset);
+
+  const totalRow = db
+    .prepare(`SELECT COUNT(1) AS count FROM admin_audit_logs ${whereClause}`)
+    .get(...params);
+
+  const items = rows.map((row) => ({
+    id: row.id,
+    adminId: row.admin_id,
+    adminUsername: row.admin_username,
+    action: row.action,
+    targetType: row.target_type,
+    targetId: row.target_id,
+    before: row.before_json,
+    after: row.after_json,
+    reason: row.reason,
+    ip: row.ip,
+    sessionId: row.session_id,
+    createdAt: row.created_at,
   }));
 
   return res.json({
@@ -856,6 +1336,7 @@ app.get('/api/admin/posts', requireAdmin, (req, res) => {
 app.post('/api/admin/posts/:id/action', requireAdmin, (req, res) => {
   const postId = String(req.params.id || '').trim();
   const action = String(req.body?.action || '').trim();
+  const reason = String(req.body?.reason || '').trim();
 
   if (!postId) {
     return res.status(400).json({ error: '帖子不存在' });
@@ -865,7 +1346,7 @@ app.post('/api/admin/posts/:id/action', requireAdmin, (req, res) => {
     return res.status(400).json({ error: '无效操作' });
   }
 
-  const existing = db.prepare('SELECT id FROM posts WHERE id = ?').get(postId);
+  const existing = db.prepare('SELECT id, deleted FROM posts WHERE id = ?').get(postId);
   if (!existing) {
     return res.status(404).json({ error: '帖子不存在' });
   }
@@ -878,6 +1359,15 @@ app.post('/api/admin/posts/:id/action', requireAdmin, (req, res) => {
     db.prepare('UPDATE posts SET deleted = 0, deleted_at = NULL WHERE id = ?')
       .run(postId);
   }
+
+  logAdminAction(req, {
+    action: action === 'delete' ? 'post_delete' : 'post_restore',
+    targetType: 'post',
+    targetId: postId,
+    before: { deleted: existing.deleted === 1 },
+    after: { deleted: action === 'delete' },
+    reason,
+  });
 
   return res.json({ id: postId, deleted: action === 'delete' });
 });
@@ -938,7 +1428,9 @@ app.get('/api/admin/stats', requireAdmin, (req, res) => {
   });
 
   const totalPosts = db.prepare('SELECT COUNT(1) AS count FROM posts WHERE deleted = 0').get().count;
-  const bannedUsers = db.prepare('SELECT COUNT(1) AS count FROM banned_sessions').get().count;
+  const bannedSessions = db.prepare('SELECT COUNT(1) AS count FROM banned_sessions').get().count;
+  const bannedIps = db.prepare('SELECT COUNT(1) AS count FROM banned_ips').get().count;
+  const bannedUsers = bannedSessions + bannedIps;
 
   return res.json({
     todayReports: todayStats?.reports || 0,

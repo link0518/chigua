@@ -90,6 +90,38 @@ CREATE TABLE IF NOT EXISTS banned_sessions (
   banned_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS banned_ips (
+  ip TEXT PRIMARY KEY,
+  banned_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS post_edits (
+  id TEXT PRIMARY KEY,
+  post_id TEXT NOT NULL,
+  editor_id INTEGER,
+  editor_username TEXT,
+  before_content TEXT NOT NULL,
+  after_content TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  reason TEXT,
+  FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS admin_audit_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  admin_id INTEGER,
+  admin_username TEXT,
+  action TEXT NOT NULL,
+  target_type TEXT NOT NULL,
+  target_id TEXT NOT NULL,
+  before_json TEXT,
+  after_json TEXT,
+  reason TEXT,
+  ip TEXT,
+  session_id TEXT,
+  created_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS stats_daily (
   date TEXT PRIMARY KEY,
   visits INTEGER NOT NULL DEFAULT 0,
@@ -108,7 +140,21 @@ CREATE INDEX IF NOT EXISTS idx_posts_deleted ON posts(deleted);
 CREATE INDEX IF NOT EXISTS idx_comments_post_id ON comments(post_id);
 CREATE INDEX IF NOT EXISTS idx_comments_created_at ON comments(created_at);
 CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status);
+CREATE INDEX IF NOT EXISTS idx_post_edits_post_id ON post_edits(post_id);
+CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_created_at ON admin_audit_logs(created_at);
+CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_action ON admin_audit_logs(action);
+CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_target ON admin_audit_logs(target_type, target_id);
 `);
+
+const ensureColumn = (table, column, definition) => {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all();
+  const exists = columns.some((col) => col.name === column);
+  if (!exists) {
+    db.prepare(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`).run();
+  }
+};
+
+ensureColumn('posts', 'ip', 'TEXT');
 
 export const formatDateKey = (date = new Date()) => {
   const year = date.getFullYear();

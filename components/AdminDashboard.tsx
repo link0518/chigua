@@ -3,20 +3,21 @@ import {
   BarChart, Bar, XAxis, Tooltip, ResponsiveContainer,
   LineChart, Line
 } from 'recharts';
-import { Flag, Gavel, BarChart2, Bell, Search, Trash2, Ban, Eye, EyeOff, LayoutDashboard, LogOut, CheckCircle, XCircle, FileText, PenSquare, RotateCcw } from 'lucide-react';
+import { Flag, Gavel, BarChart2, Bell, Search, Trash2, Ban, Eye, EyeOff, LayoutDashboard, LogOut, CheckCircle, XCircle, FileText, PenSquare, Pencil, RotateCcw, Shield, ClipboardList } from 'lucide-react';
 import { SketchButton, Badge, roughBorderClassSm } from './SketchUI';
-import { AdminPost, Report } from '../types';
+import { AdminAuditLog, AdminPost, Report } from '../types';
 import { useApp } from '../store/AppContext';
 import Modal from './Modal';
 import { api } from '../api';
 import MarkdownRenderer from './MarkdownRenderer';
 
-type AdminView = 'overview' | 'reports' | 'processed' | 'stats' | 'posts' | 'compose';
+type AdminView = 'overview' | 'reports' | 'processed' | 'stats' | 'posts' | 'compose' | 'bans' | 'audit';
 type PostStatusFilter = 'all' | 'active' | 'deleted';
 type PostSort = 'time' | 'hot' | 'reports';
 
 const WEEK_DAYS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
 const POST_PAGE_SIZE = 10;
+const AUDIT_PAGE_SIZE = 12;
 
 const StatCard: React.FC<{ title: string; value: string; trend: string; trendUp: boolean; icon: React.ReactNode; color?: string }> = ({ title, value, trend, trendUp, icon, color = 'bg-white' }) => (
   <div className={`${color} p-6 border-2 border-ink shadow-sketch relative overflow-hidden group hover:-translate-y-1 transition-transform duration-200 sticky-curl ${roughBorderClassSm}`}>
@@ -44,21 +45,50 @@ const AdminDashboard: React.FC = () => {
   const [postTotal, setPostTotal] = useState(0);
   const [postItems, setPostItems] = useState<AdminPost[]>([]);
   const [postLoading, setPostLoading] = useState(false);
+  const [selectedPosts, setSelectedPosts] = useState<Set<string>>(new Set());
+  const [selectedReports, setSelectedReports] = useState<Set<string>>(new Set());
   const [composeText, setComposeText] = useState('');
   const [composePreview, setComposePreview] = useState(false);
   const [composeSubmitting, setComposeSubmitting] = useState(false);
+  const [editModal, setEditModal] = useState<{
+    isOpen: boolean;
+    postId: string;
+    content: string;
+    preview: boolean;
+    reason: string;
+  }>({ isOpen: false, postId: '', content: '', preview: false, reason: '' });
+  const [bulkPostModal, setBulkPostModal] = useState<{
+    isOpen: boolean;
+    action: 'delete' | 'restore' | 'ban' | 'unban';
+    reason: string;
+  }>({ isOpen: false, action: 'delete', reason: '' });
+  const [bulkReportModal, setBulkReportModal] = useState<{
+    isOpen: boolean;
+    reason: string;
+  }>({ isOpen: false, reason: '' });
+  const [bannedSessions, setBannedSessions] = useState<Array<{ sessionId: string; bannedAt: number }>>([]);
+  const [bannedIps, setBannedIps] = useState<Array<{ ip: string; bannedAt: number }>>([]);
+  const [banLoading, setBanLoading] = useState(false);
+  const [auditLogs, setAuditLogs] = useState<AdminAuditLog[]>([]);
+  const [auditSearch, setAuditSearch] = useState('');
+  const [auditPage, setAuditPage] = useState(1);
+  const [auditTotal, setAuditTotal] = useState(0);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditDetail, setAuditDetail] = useState<{ isOpen: boolean; log: AdminAuditLog | null }>({ isOpen: false, log: null });
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
     reportId: string;
     action: 'ignore' | 'delete' | 'ban';
     content: string;
-  }>({ isOpen: false, reportId: '', action: 'ignore', content: '' });
+    reason: string;
+  }>({ isOpen: false, reportId: '', action: 'ignore', content: '', reason: '' });
   const [postConfirmModal, setPostConfirmModal] = useState<{
     isOpen: boolean;
     postId: string;
     action: 'delete' | 'restore';
     content: string;
-  }>({ isOpen: false, postId: '', action: 'delete', content: '' });
+    reason: string;
+  }>({ isOpen: false, postId: '', action: 'delete', content: '', reason: '' });
   const composeMaxLength = 2000;
 
   useEffect(() => {
@@ -114,6 +144,38 @@ const AdminDashboard: React.FC = () => {
     }
   }, [postPage, postSearch, postSort, postStatus, showToast]);
 
+  const fetchBans = useCallback(async () => {
+    setBanLoading(true);
+    try {
+      const data = await api.getAdminBans();
+      setBannedSessions(data.sessions || []);
+      setBannedIps(data.ips || []);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '封禁列表加载失败';
+      showToast(message, 'error');
+    } finally {
+      setBanLoading(false);
+    }
+  }, [showToast]);
+
+  const fetchAuditLogs = useCallback(async () => {
+    setAuditLoading(true);
+    try {
+      const data = await api.getAdminAuditLogs({
+        search: auditSearch.trim(),
+        page: auditPage,
+        limit: AUDIT_PAGE_SIZE,
+      });
+      setAuditLogs(data.items || []);
+      setAuditTotal(data.total || 0);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '审计日志加载失败';
+      showToast(message, 'error');
+    } finally {
+      setAuditLoading(false);
+    }
+  }, [auditPage, auditSearch, showToast]);
+
   useEffect(() => {
     if (currentView !== 'posts') {
       return;
@@ -124,21 +186,46 @@ const AdminDashboard: React.FC = () => {
     return () => clearTimeout(timer);
   }, [currentView, fetchAdminPosts]);
 
+  useEffect(() => {
+    if (currentView !== 'bans') {
+      return;
+    }
+    fetchBans().catch(() => { });
+  }, [currentView, fetchBans]);
+
+  useEffect(() => {
+    if (currentView !== 'audit') {
+      return;
+    }
+    const timer = setTimeout(() => {
+      fetchAuditLogs().catch(() => { });
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [currentView, fetchAuditLogs]);
+
+  useEffect(() => {
+    setSelectedPosts(new Set());
+  }, [postItems]);
+
+  useEffect(() => {
+    setSelectedReports(new Set());
+  }, [currentView, searchQuery, state.reports]);
+
   const handleAction = (reportId: string, action: 'ignore' | 'delete' | 'ban', content: string) => {
-    setConfirmModal({ isOpen: true, reportId, action, content });
+    setConfirmModal({ isOpen: true, reportId, action, content, reason: '' });
   };
 
   const confirmAction = async () => {
-    const { reportId, action } = confirmModal;
+    const { reportId, action, reason } = confirmModal;
     try {
-      await handleReport(reportId, action);
+      await handleReport(reportId, action, reason);
       const messages = {
         ignore: '已忽略该举报',
         delete: '已删除该内容',
         ban: '已封禁用户并删除内容',
       };
       showToast(messages[action], action === 'ignore' ? 'info' : 'success');
-      setConfirmModal({ isOpen: false, reportId: '', action: 'ignore', content: '' });
+      setConfirmModal({ isOpen: false, reportId: '', action: 'ignore', content: '', reason: '' });
     } catch (error) {
       const message = error instanceof Error ? error.message : '处理失败，请稍后重试';
       showToast(message, 'error');
@@ -154,16 +241,17 @@ const AdminDashboard: React.FC = () => {
   };
 
   const handlePostAction = (postId: string, action: 'delete' | 'restore', content: string) => {
-    setPostConfirmModal({ isOpen: true, postId, action, content });
+    setPostConfirmModal({ isOpen: true, postId, action, content, reason: '' });
   };
 
   const confirmPostAction = async () => {
-    const { postId, action } = postConfirmModal;
+    const { postId, action, reason } = postConfirmModal;
     try {
-      await api.handleAdminPost(postId, action);
+      await api.handleAdminPost(postId, action, reason);
       showToast(action === 'delete' ? '帖子已删除' : '帖子已恢复', 'success');
-      setPostConfirmModal({ isOpen: false, postId: '', action: 'delete', content: '' });
+      setPostConfirmModal({ isOpen: false, postId: '', action: 'delete', content: '', reason: '' });
       await fetchAdminPosts();
+      await loadStats();
     } catch (error) {
       const message = error instanceof Error ? error.message : '操作失败，请稍后重试';
       showToast(message, 'error');
@@ -171,6 +259,171 @@ const AdminDashboard: React.FC = () => {
   };
 
   const getPostActionLabel = (action: 'delete' | 'restore') => (action === 'delete' ? '删除帖子' : '恢复帖子');
+  const getBulkActionLabel = (action: 'delete' | 'restore' | 'ban' | 'unban') => {
+    switch (action) {
+      case 'delete':
+        return '删除';
+      case 'restore':
+        return '恢复';
+      case 'ban':
+        return '封禁';
+      case 'unban':
+        return '解封';
+      default:
+        return action;
+    }
+  };
+
+  const formatTimestamp = (timestamp?: number) => {
+    if (!timestamp) return '-';
+    return new Date(timestamp).toLocaleString('zh-CN');
+  };
+
+  const formatAuditJson = (value?: string | null) => {
+    if (!value) return '—';
+    try {
+      return JSON.stringify(JSON.parse(value), null, 2);
+    } catch {
+      return value;
+    }
+  };
+
+  const togglePostSelection = (postId: string) => {
+    setSelectedPosts((prev) => {
+      const next = new Set(prev);
+      if (next.has(postId)) {
+        next.delete(postId);
+      } else {
+        next.add(postId);
+      }
+      return next;
+    });
+  };
+
+  const toggleAllPosts = () => {
+    if (postItems.length === 0) {
+      return;
+    }
+    setSelectedPosts((prev) => {
+      const allSelected = postItems.every((post) => prev.has(post.id));
+      if (allSelected) {
+        return new Set();
+      }
+      return new Set(postItems.map((post) => post.id));
+    });
+  };
+
+  const toggleReportSelection = (reportId: string) => {
+    setSelectedReports((prev) => {
+      const next = new Set(prev);
+      if (next.has(reportId)) {
+        next.delete(reportId);
+      } else {
+        next.add(reportId);
+      }
+      return next;
+    });
+  };
+
+  const toggleAllReports = (reportIds: string[]) => {
+    if (reportIds.length === 0) {
+      return;
+    }
+    setSelectedReports((prev) => {
+      const allSelected = reportIds.every((id) => prev.has(id));
+      if (allSelected) {
+        return new Set();
+      }
+      return new Set(reportIds);
+    });
+  };
+
+  const openBulkPostModal = (action: 'delete' | 'restore' | 'ban' | 'unban') => {
+    if (selectedPosts.size === 0) {
+      showToast('请先选择帖子', 'warning');
+      return;
+    }
+    setBulkPostModal({ isOpen: true, action, reason: '' });
+  };
+
+  const confirmBulkPostAction = async () => {
+    const { action, reason } = bulkPostModal;
+    const ids = Array.from(selectedPosts);
+    try {
+      await api.batchAdminPosts(action, ids, reason);
+      showToast('批量操作已完成', 'success');
+      setSelectedPosts(new Set());
+      setBulkPostModal({ isOpen: false, action: 'delete', reason: '' });
+      await fetchAdminPosts();
+      await loadStats();
+      if (currentView === 'bans') {
+        fetchBans().catch(() => { });
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '批量操作失败';
+      showToast(message, 'error');
+    }
+  };
+
+  const openBulkReportModal = () => {
+    if (selectedReports.size === 0) {
+      showToast('请先选择举报', 'warning');
+      return;
+    }
+    setBulkReportModal({ isOpen: true, reason: '' });
+  };
+
+  const confirmBulkReportAction = async () => {
+    const ids = Array.from(selectedReports);
+    try {
+      await api.batchAdminReports('resolve', ids, bulkReportModal.reason);
+      showToast('已标记处理', 'success');
+      setSelectedReports(new Set());
+      setBulkReportModal({ isOpen: false, reason: '' });
+      await loadReports();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '批量处理失败';
+      showToast(message, 'error');
+    }
+  };
+
+  const openEditModal = (post: AdminPost) => {
+    setEditModal({ isOpen: true, postId: post.id, content: post.content, preview: false, reason: '' });
+  };
+
+  const confirmEdit = async () => {
+    const { postId, content, reason } = editModal;
+    const trimmed = content.trim();
+    if (!trimmed) {
+      showToast('内容不能为空哦！', 'warning');
+      return;
+    }
+    if (trimmed.length > composeMaxLength) {
+      showToast('内容超过字数限制！', 'error');
+      return;
+    }
+    try {
+      await api.updateAdminPost(postId, trimmed, reason);
+      showToast('帖子已更新', 'success');
+      setEditModal({ isOpen: false, postId: '', content: '', preview: false, reason: '' });
+      await fetchAdminPosts();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '编辑失败，请稍后重试';
+      showToast(message, 'error');
+    }
+  };
+
+  const handleUnban = async (type: 'session' | 'ip', value: string) => {
+    try {
+      await api.handleAdminBan('unban', type, value);
+      showToast('已解除封禁', 'success');
+      await fetchBans();
+      await loadStats();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '解封失败';
+      showToast(message, 'error');
+    }
+  };
 
   const handleComposeSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -217,6 +470,9 @@ const AdminDashboard: React.FC = () => {
   const totalPostPages = Math.max(Math.ceil(postTotal / POST_PAGE_SIZE), 1);
   const isReportView = currentView === 'reports' || currentView === 'processed';
   const isPostView = currentView === 'posts';
+  const isBanView = currentView === 'bans';
+  const isAuditView = currentView === 'audit';
+  const totalAuditPages = Math.max(Math.ceil(auditTotal / AUDIT_PAGE_SIZE), 1);
 
   return (
     <div className="flex min-h-screen bg-paper overflow-hidden">
@@ -239,6 +495,8 @@ const AdminDashboard: React.FC = () => {
             <NavItem view="compose" icon={<PenSquare size={18} />} label="后台投稿" />
             <NavItem view="reports" icon={<Flag size={18} />} label="待处理举报" badge={pendingReports.length} />
             <NavItem view="processed" icon={<Gavel size={18} />} label="已处理" badge={processedReports.length} />
+            <NavItem view="bans" icon={<Shield size={18} />} label="封禁管理" />
+            <NavItem view="audit" icon={<ClipboardList size={18} />} label="操作审计" />
             <NavItem view="stats" icon={<BarChart2 size={18} />} label="数据统计" />
           </nav>
         </div>
@@ -264,24 +522,29 @@ const AdminDashboard: React.FC = () => {
             {currentView === 'compose' && <><PenSquare /> 后台投稿</>}
             {currentView === 'reports' && <><Flag /> 待处理举报</>}
             {currentView === 'processed' && <><Gavel /> 已处理</>}
+            {currentView === 'bans' && <><Shield /> 封禁管理</>}
+            {currentView === 'audit' && <><ClipboardList /> 操作审计</>}
             {currentView === 'stats' && <><BarChart2 /> 数据统计</>}
           </h2>
           <div className="flex items-center gap-4">
-            {(isReportView || isPostView) && (
+            {(isReportView || isPostView || isAuditView) && (
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-pencil w-4 h-4" />
                 <input
                   type="text"
-                  value={isPostView ? postSearch : searchQuery}
+                  value={isPostView ? postSearch : isAuditView ? auditSearch : searchQuery}
                   onChange={(e) => {
                     if (isPostView) {
                       setPostSearch(e.target.value);
                       setPostPage(1);
+                    } else if (isAuditView) {
+                      setAuditSearch(e.target.value);
+                      setAuditPage(1);
                     } else {
                       setSearchQuery(e.target.value);
                     }
                   }}
-                  placeholder={isPostView ? '搜索帖子内容...' : '搜索 ID 或内容...'}
+                  placeholder={isPostView ? '搜索帖子内容...' : isAuditView ? '搜索操作/目标/管理员...' : '搜索 ID 或内容...'}
                   className="pl-9 pr-4 py-2 rounded-full border-2 border-ink bg-white text-sm focus:shadow-sketch-sm outline-none transition-all w-64 font-sans"
                 />
               </div>
@@ -402,6 +665,7 @@ const AdminDashboard: React.FC = () => {
                           report={report}
                           onAction={handleAction}
                           showStatus={false}
+                          selectable={false}
                         />
                       ))}
                     </div>
@@ -450,6 +714,52 @@ const AdminDashboard: React.FC = () => {
                     <span>共 {postTotal} 条</span>
                     <span>第 {postPage} / {totalPostPages} 页</span>
                   </div>
+                  <div className="flex flex-wrap items-center justify-between gap-3 text-xs font-sans">
+                    <label className="flex items-center gap-2 text-pencil">
+                      <input
+                        type="checkbox"
+                        className="accent-black"
+                        checked={postItems.length > 0 && postItems.every((post) => selectedPosts.has(post.id))}
+                        onChange={toggleAllPosts}
+                      />
+                      本页全选
+                    </label>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-pencil">已选 {selectedPosts.size} 条</span>
+                      <SketchButton
+                        variant="danger"
+                        className="h-8 px-3 text-xs"
+                        disabled={selectedPosts.size === 0}
+                        onClick={() => openBulkPostModal('delete')}
+                      >
+                        批量删除
+                      </SketchButton>
+                      <SketchButton
+                        variant="secondary"
+                        className="h-8 px-3 text-xs"
+                        disabled={selectedPosts.size === 0}
+                        onClick={() => openBulkPostModal('restore')}
+                      >
+                        批量恢复
+                      </SketchButton>
+                      <SketchButton
+                        variant="secondary"
+                        className="h-8 px-3 text-xs"
+                        disabled={selectedPosts.size === 0}
+                        onClick={() => openBulkPostModal('ban')}
+                      >
+                        批量封禁
+                      </SketchButton>
+                      <SketchButton
+                        variant="secondary"
+                        className="h-8 px-3 text-xs"
+                        disabled={selectedPosts.size === 0}
+                        onClick={() => openBulkPostModal('unban')}
+                      >
+                        批量解封
+                      </SketchButton>
+                    </div>
+                  </div>
                 </div>
 
                 {postLoading ? (
@@ -471,6 +781,12 @@ const AdminDashboard: React.FC = () => {
                         <div className="flex flex-col md:flex-row gap-6 justify-between items-start">
                           <div className="flex-1">
                             <div className="flex items-center gap-3 mb-3 flex-wrap">
+                              <input
+                                type="checkbox"
+                                className="accent-black"
+                                checked={selectedPosts.has(post.id)}
+                                onChange={() => togglePostSelection(post.id)}
+                              />
                               <span className="bg-gray-100 border border-ink text-ink text-[10px] font-bold px-2 py-0.5 rounded font-sans">ID: #{post.id}</span>
                               <span className="text-pencil text-xs font-bold font-sans">{post.timestamp}</span>
                               <Badge color={post.deleted ? 'bg-gray-200' : 'bg-highlight'}>
@@ -490,6 +806,13 @@ const AdminDashboard: React.FC = () => {
                             </div>
                           </div>
                           <div className="flex items-center gap-2 min-w-fit mt-2 md:mt-0 font-sans">
+                            <SketchButton
+                              variant="secondary"
+                              className="h-10 px-3 text-xs flex items-center gap-1"
+                              onClick={() => openEditModal(post)}
+                            >
+                              <Pencil size={14} /> 编辑
+                            </SketchButton>
                             {post.deleted ? (
                               <SketchButton
                                 variant="secondary"
@@ -601,6 +924,153 @@ const AdminDashboard: React.FC = () => {
               </section>
             )}
 
+            {/* Bans View */}
+            {currentView === 'bans' && (
+              <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="bg-white p-6 border-2 border-ink rounded-lg shadow-sketch-sm">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="font-display text-lg">Session 封禁</h3>
+                    <span className="text-xs text-pencil font-sans">{bannedSessions.length} 条</span>
+                  </div>
+                  {banLoading ? (
+                    <div className="text-center py-8 text-pencil font-hand">加载中...</div>
+                  ) : bannedSessions.length === 0 ? (
+                    <div className="text-center py-8 text-pencil font-hand">暂无封禁</div>
+                  ) : (
+                    <div className="flex flex-col gap-3">
+                      {bannedSessions.map((item) => (
+                        <div key={item.sessionId} className="flex items-center justify-between gap-4 border-2 border-dashed border-gray-200 rounded-lg p-3">
+                          <div>
+                            <p className="text-xs text-pencil font-sans">Session</p>
+                            <p className="font-sans text-sm break-all">{item.sessionId}</p>
+                            <p className="text-xs text-pencil mt-1">{formatTimestamp(item.bannedAt)}</p>
+                          </div>
+                          <SketchButton
+                            variant="secondary"
+                            className="h-8 px-3 text-xs"
+                            onClick={() => handleUnban('session', item.sessionId)}
+                          >
+                            解封
+                          </SketchButton>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="bg-white p-6 border-2 border-ink rounded-lg shadow-sketch-sm">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="font-display text-lg">IP 封禁</h3>
+                    <span className="text-xs text-pencil font-sans">{bannedIps.length} 条</span>
+                  </div>
+                  {banLoading ? (
+                    <div className="text-center py-8 text-pencil font-hand">加载中...</div>
+                  ) : bannedIps.length === 0 ? (
+                    <div className="text-center py-8 text-pencil font-hand">暂无封禁</div>
+                  ) : (
+                    <div className="flex flex-col gap-3">
+                      {bannedIps.map((item) => (
+                        <div key={item.ip} className="flex items-center justify-between gap-4 border-2 border-dashed border-gray-200 rounded-lg p-3">
+                          <div>
+                            <p className="text-xs text-pencil font-sans">IP</p>
+                            <p className="font-sans text-sm break-all">{item.ip}</p>
+                            <p className="text-xs text-pencil mt-1">{formatTimestamp(item.bannedAt)}</p>
+                          </div>
+                          <SketchButton
+                            variant="secondary"
+                            className="h-8 px-3 text-xs"
+                            onClick={() => handleUnban('ip', item.ip)}
+                          >
+                            解封
+                          </SketchButton>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </section>
+            )}
+
+            {/* Audit View */}
+            {currentView === 'audit' && (
+              <section>
+                <div className="flex items-center justify-between text-xs text-pencil font-sans mb-4">
+                  <span>共 {auditTotal} 条</span>
+                  <span>第 {auditPage} / {totalAuditPages} 页</span>
+                </div>
+
+                {auditLoading ? (
+                  <div className="text-center py-16 bg-white border-2 border-ink rounded-lg">
+                    <span className="text-6xl mb-4 block">📜</span>
+                    <h3 className="font-display text-2xl text-ink mb-2">加载审计日志</h3>
+                    <p className="font-hand text-lg text-pencil">请稍等片刻</p>
+                  </div>
+                ) : auditLogs.length === 0 ? (
+                  <div className="text-center py-16 bg-white border-2 border-ink rounded-lg">
+                    <span className="text-6xl mb-4 block">🧾</span>
+                    <h3 className="font-display text-2xl text-ink mb-2">暂无记录</h3>
+                    <p className="font-hand text-lg text-pencil">试试调整搜索条件</p>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-4">
+                    {auditLogs.map((log) => (
+                      <div key={log.id} className="bg-white p-5 rounded-lg border-2 border-ink shadow-sketch-sm">
+                        <div className="flex flex-col md:flex-row gap-4 justify-between">
+                          <div className="flex-1">
+                            <div className="flex flex-wrap items-center gap-3 text-xs font-sans text-pencil mb-2">
+                              <span className="bg-gray-100 border border-ink text-ink text-[10px] font-bold px-2 py-0.5 rounded font-sans">
+                                #{log.id}
+                              </span>
+                              <span>{formatTimestamp(log.createdAt)}</span>
+                              <span>操作者：{log.adminUsername || '未知'}</span>
+                              <span>IP：{log.ip || '-'}</span>
+                            </div>
+                            <p className="font-sans text-sm text-ink">
+                              <span className="font-bold">{log.action}</span> · {log.targetType} · {log.targetId}
+                            </p>
+                            {log.reason && (
+                              <p className="text-xs text-pencil font-sans mt-1">理由：{log.reason}</p>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <SketchButton
+                              variant="secondary"
+                              className="h-8 px-3 text-xs"
+                              onClick={() => setAuditDetail({ isOpen: true, log })}
+                            >
+                              查看详情
+                            </SketchButton>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {auditLogs.length > 0 && (
+                  <div className="flex items-center justify-center gap-4 mt-6">
+                    <SketchButton
+                      variant="secondary"
+                      className="px-4 py-2 text-sm"
+                      disabled={auditPage <= 1}
+                      onClick={() => setAuditPage((prev) => Math.max(prev - 1, 1))}
+                    >
+                      上一页
+                    </SketchButton>
+                    <span className="text-xs text-pencil font-sans">第 {auditPage} / {totalAuditPages} 页</span>
+                    <SketchButton
+                      variant="secondary"
+                      className="px-4 py-2 text-sm"
+                      disabled={auditPage >= totalAuditPages}
+                      onClick={() => setAuditPage((prev) => Math.min(prev + 1, totalAuditPages))}
+                    >
+                      下一页
+                    </SketchButton>
+                  </div>
+                )}
+              </section>
+            )}
+
             {/* Reports View */}
             {(currentView === 'reports' || currentView === 'processed') && (
               <section>
@@ -616,6 +1086,30 @@ const AdminDashboard: React.FC = () => {
                     </span>
                   </h2>
                 </div>
+                {currentView === 'reports' && (
+                  <div className="flex flex-wrap items-center justify-between gap-3 text-xs font-sans mb-4">
+                    <label className="flex items-center gap-2 text-pencil">
+                      <input
+                        type="checkbox"
+                        className="accent-black"
+                        checked={filteredReports.length > 0 && filteredReports.every((report) => selectedReports.has(report.id))}
+                        onChange={() => toggleAllReports(filteredReports.map((report) => report.id))}
+                      />
+                      本页全选
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <span className="text-pencil">已选 {selectedReports.size} 条</span>
+                      <SketchButton
+                        variant="secondary"
+                        className="h-8 px-3 text-xs"
+                        disabled={selectedReports.size === 0}
+                        onClick={openBulkReportModal}
+                      >
+                        标记处理
+                      </SketchButton>
+                    </div>
+                  </div>
+                )}
 
                 {filteredReports.length === 0 ? (
                   <div className="text-center py-16 bg-white border-2 border-ink rounded-lg">
@@ -637,6 +1131,9 @@ const AdminDashboard: React.FC = () => {
                         report={report}
                         onAction={handleAction}
                         showStatus={currentView === 'processed'}
+                        selectable={currentView === 'reports'}
+                        selected={selectedReports.has(report.id)}
+                        onSelect={() => toggleReportSelection(report.id)}
                       />
                     ))}
                   </div>
@@ -682,7 +1179,7 @@ const AdminDashboard: React.FC = () => {
       {/* Confirm Modal */}
       <Modal
         isOpen={confirmModal.isOpen}
-        onClose={() => setConfirmModal({ isOpen: false, reportId: '', action: 'ignore', content: '' })}
+        onClose={() => setConfirmModal({ isOpen: false, reportId: '', action: 'ignore', content: '', reason: '' })}
         title="确认操作"
       >
         <div className="flex flex-col gap-4">
@@ -692,11 +1189,20 @@ const AdminDashboard: React.FC = () => {
           <div className="p-3 bg-gray-50 border border-dashed border-ink rounded-lg">
             <p className="text-sm text-pencil font-sans line-clamp-2">"{confirmModal.content}"</p>
           </div>
+          <div>
+            <label className="text-xs text-pencil font-sans">处理理由（可选）</label>
+            <textarea
+              value={confirmModal.reason}
+              onChange={(e) => setConfirmModal((prev) => ({ ...prev, reason: e.target.value }))}
+              className="w-full mt-2 h-20 resize-none border-2 border-gray-200 rounded-lg p-2 text-sm font-sans focus:border-ink outline-none"
+              placeholder="填写理由便于审计追溯"
+            />
+          </div>
           <div className="flex gap-3 mt-2">
             <SketchButton
               variant="secondary"
               className="flex-1"
-              onClick={() => setConfirmModal({ isOpen: false, reportId: '', action: 'ignore', content: '' })}
+              onClick={() => setConfirmModal({ isOpen: false, reportId: '', action: 'ignore', content: '', reason: '' })}
             >
               取消
             </SketchButton>
@@ -713,7 +1219,7 @@ const AdminDashboard: React.FC = () => {
 
       <Modal
         isOpen={postConfirmModal.isOpen}
-        onClose={() => setPostConfirmModal({ isOpen: false, postId: '', action: 'delete', content: '' })}
+        onClose={() => setPostConfirmModal({ isOpen: false, postId: '', action: 'delete', content: '', reason: '' })}
         title="确认操作"
       >
         <div className="flex flex-col gap-4">
@@ -723,11 +1229,20 @@ const AdminDashboard: React.FC = () => {
           <div className="p-3 bg-gray-50 border border-dashed border-ink rounded-lg">
             <p className="text-sm text-pencil font-sans line-clamp-2">"{postConfirmModal.content}"</p>
           </div>
+          <div>
+            <label className="text-xs text-pencil font-sans">处理理由（可选）</label>
+            <textarea
+              value={postConfirmModal.reason}
+              onChange={(e) => setPostConfirmModal((prev) => ({ ...prev, reason: e.target.value }))}
+              className="w-full mt-2 h-20 resize-none border-2 border-gray-200 rounded-lg p-2 text-sm font-sans focus:border-ink outline-none"
+              placeholder="填写理由便于审计追溯"
+            />
+          </div>
           <div className="flex gap-3 mt-2">
             <SketchButton
               variant="secondary"
               className="flex-1"
-              onClick={() => setPostConfirmModal({ isOpen: false, postId: '', action: 'delete', content: '' })}
+              onClick={() => setPostConfirmModal({ isOpen: false, postId: '', action: 'delete', content: '', reason: '' })}
             >
               取消
             </SketchButton>
@@ -741,6 +1256,171 @@ const AdminDashboard: React.FC = () => {
           </div>
         </div>
       </Modal>
+
+      <Modal
+        isOpen={bulkPostModal.isOpen}
+        onClose={() => setBulkPostModal({ isOpen: false, action: 'delete', reason: '' })}
+        title="批量操作确认"
+      >
+        <div className="flex flex-col gap-4">
+          <p className="font-hand text-lg text-ink">
+            确定要对 <strong className="text-red-600">{selectedPosts.size}</strong> 条帖子执行
+            <strong className="text-red-600"> {getBulkActionLabel(bulkPostModal.action)} </strong> 吗？
+          </p>
+          <div>
+            <label className="text-xs text-pencil font-sans">处理理由（可选）</label>
+            <textarea
+              value={bulkPostModal.reason}
+              onChange={(e) => setBulkPostModal((prev) => ({ ...prev, reason: e.target.value }))}
+              className="w-full mt-2 h-20 resize-none border-2 border-gray-200 rounded-lg p-2 text-sm font-sans focus:border-ink outline-none"
+              placeholder="填写理由便于审计追溯"
+            />
+          </div>
+          <div className="flex gap-3 mt-2">
+            <SketchButton
+              variant="secondary"
+              className="flex-1"
+              onClick={() => setBulkPostModal({ isOpen: false, action: 'delete', reason: '' })}
+            >
+              取消
+            </SketchButton>
+            <SketchButton
+              variant={bulkPostModal.action === 'delete' || bulkPostModal.action === 'ban' ? 'danger' : 'secondary'}
+              className="flex-1"
+              onClick={confirmBulkPostAction}
+            >
+              确认执行
+            </SketchButton>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={bulkReportModal.isOpen}
+        onClose={() => setBulkReportModal({ isOpen: false, reason: '' })}
+        title="批量标记处理"
+      >
+        <div className="flex flex-col gap-4">
+          <p className="font-hand text-lg text-ink">
+            确定要标记 <strong className="text-red-600">{selectedReports.size}</strong> 条举报为已处理吗？
+          </p>
+          <div>
+            <label className="text-xs text-pencil font-sans">处理理由（可选）</label>
+            <textarea
+              value={bulkReportModal.reason}
+              onChange={(e) => setBulkReportModal((prev) => ({ ...prev, reason: e.target.value }))}
+              className="w-full mt-2 h-20 resize-none border-2 border-gray-200 rounded-lg p-2 text-sm font-sans focus:border-ink outline-none"
+              placeholder="填写理由便于审计追溯"
+            />
+          </div>
+          <div className="flex gap-3 mt-2">
+            <SketchButton
+              variant="secondary"
+              className="flex-1"
+              onClick={() => setBulkReportModal({ isOpen: false, reason: '' })}
+            >
+              取消
+            </SketchButton>
+            <SketchButton
+              variant="secondary"
+              className="flex-1"
+              onClick={confirmBulkReportAction}
+            >
+              确认标记
+            </SketchButton>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={editModal.isOpen}
+        onClose={() => setEditModal({ isOpen: false, postId: '', content: '', preview: false, reason: '' })}
+        title="编辑帖子"
+      >
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-pencil font-sans">支持 Markdown</span>
+            <button
+              type="button"
+              onClick={() => setEditModal((prev) => ({ ...prev, preview: !prev.preview }))}
+              className="flex items-center gap-1 px-3 py-1 text-sm font-hand font-bold text-pencil hover:text-ink border-2 border-gray-200 hover:border-ink rounded-full transition-all"
+            >
+              {editModal.preview ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              {editModal.preview ? '编辑' : '预览'}
+            </button>
+          </div>
+          {editModal.preview ? (
+            <div className="w-full min-h-[220px] p-4 border-2 border-dashed border-gray-300 rounded-lg bg-gray-50 overflow-auto">
+              {editModal.content.trim() ? (
+                <MarkdownRenderer content={editModal.content} className="font-sans text-lg text-ink" />
+              ) : (
+                <p className="text-pencil/50 font-hand text-xl">预览区域（请先输入内容）</p>
+              )}
+            </div>
+          ) : (
+            <textarea
+              value={editModal.content}
+              onChange={(e) => setEditModal((prev) => ({ ...prev, content: e.target.value }))}
+              className="w-full min-h-[220px] resize-none border-2 border-gray-200 rounded-lg p-3 text-sm font-sans focus:border-ink outline-none"
+              placeholder="修改帖子内容..."
+              maxLength={composeMaxLength + 100}
+            />
+          )}
+          <div>
+            <label className="text-xs text-pencil font-sans">编辑理由（可选）</label>
+            <textarea
+              value={editModal.reason}
+              onChange={(e) => setEditModal((prev) => ({ ...prev, reason: e.target.value }))}
+              className="w-full mt-2 h-20 resize-none border-2 border-gray-200 rounded-lg p-2 text-sm font-sans focus:border-ink outline-none"
+              placeholder="填写理由便于审计追溯"
+            />
+          </div>
+          <div className="flex gap-3">
+            <SketchButton
+              variant="secondary"
+              className="flex-1"
+              onClick={() => setEditModal({ isOpen: false, postId: '', content: '', preview: false, reason: '' })}
+            >
+              取消
+            </SketchButton>
+            <SketchButton
+              variant="primary"
+              className="flex-1"
+              onClick={confirmEdit}
+            >
+              保存修改
+            </SketchButton>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={auditDetail.isOpen}
+        onClose={() => setAuditDetail({ isOpen: false, log: null })}
+        title="操作详情"
+      >
+        <div className="flex flex-col gap-4">
+          <div className="text-xs text-pencil font-sans">
+            <p>操作：{auditDetail.log?.action}</p>
+            <p>目标：{auditDetail.log?.targetType} · {auditDetail.log?.targetId}</p>
+            <p>操作者：{auditDetail.log?.adminUsername || '未知'}</p>
+            <p>时间：{formatTimestamp(auditDetail.log?.createdAt)}</p>
+            {auditDetail.log?.reason && <p>理由：{auditDetail.log.reason}</p>}
+          </div>
+          <div>
+            <p className="text-xs text-pencil font-sans mb-2">变更前</p>
+            <pre className="bg-gray-50 border-2 border-dashed border-gray-200 rounded-lg p-3 text-xs overflow-auto whitespace-pre-wrap">
+              {formatAuditJson(auditDetail.log?.before)}
+            </pre>
+          </div>
+          <div>
+            <p className="text-xs text-pencil font-sans mb-2">变更后</p>
+            <pre className="bg-gray-50 border-2 border-dashed border-gray-200 rounded-lg p-3 text-xs overflow-auto whitespace-pre-wrap">
+              {formatAuditJson(auditDetail.log?.after)}
+            </pre>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };
@@ -750,7 +1430,10 @@ const ReportCard: React.FC<{
   report: Report;
   onAction: (id: string, action: 'ignore' | 'delete' | 'ban', content: string) => void;
   showStatus?: boolean;
-}> = ({ report, onAction, showStatus = false }) => {
+  selectable?: boolean;
+  selected?: boolean;
+  onSelect?: () => void;
+}> = ({ report, onAction, showStatus = false, selectable = true, selected = false, onSelect }) => {
   const getRiskBg = (level: string) => {
     switch (level) {
       case 'high': return 'bg-highlight';
@@ -764,6 +1447,14 @@ const ReportCard: React.FC<{
       <div className="flex flex-col md:flex-row gap-6 justify-between items-start">
         <div className="flex-1">
           <div className="flex items-center gap-3 mb-3 flex-wrap">
+            {selectable && (
+              <input
+                type="checkbox"
+                className="accent-black"
+                checked={selected}
+                onChange={onSelect}
+              />
+            )}
             <span className="bg-gray-100 border border-ink text-ink text-[10px] font-bold px-2 py-0.5 rounded font-sans">ID: #{report.id}</span>
             <span className="text-pencil text-xs font-bold font-sans">{report.timestamp}</span>
             <span className={`text-ink text-xs flex items-center gap-1 border border-ink px-2 py-0.5 rounded font-bold font-sans ${getRiskBg(report.riskLevel)}`}>
