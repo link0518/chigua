@@ -81,6 +81,17 @@ chmod +x deploy.sh
 可选环境变量：
 - `DOMAIN`：Caddy 站点地址（默认 `:80`，例如 `DOMAIN=example.com ./deploy.sh`）
 
+## 更新脚本
+在已部署目录执行（需存在 `.git`）：
+```bash
+chmod +x update.sh
+./update.sh
+```
+说明：
+- 使用 `git pull` 拉取更新并保留本地改动
+- 执行 `npm install` 与 `npm run build`
+- 重启 `pm2` 的 `chigua-api` 与 `chigua-web`
+
 ## 反向代理（必需）
 前端请求 `/api`，需反代到 `4395`。
 

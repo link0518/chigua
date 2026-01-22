@@ -377,7 +377,8 @@ app.post('/api/posts', (req, res) => {
     return res.status(400).json({ error: '内容包含敏感词，请修改后再提交' });
   }
 
-  if (!enforceRateLimit(req, res, 'post')) {
+  const isAdmin = Boolean(req.session?.admin);
+  if (!isAdmin && !enforceRateLimit(req, res, 'post')) {
     return;
   }
 
