@@ -15,6 +15,39 @@ import {
   trackDailyVisit,
 } from './db.js';
 
+const loadEnvFile = (filename) => {
+  const filePath = path.resolve(process.cwd(), filename);
+  if (!fs.existsSync(filePath)) {
+    return;
+  }
+  const content = fs.readFileSync(filePath, 'utf8');
+  content.split(/\r?\n/).forEach((line) => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) {
+      return;
+    }
+    const separatorIndex = trimmed.indexOf('=');
+    if (separatorIndex <= 0) {
+      return;
+    }
+    const key = trimmed.slice(0, separatorIndex).trim();
+    let value = trimmed.slice(separatorIndex + 1).trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    if (key && !(key in process.env)) {
+      process.env[key] = value;
+    }
+  });
+};
+
+// 本地开发读取 .env.local / .env
+loadEnvFile('.env.local');
+loadEnvFile('.env');
+
 const app = express();
 const PORT = Number(process.env.PORT || 4395);
 const TURNSTILE_SECRET_KEY = String(process.env.TURNSTILE_SECRET_KEY || '').trim();
@@ -176,6 +209,9 @@ const requireFingerprint = (req, res) => {
 };
 
 const verifyTurnstile = async (token, req, expectedAction) => {
+  if (String(process.env.TURNSTILE_BYPASS || '').trim() === '1') {
+    return { ok: true, bypass: true };
+  }
   if (!TURNSTILE_SECRET_KEY) {
     return { ok: false, status: 500, error: '安全验证未配置' };
   }
@@ -423,11 +459,53 @@ const mapPostRow = (row, isHot) => ({
 const mapCommentRow = (row) => ({
   id: row.id,
   postId: row.post_id,
+  parentId: row.parent_id || null,
+  replyToId: row.reply_to_id || null,
   content: row.content,
   author: row.author || '匿名',
   timestamp: formatRelativeTime(row.created_at),
   createdAt: row.created_at,
 });
+
+const buildCommentTree = (rows) => {
+  const nodes = new Map();
+  rows.forEach((row) => {
+    const node = { ...mapCommentRow(row), replies: [] };
+    nodes.set(node.id, node);
+  });
+
+  nodes.forEach((node) => {
+    if (!node.parentId) {
+      return;
+    }
+    const parent = nodes.get(node.parentId);
+    if (parent?.parentId) {
+      node.parentId = parent.parentId;
+    }
+  });
+
+  const roots = [];
+  nodes.forEach((node) => {
+    if (node.parentId && nodes.has(node.parentId)) {
+      nodes.get(node.parentId).replies.push(node);
+    } else {
+      roots.push(node);
+    }
+  });
+
+  const sortByCreatedAtDesc = (a, b) => (b.createdAt || 0) - (a.createdAt || 0);
+  const sortTree = (list) => {
+    list.sort(sortByCreatedAtDesc);
+    list.forEach((item) => {
+      if (item.replies?.length) {
+        sortTree(item.replies);
+      }
+    });
+  };
+
+  sortTree(roots);
+  return roots;
+};
 
 const hotScoreSql = '(views_count * 0.2 + likes_count * 3 + comments_count * 2)';
 
@@ -803,12 +881,14 @@ app.get('/api/posts/:id/comments', (req, res) => {
     )
     .all(postId, limit);
 
-  return res.json({ items: rows.map(mapCommentRow) });
+  return res.json({ items: buildCommentTree(rows) });
 });
 
 app.post('/api/posts/:id/comments', async (req, res) => {
   const postId = req.params.id;
   const content = String(req.body?.content || '').trim();
+  const parentId = String(req.body?.parentId || '').trim();
+  const replyToId = String(req.body?.replyToId || '').trim();
 
   if (!content) {
     return res.status(400).json({ error: '评论不能为空' });
@@ -841,6 +921,19 @@ app.post('/api/posts/:id/comments', async (req, res) => {
     return res.status(404).json({ error: '内容不存在' });
   }
 
+  let parentRow = null;
+  if (parentId) {
+    parentRow = db
+      .prepare('SELECT id, post_id, parent_id FROM comments WHERE id = ? AND deleted = 0')
+      .get(parentId);
+    if (!parentRow) {
+      return res.status(400).json({ error: '回复的评论不存在' });
+    }
+    if (parentRow.post_id !== postId) {
+      return res.status(400).json({ error: '回复内容不匹配' });
+    }
+  }
+
   const commentVerification = await verifyTurnstile(req.body?.turnstileToken, req, 'comment');
   if (!commentVerification.ok) {
     return res.status(commentVerification.status).json({ error: commentVerification.error });
@@ -849,9 +942,12 @@ app.post('/api/posts/:id/comments', async (req, res) => {
   const now = Date.now();
   const commentId = crypto.randomUUID();
 
+  const finalParentId = parentRow?.parent_id ? parentRow.parent_id : parentId || null;
+  const finalReplyToId = replyToId || parentId || null;
+
   db.prepare(
-    `\n    INSERT INTO comments (id, post_id, content, author, created_at, fingerprint)\n    VALUES (?, ?, ?, ?, ?, ?)\n    `
-  ).run(commentId, postId, content, '匿名', now, fingerprint);
+    `\n    INSERT INTO comments (id, post_id, parent_id, reply_to_id, content, author, created_at, fingerprint)\n    VALUES (?, ?, ?, ?, ?, ?, ?, ?)\n    `
+  ).run(commentId, postId, finalParentId, finalReplyToId, content, '匿名', now, fingerprint);
 
   db.prepare('UPDATE posts SET comments_count = comments_count + 1 WHERE id = ?').run(postId);
 
@@ -859,6 +955,8 @@ app.post('/api/posts/:id/comments', async (req, res) => {
     comment: mapCommentRow({
       id: commentId,
       post_id: postId,
+      parent_id: finalParentId,
+      reply_to_id: finalReplyToId,
       content,
       author: '匿名',
       created_at: now,

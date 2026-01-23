@@ -37,7 +37,7 @@ interface AppState {
 interface AppContextType {
   state: AppState;
   addPost: (post: Omit<Post, 'id' | 'likes' | 'comments' | 'createdAt'>, turnstileToken: string) => Promise<void>;
-  addComment: (postId: string, content: string, turnstileToken: string) => Promise<Comment>;
+  addComment: (postId: string, content: string, turnstileToken: string, parentId?: string | null, replyToId?: string | null) => Promise<Comment>;
   likePost: (postId: string) => Promise<void>;
   dislikePost: (postId: string) => Promise<void>;
   deletePost: (postId: string) => void;
@@ -215,8 +215,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }));
   }, []);
 
-  const addComment = useCallback(async (postId: string, content: string, turnstileToken: string) => {
-    const data = await api.addComment(postId, content, turnstileToken);
+  const addComment = useCallback(async (postId: string, content: string, turnstileToken: string, parentId?: string | null, replyToId?: string | null) => {
+    const data = await api.addComment(postId, content, turnstileToken, parentId, replyToId);
     const comment: Comment = data.comment;
     setState((prev) => {
       const updateList = (list: Post[]) =>

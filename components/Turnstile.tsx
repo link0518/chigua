@@ -61,6 +61,7 @@ const Turnstile = forwardRef<TurnstileHandle, TurnstileProps>(({ action, enabled
   const pendingRef = useRef<{ resolve: (token: string) => void; reject: (error: Error) => void } | null>(null);
   const [ready, setReady] = useState(false);
   const siteKey = (import.meta.env.VITE_TURNSTILE_SITE_KEY || '').trim();
+  const bypass = String(import.meta.env.VITE_TURNSTILE_BYPASS || '').trim() === '1';
 
   const cleanupWidget = useCallback(() => {
     if (widgetIdRef.current && window.turnstile) {
@@ -80,6 +81,11 @@ const Turnstile = forwardRef<TurnstileHandle, TurnstileProps>(({ action, enabled
     if (!enabled) {
       cleanupWidget();
       setReady(false);
+      return;
+    }
+    if (bypass) {
+      cleanupWidget();
+      setReady(true);
       return;
     }
     if (!siteKey) {
@@ -132,6 +138,9 @@ const Turnstile = forwardRef<TurnstileHandle, TurnstileProps>(({ action, enabled
   const execute = useCallback(() => {
     if (!enabled) {
       return Promise.reject(new Error('安全验证不可用'));
+    }
+    if (bypass) {
+      return Promise.resolve('local-bypass');
     }
     if (!siteKey) {
       return Promise.reject(new Error('安全验证未配置'));

@@ -35,10 +35,13 @@ export interface Report {
 export interface Comment {
   id: string;
   postId: string;
+  parentId?: string | null;
+  replyToId?: string | null;
   content: string;
   author: string;
   timestamp: string;
   createdAt?: number;
+  replies?: Comment[];
 }
 
 export interface AdminPost {

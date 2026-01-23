@@ -47,9 +47,9 @@ export const api = {
   dislikePost: (postId) => apiFetch(`/posts/${postId}/dislike`, { method: 'POST' }),
   viewPost: (postId) => apiFetch(`/posts/${postId}/view`, { method: 'POST' }),
   getComments: (postId) => apiFetch(`/posts/${postId}/comments`),
-  addComment: (postId, content, turnstileToken) => apiFetch(`/posts/${postId}/comments`, {
+  addComment: (postId, content, turnstileToken, parentId, replyToId) => apiFetch(`/posts/${postId}/comments`, {
     method: 'POST',
-    body: JSON.stringify({ content, turnstileToken }),
+    body: JSON.stringify({ content, turnstileToken, parentId, replyToId }),
   }),
   reportPost: (postId, reason) => apiFetch('/reports', {
     method: 'POST',

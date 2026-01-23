@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS post_views (
 CREATE TABLE IF NOT EXISTS comments (
   id TEXT PRIMARY KEY,
   post_id TEXT NOT NULL,
+  parent_id TEXT,
   content TEXT NOT NULL,
   author TEXT NOT NULL DEFAULT '匿名',
   created_at INTEGER NOT NULL,
@@ -184,8 +185,12 @@ const ensureColumn = (table, column, definition) => {
 ensureColumn('posts', 'ip', 'TEXT');
 ensureColumn('posts', 'fingerprint', 'TEXT');
 ensureColumn('comments', 'fingerprint', 'TEXT');
+ensureColumn('comments', 'parent_id', 'TEXT');
+ensureColumn('comments', 'reply_to_id', 'TEXT');
 ensureColumn('reports', 'fingerprint', 'TEXT');
 ensureColumn('feedback_messages', 'fingerprint', 'TEXT');
+
+db.exec('CREATE INDEX IF NOT EXISTS idx_comments_parent_id ON comments(parent_id);');
 
 export const formatDateKey = (date = new Date()) => {
   const year = date.getFullYear();
