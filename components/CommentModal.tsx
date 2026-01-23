@@ -25,13 +25,18 @@ const CommentModal: React.FC<CommentModalProps> = ({
   const { addComment, showToast } = useApp();
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [text, setText] = useState('');
   const [replyToId, setReplyToId] = useState<string | null>(null);
   const [expandedThreads, setExpandedThreads] = useState<Set<string>>(new Set());
   const [lastAddedId, setLastAddedId] = useState<string | null>(null);
+  const [page, setPage] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
   const listRef = useRef<HTMLDivElement | null>(null);
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const turnstileRef = useRef<TurnstileHandle | null>(null);
+  const pageSize = 10;
 
   useEffect(() => {
     if (!isOpen || !postId) return;
@@ -39,11 +44,38 @@ const CommentModal: React.FC<CommentModalProps> = ({
     setReplyToId(null);
     setExpandedThreads(new Set());
     setLastAddedId(null);
+    setPage(0);
+    setHasMore(true);
     setLoading(true);
+    const cacheKey = `comments:${postId}`;
+    const cached = sessionStorage.getItem(cacheKey);
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed.items)) {
+          setComments(parsed.items);
+          setPage(Number(parsed.page || 0));
+          setHasMore(Boolean(parsed.hasMore));
+        }
+      } catch {
+        // ignore cache errors
+      }
+    }
+
     api
-      .getComments(postId)
+      .getComments(postId, 0, pageSize)
       .then((data) => {
-        setComments(data.items || []);
+        const items = data.items || [];
+        const total = Number(data.total || 0);
+        const nextHasMore = items.length + 0 < total;
+        setComments(items);
+        setPage(1);
+        setHasMore(nextHasMore);
+        sessionStorage.setItem(cacheKey, JSON.stringify({
+          items,
+          page: 1,
+          hasMore: nextHasMore,
+        }));
       })
       .catch((error) => {
         const message = error instanceof Error ? error.message : '评论加载失败';
@@ -53,6 +85,55 @@ const CommentModal: React.FC<CommentModalProps> = ({
         setLoading(false);
       });
   }, [isOpen, postId, showToast]);
+
+  const handleLoadMore = async () => {
+    if (loadingMore || !hasMore) {
+      return;
+    }
+    setLoadingMore(true);
+    try {
+      const offset = page * pageSize;
+      const data = await api.getComments(postId, offset, pageSize);
+      const items = data.items || [];
+      const total = Number(data.total || 0);
+      setComments((prev) => [...prev, ...items]);
+      const nextPage = page + 1;
+      const nextHasMore = offset + items.length < total;
+      setPage(nextPage);
+      setHasMore(nextHasMore);
+      sessionStorage.setItem(`comments:${postId}`, JSON.stringify({
+        items: [...comments, ...items],
+        page: nextPage,
+        hasMore: nextHasMore,
+      }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '加载更多失败';
+      showToast(message, 'error');
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!hasMore || loading || loadingMore) {
+      return;
+    }
+    const root = listRef.current;
+    const sentinel = loadMoreRef.current;
+    if (!root || !sentinel) {
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          handleLoadMore();
+        }
+      },
+      { root, rootMargin: '60px', threshold: 0 }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMore, loading, loadingMore, page]);
 
   const toggleThread = (commentId: string) => {
     setExpandedThreads((prev) => {
@@ -143,6 +224,13 @@ const CommentModal: React.FC<CommentModalProps> = ({
           ? insertReply(prev, effectiveParentId, nextComment)
           : [nextComment, ...prev]
       ));
+      sessionStorage.setItem(`comments:${postId}`, JSON.stringify({
+        items: effectiveParentId
+          ? insertReply(comments, effectiveParentId, nextComment)
+          : [nextComment, ...comments],
+        page,
+        hasMore,
+      }));
       setLastAddedId(nextComment.id);
       if (expandedTargets.length) {
         setExpandedThreads((prev) => {
@@ -226,7 +314,14 @@ const CommentModal: React.FC<CommentModalProps> = ({
         className="max-h-64 overflow-y-auto rounded-lg border border-gray-200 bg-white flex flex-col gap-3 pr-1"
       >
         {loading ? (
-          <div className="text-center text-gray-500">评论加载中...</div>
+          <div className="flex flex-col gap-3 px-3 pt-3">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <div key={`skeleton-${index}`} className="animate-pulse">
+                <div className="h-3 w-24 bg-gray-200 rounded mb-2" />
+                <div className="h-3 w-5/6 bg-gray-200 rounded" />
+              </div>
+            ))}
+          </div>
         ) : comments.length === 0 ? (
           <div className="text-center text-gray-500">还没有评论，来当第一个吃瓜群众吧！</div>
         ) : (
@@ -298,6 +393,10 @@ const CommentModal: React.FC<CommentModalProps> = ({
 
               return renderComment(comment, 0, '', rootOrderMap);
             })
+        )}
+        <div ref={loadMoreRef} className="h-8" />
+        {!loading && loadingMore && (
+          <div className="flex justify-center py-2 text-xs text-gray-400">加载中...</div>
         )}
       </div>
 

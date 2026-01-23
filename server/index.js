@@ -880,20 +880,38 @@ app.post('/api/posts/:id/view', (req, res) => {
 
 app.get('/api/posts/:id/comments', (req, res) => {
   const postId = req.params.id;
-  const limit = Math.min(Number(req.query.limit || 50), 200);
+  const limit = Math.min(Number(req.query.limit || 10), 200);
+  const offset = Math.max(Number(req.query.offset || 0), 0);
 
   const post = db.prepare('SELECT id FROM posts WHERE id = ? AND deleted = 0').get(postId);
   if (!post) {
     return res.status(404).json({ error: '内容不存在' });
   }
 
-  const rows = db
-    .prepare(
-      `\n      SELECT *\n      FROM comments\n      WHERE post_id = ? AND deleted = 0\n      ORDER BY created_at DESC\n      LIMIT ?\n      `
-    )
-    .all(postId, limit);
+  const totalRow = db
+    .prepare('SELECT COUNT(1) AS count FROM comments WHERE post_id = ? AND deleted = 0 AND parent_id IS NULL')
+    .get(postId);
+  const total = totalRow?.count || 0;
 
-  return res.json({ items: buildCommentTree(rows) });
+  const rootRows = db
+    .prepare(
+      `\n      SELECT *\n      FROM comments\n      WHERE post_id = ? AND deleted = 0 AND parent_id IS NULL\n      ORDER BY created_at ASC\n      LIMIT ? OFFSET ?\n      `
+    )
+    .all(postId, limit, offset);
+
+  if (rootRows.length === 0) {
+    return res.json({ items: [], total });
+  }
+
+  const rootIds = rootRows.map((row) => row.id);
+  const placeholders = rootIds.map(() => '?').join(', ');
+  const replyRows = db
+    .prepare(
+      `\n      SELECT *\n      FROM comments\n      WHERE post_id = ? AND deleted = 0 AND parent_id IN (${placeholders})\n      ORDER BY created_at ASC\n      `
+    )
+    .all(postId, ...rootIds);
+
+  return res.json({ items: buildCommentTree([...rootRows, ...replyRows]), total });
 });
 
 app.post('/api/posts/:id/comments', async (req, res) => {
