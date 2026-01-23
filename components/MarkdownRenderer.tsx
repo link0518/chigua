@@ -36,8 +36,17 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, className 
       .replace(/`(.+?)`/g, '<code class="bg-gray-100 px-1.5 py-0.5 rounded text-sm font-mono border border-gray-200">$1</code>')
       // Links: [text](url)
       .replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-blue-600 underline hover:text-blue-800">$1</a>')
+      // Horizontal rules: ---
+      .replace(/(^|<br \/>)(-{3,})(?=<br \/>|$)/g, '$1<hr class="my-3 border-gray-200" />')
       // Line breaks
       .replace(/\n/g, '<br />');
+
+    // Headings: #, ##, ###
+    html = html.replace(/(^|<br \/>)(#{1,3})\s+(.+?)(?=<br \/>|$)/g, (match, prefix, hashes, text) => {
+      const level = hashes.length;
+      const sizeClass = level === 1 ? 'text-2xl' : level === 2 ? 'text-xl' : 'text-lg';
+      return `${prefix}<div class="font-display ${sizeClass} text-ink mt-3 mb-1">${text}</div>`;
+    });
 
     // Process blockquotes: lines starting with >
     html = html.replace(/(^|<br \/>)&gt;\s?(.+?)(?=<br \/>|$)/g,
