@@ -1,62 +1,181 @@
 import React, { useMemo } from 'react';
+import createDOMPurify from 'dompurify';
+import { marked } from 'marked';
 
 interface MarkdownRendererProps {
   content: string;
   className?: string;
 }
 
-/**
- * Simple Markdown renderer that supports:
- * - **bold** and *italic*
- * - ~~strikethrough~~
- * - `inline code`
- * - [links](url)
- * - Line breaks
- * - > blockquotes
- * - Lists (- or *)
- */
+const escapeHtml = (value: unknown) => {
+  const text = typeof value === 'string' ? value : value == null ? '' : String(value);
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+};
+
+const normalizeLink = (
+  href: string | { href?: string; title?: string; text?: string },
+  title?: string | null,
+  text?: string,
+) => {
+  if (typeof href === 'object' && href !== null) {
+    return {
+      href: href.href ?? '',
+      title: href.title ?? null,
+      text: href.text ?? '',
+    };
+  }
+  return {
+    href: href ?? '',
+    title: title ?? null,
+    text: text ?? '',
+  };
+};
+
+const renderer = new marked.Renderer();
+
+renderer.heading = (text, level) => {
+  const safeLevel = Math.min(Math.max(level, 1), 3);
+  const sizeClass = safeLevel === 1 ? 'text-2xl' : safeLevel === 2 ? 'text-xl' : 'text-lg';
+  return `<h${safeLevel} class="font-display ${sizeClass} text-ink mt-3 mb-1">${text}</h${safeLevel}>`;
+};
+
+renderer.blockquote = (quote) =>
+  `<blockquote class="border-l-4 border-gray-300 pl-3 my-2 text-pencil italic">${quote}</blockquote>`;
+
+renderer.list = (body, ordered) =>
+  `<${ordered ? 'ol' : 'ul'} class="ml-5 ${ordered ? 'list-decimal' : 'list-disc'}">${body}</${ordered ? 'ol' : 'ul'}>`;
+
+renderer.listitem = (text) => `<li class="my-1">${text}</li>`;
+
+renderer.codespan = (code) =>
+  `<code class="bg-gray-100 px-1.5 py-0.5 rounded text-sm font-mono border border-gray-200">${escapeHtml(code)}</code>`;
+
+renderer.code = (code) =>
+  `<pre class="bg-gray-100 border border-gray-200 rounded p-3 overflow-x-auto"><code class="font-mono text-sm">${escapeHtml(code)}</code></pre>`;
+
+renderer.link = (href, title, text) => {
+  const normalized = normalizeLink(href, title, text);
+  const safeHref = escapeHtml(normalized.href);
+  const safeTitle = normalized.title ? escapeHtml(normalized.title) : '';
+  const safeText =
+    typeof normalized.text === 'string' ? normalized.text : escapeHtml(normalized.text);
+  const titleAttr = safeTitle ? ` title="${safeTitle}"` : '';
+  return `<a href="${safeHref}"${titleAttr} target="_blank" rel="noopener noreferrer" class="text-blue-600 underline hover:text-blue-800">${safeText}</a>`;
+};
+
+marked.setOptions({
+  renderer,
+  breaks: true,
+  gfm: true,
+});
+
+const ALLOWED_TAGS = [
+  'a',
+  'img',
+  'p',
+  'br',
+  'strong',
+  'em',
+  'del',
+  'code',
+  'pre',
+  'blockquote',
+  'ul',
+  'ol',
+  'li',
+  'hr',
+  'h1',
+  'h2',
+  'h3',
+];
+
+const ALLOWED_ATTR = ['href', 'title', 'target', 'rel', 'class', 'src', 'alt'];
+
+const IMAGE_HOSTS = new Set(['img.zsix.de', 'ibed.933211.xyz']);
+let cachedPurifier: ReturnType<typeof createDOMPurify> | null = null;
+let purifierReady = false;
+
+const isAllowedImageSrc = (value: string) => {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+      return false;
+    }
+    return IMAGE_HOSTS.has(url.hostname);
+  } catch {
+    return false;
+  }
+};
+
+const isAllowedImageUrl = (value: string) => {
+  if (!value) return false;
+  try {
+    const url = new URL(value.trim());
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+      return false;
+    }
+    if (!IMAGE_HOSTS.has(url.hostname)) {
+      return false;
+    }
+    return /\.(png|jpe?g|gif|webp|avif|bmp|svg)$/i.test(url.pathname);
+  } catch {
+    return false;
+  }
+};
+
+const normalizeImageOnlyLines = (value: string) => {
+  const lines = value.split(/\r?\n/);
+  const normalized = lines.map((line) => {
+    const trimmed = line.trim();
+    if (isAllowedImageUrl(trimmed)) {
+      return `![](${trimmed})`;
+    }
+    return line;
+  });
+  return normalized.join('\n');
+};
+
+const getSanitizer = () => {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  if (!cachedPurifier) {
+    cachedPurifier = createDOMPurify(window);
+  }
+  if (!purifierReady && cachedPurifier) {
+    cachedPurifier.setConfig({
+      ALLOWED_TAGS,
+      ALLOWED_ATTR,
+      ALLOW_DATA_ATTR: false,
+      ALLOWED_URI_REGEXP: /^(?:https?:|mailto:)/i,
+    });
+    cachedPurifier.addHook('uponSanitizeAttribute', (node, data) => {
+      if (node.nodeName === 'IMG' && data.attrName === 'src') {
+        if (!isAllowedImageSrc(data.attrValue)) {
+          data.keepAttr = false;
+        }
+      }
+    });
+    purifierReady = true;
+  }
+  return cachedPurifier;
+};
+
 const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, className = '' }) => {
   const rendered = useMemo(() => {
     if (!content) return '';
-
-    let html = content
-      // Escape HTML to prevent XSS
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      // Bold: **text** or __text__
-      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-      .replace(/__(.+?)__/g, '<strong>$1</strong>')
-      // Italic: *text* or _text_
-      .replace(/\*(.+?)\*/g, '<em>$1</em>')
-      .replace(/_(.+?)_/g, '<em>$1</em>')
-      // Strikethrough: ~~text~~
-      .replace(/~~(.+?)~~/g, '<del class="text-pencil">$1</del>')
-      // Inline code: `code`
-      .replace(/`(.+?)`/g, '<code class="bg-gray-100 px-1.5 py-0.5 rounded text-sm font-mono border border-gray-200">$1</code>')
-      // Links: [text](url)
-      .replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-blue-600 underline hover:text-blue-800">$1</a>')
-      // Horizontal rules: ---
-      .replace(/(^|<br \/>)(-{3,})(?=<br \/>|$)/g, '$1<hr class="my-3 border-gray-200" />')
-      // Line breaks
-      .replace(/\n/g, '<br />');
-
-    // Headings: #, ##, ###
-    html = html.replace(/(^|<br \/>)(#{1,3})\s+(.+?)(?=<br \/>|$)/g, (match, prefix, hashes, text) => {
-      const level = hashes.length;
-      const sizeClass = level === 1 ? 'text-2xl' : level === 2 ? 'text-xl' : 'text-lg';
-      return `${prefix}<div class="font-display ${sizeClass} text-ink mt-3 mb-1">${text}</div>`;
-    });
-
-    // Process blockquotes: lines starting with >
-    html = html.replace(/(^|<br \/>)&gt;\s?(.+?)(?=<br \/>|$)/g,
-      '$1<blockquote class="border-l-4 border-gray-300 pl-3 my-2 text-pencil italic">$2</blockquote>');
-
-    // Process unordered lists: lines starting with - or *
-    html = html.replace(/(^|<br \/>)[-*]\s+(.+?)(?=<br \/>|$)/g,
-      '$1<li class="ml-4 list-disc">$2</li>');
-
-    return html;
+    const normalizedContent = normalizeImageOnlyLines(content);
+    const rawHtml = marked.parse(normalizedContent);
+    const purifier = getSanitizer();
+    if (!purifier) {
+      return '';
+    }
+    return purifier.sanitize(rawHtml);
   }, [content]);
 
   return (
