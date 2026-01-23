@@ -104,6 +104,8 @@ const AdminDashboard: React.FC = () => {
     reason: string;
   }>({ isOpen: false, postId: '', action: 'delete', content: '', reason: '' });
   const composeMaxLength = 2000;
+  const appVersion = import.meta.env.VITE_APP_VERSION || '0.0.0';
+  const appVersionLabel = appVersion.startsWith('v') ? appVersion : `v${appVersion}`;
 
   useEffect(() => {
     loadReports().catch(() => { });
@@ -654,7 +656,7 @@ const AdminDashboard: React.FC = () => {
             {currentView === 'overview' && (
               <>
                 {/* Stats Row */}
-                <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-6">
                   <StatCard
                     title="今日举报"
                     value={state.stats.todayReports.toString()}
@@ -686,6 +688,14 @@ const AdminDashboard: React.FC = () => {
                     trendUp={true}
                     icon={<BarChart2 size={80} />}
                     color="bg-marker-green"
+                  />
+                  <StatCard
+                    title="版本号"
+                    value={appVersionLabel}
+                    trend="自动更新"
+                    trendUp={true}
+                    icon={<CheckCircle size={80} />}
+                    color="bg-white"
                   />
                 </section>
 
