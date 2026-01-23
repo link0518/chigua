@@ -1,4 +1,6 @@
-﻿const toQuery = (params) => {
+﻿import { getBrowserFingerprint } from './fingerprint';
+
+const toQuery = (params) => {
   const entries = Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== '');
   if (entries.length === 0) return '';
   const query = entries
@@ -8,10 +10,12 @@
 };
 
 const apiFetch = async (path, options = {}) => {
+  const fingerprint = await getBrowserFingerprint().catch(() => '');
   const response = await fetch(`/api${path}`, {
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
+      ...(fingerprint ? { 'X-Client-Fingerprint': fingerprint } : {}),
       ...(options.headers || {}),
     },
     ...options,
@@ -77,7 +81,7 @@ export const api = {
     method: 'POST',
     body: JSON.stringify({ action, reason }),
   }),
-  batchAdminReports: (action, reportIds, reason = '') => apiFetch('/admin/reports/batch', {
+  batchAdminReports: (action, reportIds, reason = '') => apiFetch(`/admin/reports/batch`, {
     method: 'POST',
     body: JSON.stringify({ action, reportIds, reason }),
   }),

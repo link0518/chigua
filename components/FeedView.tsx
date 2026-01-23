@@ -8,6 +8,7 @@ import CommentModal from './CommentModal';
 import MarkdownRenderer from './MarkdownRenderer';
 
 type FilterType = 'week' | 'today' | 'all';
+const DISPLAY_LIMIT = 10;
 
 const PostItem: React.FC<{
   post: Post;
@@ -115,7 +116,6 @@ const PostItem: React.FC<{
 const FeedView: React.FC = () => {
   const { state, loadFeedPosts, likePost, dislikePost, isLiked, isDisliked, showToast } = useApp();
   const [filter, setFilter] = useState<FilterType>('week');
-  const [displayCount, setDisplayCount] = useState(5);
   const [searchQuery, setSearchQuery] = useState('');
   const [reportModal, setReportModal] = useState<{ isOpen: boolean; postId: string; content: string }>({
     isOpen: false,
@@ -132,7 +132,6 @@ const FeedView: React.FC = () => {
     const timer = setTimeout(() => {
       loadFeedPosts(filter, searchQuery).catch(() => {});
     }, 300);
-    setDisplayCount(5);
     setCommentModal({ isOpen: false, postId: '', content: '' });
     return () => clearTimeout(timer);
   }, [filter, searchQuery, loadFeedPosts]);
@@ -146,13 +145,7 @@ const FeedView: React.FC = () => {
     }));
   }, [state.feedPosts]);
 
-  const displayedPosts = posts.slice(0, displayCount);
-  const hasMore = displayCount < posts.length;
-
-  const handleLoadMore = () => {
-    setDisplayCount(prev => Math.min(prev + 5, posts.length));
-    showToast('加载了更多内容', 'info');
-  };
+  const displayedPosts = posts.slice(0, DISPLAY_LIMIT);
 
   const handleLike = async (postId: string) => {
     try {
@@ -232,19 +225,19 @@ const FeedView: React.FC = () => {
         {/* Filter Tabs */}
         <div className="flex justify-center gap-6 mt-6 font-hand text-xl font-bold text-pencil">
           <button
-            onClick={() => { setFilter('week'); setDisplayCount(5); }}
+            onClick={() => { setFilter('week'); }}
             className={`transition-all ${filter === 'week' ? 'text-ink underline decoration-wavy decoration-alert underline-offset-4' : 'hover:text-ink'}`}
           >
             本周
           </button>
           <button
-            onClick={() => { setFilter('today'); setDisplayCount(5); }}
+            onClick={() => { setFilter('today'); }}
             className={`transition-all ${filter === 'today' ? 'text-ink underline decoration-wavy decoration-alert underline-offset-4' : 'hover:text-ink'}`}
           >
             今日
           </button>
           <button
-            onClick={() => { setFilter('all'); setDisplayCount(5); }}
+            onClick={() => { setFilter('all'); }}
             className={`transition-all ${filter === 'all' ? 'text-ink underline decoration-wavy decoration-alert underline-offset-4' : 'hover:text-ink'}`}
           >
             历史
@@ -253,7 +246,7 @@ const FeedView: React.FC = () => {
 
         {/* Post Count */}
         <div className="mt-4 text-sm text-pencil">
-          共 {state.feedTotal} 条内容
+          共 {state.feedTotal} 条内容，仅展示前 {DISPLAY_LIMIT} 条
         </div>
       </div>
 
@@ -285,22 +278,10 @@ const FeedView: React.FC = () => {
         )}
       </div>
 
-      {/* Load More */}
-      {hasMore && (
-        <div className="text-center mt-8">
-           <button
-             onClick={handleLoadMore}
-             className="font-hand text-xl text-pencil hover:text-ink border-b-2 border-dashed border-pencil/30 hover:border-ink transition-all px-4 py-2"
-           >
-              加载更多... ({posts.length - displayCount} 条剩余)
-           </button>
-        </div>
-      )}
-
       {/* End of List */}
-      {!hasMore && posts.length > 0 && (
+      {posts.length > 0 && (
         <div className="text-center mt-8 py-4">
-          <span className="font-hand text-pencil">~ 已经到底啦 ~</span>
+          <span className="font-hand text-pencil">~ 已展示前 {DISPLAY_LIMIT} 条 ~</span>
         </div>
       )}
 

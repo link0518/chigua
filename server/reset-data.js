@@ -3,6 +3,7 @@ import { db } from './db.js';
 const tables = [
   'reports',
   'report_sessions',
+  'report_fingerprints',
   'comments',
   'post_reactions',
   'post_views',
@@ -10,6 +11,8 @@ const tables = [
   'stats_daily',
   'daily_visits',
   'banned_sessions',
+  'banned_ips',
+  'banned_fingerprints',
 ];
 
 const run = () => {

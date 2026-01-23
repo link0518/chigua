@@ -55,6 +55,7 @@ export interface AdminPost {
   hotScore?: number;
   sessionId?: string | null;
   ip?: string | null;
+  fingerprint?: string | null;
 }
 
 export interface AdminAuditLog {
@@ -75,7 +76,7 @@ export interface AdminAuditLog {
 export interface BanEntry {
   value: string;
   bannedAt: number;
-  type: 'session' | 'ip';
+  type: 'session' | 'ip' | 'fingerprint';
 }
 
 export interface FeedbackMessage {
@@ -88,6 +89,7 @@ export interface FeedbackMessage {
   readAt?: number | null;
   sessionId?: string | null;
   ip?: string | null;
+  fingerprint?: string | null;
 }
 
 export interface ChartDataPoint {

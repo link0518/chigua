@@ -3,7 +3,7 @@ import {
   BarChart, Bar, XAxis, Tooltip, ResponsiveContainer,
   LineChart, Line
 } from 'recharts';
-import { Flag, Gavel, BarChart2, Bell, Search, Trash2, Ban, Eye, EyeOff, LayoutDashboard, LogOut, CheckCircle, XCircle, FileText, PenSquare, Pencil, RotateCcw, Shield, ClipboardList, MessageSquare } from 'lucide-react';
+import { Flag, Gavel, BarChart2, Bell, Search, Trash2, Ban, Eye, EyeOff, LayoutDashboard, LogOut, CheckCircle, XCircle, FileText, PenSquare, Pencil, RotateCcw, Shield, ClipboardList, MessageSquare, Menu, X } from 'lucide-react';
 import { SketchButton, Badge, roughBorderClassSm } from './SketchUI';
 import { AdminAuditLog, AdminPost, FeedbackMessage, Report } from '../types';
 import { useApp } from '../store/AppContext';
@@ -20,14 +20,14 @@ const POST_PAGE_SIZE = 10;
 const AUDIT_PAGE_SIZE = 12;
 const FEEDBACK_PAGE_SIZE = 8;
 
-const StatCard: React.FC<{ title: string; value: string; trend: string; trendUp: boolean; icon: React.ReactNode; color?: string }> = ({ title, value, trend, trendUp, icon, color = 'bg-white' }) => (
+const StatCard: React.FC<{ title: string; value: string; trend: string; trendUp: boolean; icon: React.ReactNode; color?: string; valueClassName?: string }> = ({ title, value, trend, trendUp, icon, color = 'bg-white', valueClassName = '' }) => (
   <div className={`${color} p-6 border-2 border-ink shadow-sketch relative overflow-hidden group hover:-translate-y-1 transition-transform duration-200 sticky-curl ${roughBorderClassSm}`}>
     <div className="absolute -right-4 -top-4 text-ink/10 rotate-12 group-hover:rotate-0 transition-transform scale-150 opacity-100">
       {icon}
     </div>
     <p className="text-pencil text-sm font-bold mb-2 uppercase tracking-wider font-sans">{title}</p>
-    <div className="flex items-end gap-3 relative z-10">
-      <span className="text-5xl font-display text-ink">{value}</span>
+    <div className="flex items-end gap-3 relative z-10 flex-wrap">
+      <span className={`text-5xl font-display text-ink ${valueClassName}`} title={value}>{value}</span>
       <span className={`text-xs font-bold border border-ink px-2 py-1 rounded-sm shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] ${trendUp ? 'bg-alert' : 'bg-gray-200'}`}>
         {trend}
       </span>
@@ -39,6 +39,7 @@ const AdminDashboard: React.FC = () => {
   const { state, handleReport, showToast, getPendingReports, loadReports, loadStats, logoutAdmin } = useApp();
   const [currentView, setCurrentView] = useState<AdminView>('overview');
   const [searchQuery, setSearchQuery] = useState('');
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [postSearch, setPostSearch] = useState('');
   const [postStatus, setPostStatus] = useState<PostStatusFilter>('active');
   const [postSort, setPostSort] = useState<PostSort>('time');
@@ -69,6 +70,7 @@ const AdminDashboard: React.FC = () => {
   }>({ isOpen: false, reason: '' });
   const [bannedSessions, setBannedSessions] = useState<Array<{ sessionId: string; bannedAt: number }>>([]);
   const [bannedIps, setBannedIps] = useState<Array<{ ip: string; bannedAt: number }>>([]);
+  const [bannedFingerprints, setBannedFingerprints] = useState<Array<{ fingerprint: string; bannedAt: number }>>([]);
   const [banLoading, setBanLoading] = useState(false);
   const [auditLogs, setAuditLogs] = useState<AdminAuditLog[]>([]);
   const [auditSearch, setAuditSearch] = useState('');
@@ -166,6 +168,7 @@ const AdminDashboard: React.FC = () => {
       const data = await api.getAdminBans();
       setBannedSessions(data.sessions || []);
       setBannedIps(data.ips || []);
+      setBannedFingerprints(data.fingerprints || []);
     } catch (error) {
       const message = error instanceof Error ? error.message : '封禁列表加载失败';
       showToast(message, 'error');
@@ -458,7 +461,7 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
-  const handleUnban = async (type: 'session' | 'ip', value: string) => {
+  const handleUnban = async (type: 'session' | 'ip' | 'fingerprint', value: string) => {
     try {
       await api.handleAdminBan('unban', type, value);
       showToast('已解除封禁', 'success');
@@ -534,9 +537,14 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
-  const NavItem: React.FC<{ view: AdminView; icon: React.ReactNode; label: string; badge?: number }> = ({ view, icon, label, badge }) => (
+  const NavItem: React.FC<{ view: AdminView; icon: React.ReactNode; label: string; badge?: number; onSelect?: () => void }> = ({ view, icon, label, badge, onSelect }) => (
     <button
-      onClick={() => setCurrentView(view)}
+      onClick={() => {
+        setCurrentView(view);
+        if (onSelect) {
+          onSelect();
+        }
+      }}
       className={`flex items-center gap-3 px-4 py-3 rounded-lg border-2 transition-all w-full text-left ${currentView === view
         ? 'border-ink bg-highlight shadow-sketch-sm'
         : 'border-transparent hover:border-ink hover:bg-white'
@@ -601,18 +609,28 @@ const AdminDashboard: React.FC = () => {
       {/* Main Content */}
       <main className="flex-1 flex flex-col h-screen overflow-hidden">
         {/* Header */}
-        <header className="h-20 flex items-center justify-between px-8 border-b-2 border-ink bg-paper/90 backdrop-blur-sm z-10">
-          <h2 className="text-2xl font-display flex items-center gap-2">
-            {currentView === 'overview' && <><LayoutDashboard /> 概览</>}
-            {currentView === 'posts' && <><FileText /> 帖子管理</>}
-            {currentView === 'compose' && <><PenSquare /> 后台投稿</>}
-            {currentView === 'feedback' && <><MessageSquare /> 留言管理</>}
-            {currentView === 'reports' && <><Flag /> 待处理举报</>}
-            {currentView === 'processed' && <><Gavel /> 已处理</>}
-            {currentView === 'bans' && <><Shield /> 封禁管理</>}
-            {currentView === 'audit' && <><ClipboardList /> 操作审计</>}
-            {currentView === 'stats' && <><BarChart2 /> 数据统计</>}
-          </h2>
+        <header className="h-20 flex items-center justify-between px-4 md:px-8 border-b-2 border-ink bg-paper/90 backdrop-blur-sm z-10">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setMobileNavOpen(true)}
+              className="md:hidden p-2 border-2 border-ink rounded-full bg-white shadow-sketch-sm"
+              aria-label="打开菜单"
+            >
+              <Menu size={18} />
+            </button>
+            <h2 className="text-2xl font-display flex items-center gap-2">
+              {currentView === 'overview' && <><LayoutDashboard /> 概览</>}
+              {currentView === 'posts' && <><FileText /> 帖子管理</>}
+              {currentView === 'compose' && <><PenSquare /> 后台投稿</>}
+              {currentView === 'feedback' && <><MessageSquare /> 留言管理</>}
+              {currentView === 'reports' && <><Flag /> 待处理举报</>}
+              {currentView === 'processed' && <><Gavel /> 已处理</>}
+              {currentView === 'bans' && <><Shield /> 封禁管理</>}
+              {currentView === 'audit' && <><ClipboardList /> 操作审计</>}
+              {currentView === 'stats' && <><BarChart2 /> 数据统计</>}
+            </h2>
+          </div>
           <div className="flex items-center gap-4">
             {(isReportView || isPostView || isAuditView || isFeedbackView) && (
               <div className="relative">
@@ -647,6 +665,60 @@ const AdminDashboard: React.FC = () => {
             </button>
           </div>
         </header>
+
+        {mobileNavOpen && (
+          <div className="fixed inset-0 z-40 md:hidden">
+            <button
+              type="button"
+              className="absolute inset-0 bg-black/40"
+              aria-label="关闭菜单"
+              onClick={() => setMobileNavOpen(false)}
+            />
+            <div className="absolute left-0 top-0 h-full w-72 bg-paper border-r-2 border-ink p-6 flex flex-col">
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-2">
+                  <div className="w-9 h-9 rounded-full bg-ink border-2 border-ink flex items-center justify-center text-white">
+                    <LayoutDashboard size={18} />
+                  </div>
+                  <div>
+                    <h1 className="font-display text-lg leading-none">衙门</h1>
+                    <span className="text-xs text-pencil font-sans">管理员后台</span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setMobileNavOpen(false)}
+                  className="p-2 border-2 border-ink rounded-full bg-white shadow-sketch-sm"
+                  aria-label="关闭菜单"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+              <nav className="flex flex-col gap-3 font-sans font-bold text-sm">
+                <NavItem view="overview" icon={<LayoutDashboard size={18} />} label="概览" onSelect={() => setMobileNavOpen(false)} />
+                <NavItem view="posts" icon={<FileText size={18} />} label="帖子管理" onSelect={() => setMobileNavOpen(false)} />
+                <NavItem view="compose" icon={<PenSquare size={18} />} label="后台投稿" onSelect={() => setMobileNavOpen(false)} />
+                <NavItem view="feedback" icon={<MessageSquare size={18} />} label="留言管理" onSelect={() => setMobileNavOpen(false)} />
+                <NavItem view="reports" icon={<Flag size={18} />} label="待处理举报" badge={pendingReports.length} onSelect={() => setMobileNavOpen(false)} />
+                <NavItem view="processed" icon={<Gavel size={18} />} label="已处理" badge={processedReports.length} onSelect={() => setMobileNavOpen(false)} />
+                <NavItem view="bans" icon={<Shield size={18} />} label="封禁管理" onSelect={() => setMobileNavOpen(false)} />
+                <NavItem view="audit" icon={<ClipboardList size={18} />} label="操作审计" onSelect={() => setMobileNavOpen(false)} />
+                <NavItem view="stats" icon={<BarChart2 size={18} />} label="数据统计" onSelect={() => setMobileNavOpen(false)} />
+              </nav>
+              <div className="mt-auto pt-6 border-t-2 border-ink/10">
+                <button
+                  onClick={() => {
+                    setMobileNavOpen(false);
+                    logoutAdmin().catch(() => { });
+                  }}
+                  className="flex items-center gap-2 text-pencil hover:text-red-500 font-bold text-sm transition-colors"
+                >
+                  <LogOut size={16} /> 退出登录
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Scrollable Content */}
         <div className="flex-1 overflow-y-auto p-4 md:p-8">
@@ -696,6 +768,7 @@ const AdminDashboard: React.FC = () => {
                     trendUp={true}
                     icon={<CheckCircle size={80} />}
                     color="bg-white"
+                    valueClassName="text-3xl md:text-4xl leading-tight break-all"
                   />
                 </section>
 
@@ -1080,6 +1153,7 @@ const AdminDashboard: React.FC = () => {
                               {message.qq && <span>QQ：{message.qq}</span>}
                               {message.sessionId && <span>Session：{message.sessionId}</span>}
                               {message.ip && <span>IP：{message.ip}</span>}
+                              {message.fingerprint && <span>指纹：{message.fingerprint}</span>}
                             </div>
                           </div>
                           <div className="flex items-center gap-2 min-w-fit mt-2 md:mt-0 font-sans">
@@ -1139,7 +1213,7 @@ const AdminDashboard: React.FC = () => {
 
             {/* Bans View */}
             {currentView === 'bans' && (
-              <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="bg-white p-6 border-2 border-ink rounded-lg shadow-sketch-sm">
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="font-display text-lg">Session 封禁</h3>
@@ -1193,6 +1267,37 @@ const AdminDashboard: React.FC = () => {
                             variant="secondary"
                             className="h-8 px-3 text-xs"
                             onClick={() => handleUnban('ip', item.ip)}
+                          >
+                            解封
+                          </SketchButton>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="bg-white p-6 border-2 border-ink rounded-lg shadow-sketch-sm">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="font-display text-lg">指纹封禁</h3>
+                    <span className="text-xs text-pencil font-sans">{bannedFingerprints.length} 条</span>
+                  </div>
+                  {banLoading ? (
+                    <div className="text-center py-8 text-pencil font-hand">加载中...</div>
+                  ) : bannedFingerprints.length === 0 ? (
+                    <div className="text-center py-8 text-pencil font-hand">暂无封禁</div>
+                  ) : (
+                    <div className="flex flex-col gap-3">
+                      {bannedFingerprints.map((item) => (
+                        <div key={item.fingerprint} className="flex items-center justify-between gap-4 border-2 border-dashed border-gray-200 rounded-lg p-3">
+                          <div>
+                            <p className="text-xs text-pencil font-sans">指纹</p>
+                            <p className="font-sans text-sm break-all">{item.fingerprint}</p>
+                            <p className="text-xs text-pencil mt-1">{formatTimestamp(item.bannedAt)}</p>
+                          </div>
+                          <SketchButton
+                            variant="secondary"
+                            className="h-8 px-3 text-xs"
+                            onClick={() => handleUnban('fingerprint', item.fingerprint)}
                           >
                             解封
                           </SketchButton>

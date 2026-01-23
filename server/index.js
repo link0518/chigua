@@ -19,6 +19,8 @@ const app = express();
 const PORT = Number(process.env.PORT || 4395);
 const TURNSTILE_SECRET_KEY = String(process.env.TURNSTILE_SECRET_KEY || '').trim();
 const TURNSTILE_VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
+const FINGERPRINT_HEADER = 'x-client-fingerprint';
+const FINGERPRINT_SALT = String(process.env.FINGERPRINT_SALT || process.env.SESSION_SECRET || 'gossipsketch-fingerprint-salt').trim();
 
 app.use(express.json({ limit: '2mb' }));
 
@@ -143,6 +145,36 @@ const getClientIp = (req) => {
   return req.socket?.remoteAddress || req.ip || 'unknown';
 };
 
+const getFingerprintValue = (req) => {
+  const headerValue = req.headers?.[FINGERPRINT_HEADER];
+  if (Array.isArray(headerValue) && headerValue.length) {
+    const first = String(headerValue[0] || '').trim();
+    if (first) return first;
+  }
+  if (typeof headerValue === 'string' && headerValue.trim()) {
+    return headerValue.trim();
+  }
+  const bodyValue = req.body?.fingerprint;
+  if (typeof bodyValue === 'string' && bodyValue.trim()) {
+    return bodyValue.trim();
+  }
+  return '';
+};
+
+const hashFingerprint = (value) => {
+  if (!value) return '';
+  return crypto.createHmac('sha256', FINGERPRINT_SALT).update(value).digest('hex');
+};
+
+const requireFingerprint = (req, res) => {
+  const raw = getFingerprintValue(req);
+  if (!raw) {
+    res.status(400).json({ error: '浏览器指纹缺失，请刷新后重试' });
+    return null;
+  }
+  return hashFingerprint(raw);
+};
+
 const verifyTurnstile = async (token, req, expectedAction) => {
   if (!TURNSTILE_SECRET_KEY) {
     return { ok: false, status: 500, error: '安全验证未配置' };
@@ -237,7 +269,7 @@ const allowRate = (key, limit, windowMs) => {
   return true;
 };
 
-const enforceRateLimit = (req, res, action) => {
+const enforceRateLimit = (req, res, action, fingerprint) => {
   const config = RATE_LIMITS[action];
   if (!config) {
     return true;
@@ -246,16 +278,18 @@ const enforceRateLimit = (req, res, action) => {
   const ip = getClientIp(req);
   const sessionKey = `${action}:session:${sessionId}`;
   const ipKey = `${action}:ip:${ip}`;
+  const fingerprintKey = fingerprint ? `${action}:fingerprint:${fingerprint}` : null;
   const allowedBySession = allowRate(sessionKey, config.limit, config.windowMs);
   const allowedByIp = allowRate(ipKey, config.limit, config.windowMs);
-  if (!allowedBySession || !allowedByIp) {
+  const allowedByFingerprint = fingerprintKey ? allowRate(fingerprintKey, config.limit, config.windowMs) : true;
+  if (!allowedBySession || !allowedByIp || !allowedByFingerprint) {
     res.status(429).json({ error: config.message });
     return false;
   }
   return true;
 };
 
-const isBanned = (sessionId, ip) => {
+const isBanned = (sessionId, ip, fingerprint) => {
   if (sessionId) {
     const bySession = db.prepare('SELECT 1 FROM banned_sessions WHERE session_id = ?').get(sessionId);
     if (bySession) {
@@ -265,6 +299,12 @@ const isBanned = (sessionId, ip) => {
   if (ip) {
     const byIp = db.prepare('SELECT 1 FROM banned_ips WHERE ip = ?').get(ip);
     if (byIp) {
+      return true;
+    }
+  }
+  if (fingerprint) {
+    const byFingerprint = db.prepare('SELECT 1 FROM banned_fingerprints WHERE fingerprint = ?').get(fingerprint);
+    if (byFingerprint) {
       return true;
     }
   }
@@ -421,8 +461,13 @@ app.post('/api/feedback', async (req, res) => {
     return res.status(400).json({ error: '邮箱格式不正确' });
   }
 
+  const fingerprint = requireFingerprint(req, res);
+  if (!fingerprint) {
+    return;
+  }
+
   const clientIp = getClientIp(req);
-  if (isBanned(req.sessionID, clientIp)) {
+  if (isBanned(req.sessionID, clientIp, fingerprint)) {
     return res.status(403).json({ error: '账号已被封禁，无法留言' });
   }
 
@@ -442,6 +487,14 @@ app.post('/api/feedback', async (req, res) => {
       .get(clientIp);
     if (lastByIp?.created_at) {
       lastCreatedAt = Math.max(lastCreatedAt, lastByIp.created_at);
+    }
+  }
+  if (fingerprint) {
+    const lastByFingerprint = db
+      .prepare('SELECT created_at FROM feedback_messages WHERE fingerprint = ? ORDER BY created_at DESC LIMIT 1')
+      .get(fingerprint);
+    if (lastByFingerprint?.created_at) {
+      lastCreatedAt = Math.max(lastCreatedAt, lastByFingerprint.created_at);
     }
   }
   if (lastCreatedAt && now - lastCreatedAt < FEEDBACK_LIMIT_MS) {
@@ -464,8 +517,9 @@ app.post('/api/feedback', async (req, res) => {
       qq,
       created_at,
       session_id,
-      ip
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ip,
+      fingerprint
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `
   ).run(
     feedbackId,
@@ -475,7 +529,8 @@ app.post('/api/feedback', async (req, res) => {
     qq || null,
     now,
     req.sessionID || null,
-    clientIp || null
+    clientIp || null,
+    fingerprint
   );
 
   return res.status(201).json({ ok: true });
@@ -563,12 +618,17 @@ app.post('/api/posts', async (req, res) => {
     return res.status(400).json({ error: '内容包含敏感词，请修改后再提交' });
   }
 
-  if (!enforceRateLimit(req, res, 'post')) {
+  const fingerprint = requireFingerprint(req, res);
+  if (!fingerprint) {
+    return;
+  }
+
+  if (!enforceRateLimit(req, res, 'post', fingerprint)) {
     return;
   }
 
   const clientIp = getClientIp(req);
-  if (isBanned(req.sessionID, clientIp)) {
+  if (isBanned(req.sessionID, clientIp, fingerprint)) {
     return res.status(403).json({ error: '账号已被封禁，无法投稿' });
   }
 
@@ -582,10 +642,10 @@ app.post('/api/posts', async (req, res) => {
 
   db.prepare(
     `
-    INSERT INTO posts (id, content, author, tags, created_at, session_id, ip)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO posts (id, content, author, tags, created_at, session_id, ip, fingerprint)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `
-  ).run(postId, content, '匿名', JSON.stringify(tags), now, req.sessionID, clientIp);
+  ).run(postId, content, '匿名', JSON.stringify(tags), now, req.sessionID, clientIp, fingerprint);
 
   incrementDailyStat(formatDateKey(), 'posts', 1);
 
@@ -762,12 +822,17 @@ app.post('/api/posts/:id/comments', async (req, res) => {
     return res.status(400).json({ error: '评论包含敏感词，请修改后再提交' });
   }
 
-  if (!enforceRateLimit(req, res, 'comment')) {
+  const fingerprint = requireFingerprint(req, res);
+  if (!fingerprint) {
+    return;
+  }
+
+  if (!enforceRateLimit(req, res, 'comment', fingerprint)) {
     return;
   }
 
   const clientIp = getClientIp(req);
-  if (isBanned(req.sessionID, clientIp)) {
+  if (isBanned(req.sessionID, clientIp, fingerprint)) {
     return res.status(403).json({ error: '账号已被封禁，无法评论' });
   }
 
@@ -785,8 +850,8 @@ app.post('/api/posts/:id/comments', async (req, res) => {
   const commentId = crypto.randomUUID();
 
   db.prepare(
-    `\n    INSERT INTO comments (id, post_id, content, author, created_at)\n    VALUES (?, ?, ?, ?, ?)\n    `
-  ).run(commentId, postId, content, '匿名', now);
+    `\n    INSERT INTO comments (id, post_id, content, author, created_at, fingerprint)\n    VALUES (?, ?, ?, ?, ?, ?)\n    `
+  ).run(commentId, postId, content, '匿名', now, fingerprint);
 
   db.prepare('UPDATE posts SET comments_count = comments_count + 1 WHERE id = ?').run(postId);
 
@@ -817,8 +882,18 @@ app.post('/api/reports', (req, res) => {
     return res.status(400).json({ error: '参数不完整' });
   }
 
-  if (!enforceRateLimit(req, res, 'report')) {
+  const fingerprint = requireFingerprint(req, res);
+  if (!fingerprint) {
     return;
+  }
+
+  if (!enforceRateLimit(req, res, 'report', fingerprint)) {
+    return;
+  }
+
+  const clientIp = getClientIp(req);
+  if (isBanned(req.sessionID, clientIp, fingerprint)) {
+    return res.status(403).json({ error: '账号已被封禁，无法举报' });
   }
 
   const post = db.prepare('SELECT content FROM posts WHERE id = ? AND deleted = 0').get(postId);
@@ -831,19 +906,34 @@ app.post('/api/reports', (req, res) => {
   const now = Date.now();
 
   const sessionId = req.sessionID || 'unknown';
-  const reportSessionResult = db
-    .prepare('INSERT OR IGNORE INTO report_sessions (post_id, session_id, created_at) VALUES (?, ?, ?)')
-    .run(postId, sessionId, now);
-  if (reportSessionResult.changes === 0) {
+  if (sessionId) {
+    const existingSession = db
+      .prepare('SELECT 1 FROM report_sessions WHERE post_id = ? AND session_id = ?')
+      .get(postId, sessionId);
+    if (existingSession) {
+      return res.status(409).json({ error: '你已举报过该内容' });
+    }
+  }
+  const existingFingerprint = db
+    .prepare('SELECT 1 FROM report_fingerprints WHERE post_id = ? AND fingerprint = ?')
+    .get(postId, fingerprint);
+  if (existingFingerprint) {
     return res.status(409).json({ error: '你已举报过该内容' });
   }
 
+  if (sessionId) {
+    db.prepare('INSERT OR IGNORE INTO report_sessions (post_id, session_id, created_at) VALUES (?, ?, ?)')
+      .run(postId, sessionId, now);
+  }
+  db.prepare('INSERT OR IGNORE INTO report_fingerprints (post_id, fingerprint, created_at) VALUES (?, ?, ?)')
+    .run(postId, fingerprint, now);
+
   db.prepare(
     `
-      INSERT INTO reports (id, post_id, reason, content_snippet, created_at, status, risk_level)
-      VALUES (?, ?, ?, ?, ?, 'pending', ?)
+      INSERT INTO reports (id, post_id, reason, content_snippet, created_at, status, risk_level, fingerprint)
+      VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)
     `
-  ).run(reportId, postId, reason, snippet, now, resolveRiskLevel(reason));
+  ).run(reportId, postId, reason, snippet, now, resolveRiskLevel(reason), fingerprint);
 
   incrementDailyStat(formatDateKey(), 'reports', 1);
 
@@ -915,7 +1005,7 @@ app.post('/api/reports/:id/action', requireAdmin, (req, res) => {
   ).run(nextStatus, action, now, reportId);
 
   if (action === 'delete' || action === 'ban') {
-    const post = db.prepare('SELECT session_id, ip FROM posts WHERE id = ?').get(report.post_id);
+    const post = db.prepare('SELECT session_id, ip, fingerprint FROM posts WHERE id = ?').get(report.post_id);
     db.prepare('UPDATE posts SET deleted = 1, deleted_at = ? WHERE id = ?').run(now, report.post_id);
 
     if (action === 'ban' && post?.session_id) {
@@ -925,6 +1015,10 @@ app.post('/api/reports/:id/action', requireAdmin, (req, res) => {
     if (action === 'ban' && post?.ip) {
       db.prepare('INSERT OR IGNORE INTO banned_ips (ip, banned_at) VALUES (?, ?)')
         .run(post.ip, now);
+    }
+    if (action === 'ban' && post?.fingerprint) {
+      db.prepare('INSERT OR IGNORE INTO banned_fingerprints (fingerprint, banned_at) VALUES (?, ?)')
+        .run(post.fingerprint, now);
     }
   }
 
@@ -938,7 +1032,7 @@ app.post('/api/reports/:id/action', requireAdmin, (req, res) => {
   });
 
   if (action === 'ban') {
-    const post = db.prepare('SELECT session_id, ip FROM posts WHERE id = ?').get(report.post_id);
+    const post = db.prepare('SELECT session_id, ip, fingerprint FROM posts WHERE id = ?').get(report.post_id);
     if (post?.session_id) {
       logAdminAction(req, {
         action: 'ban_session',
@@ -954,6 +1048,16 @@ app.post('/api/reports/:id/action', requireAdmin, (req, res) => {
         action: 'ban_ip',
         targetType: 'ip',
         targetId: post.ip,
+        before: null,
+        after: { banned: true },
+        reason,
+      });
+    }
+    if (post?.fingerprint) {
+      logAdminAction(req, {
+        action: 'ban_fingerprint',
+        targetType: 'fingerprint',
+        targetId: post.fingerprint,
         before: null,
         after: { banned: true },
         reason,
@@ -1158,7 +1262,7 @@ app.post('/api/admin/posts/batch', requireAdmin, (req, res) => {
 
   const placeholders = ids.map(() => '?').join(',');
   const rows = db
-    .prepare(`SELECT id, content, deleted, session_id, ip FROM posts WHERE id IN (${placeholders})`)
+    .prepare(`SELECT id, content, deleted, session_id, ip, fingerprint FROM posts WHERE id IN (${placeholders})`)
     .all(...ids);
 
   const now = Date.now();
@@ -1185,6 +1289,7 @@ app.post('/api/admin/posts/batch', requireAdmin, (req, res) => {
 
   const sessionIds = Array.from(new Set(rows.map((row) => row.session_id).filter(Boolean)));
   const ips = Array.from(new Set(rows.map((row) => row.ip).filter(Boolean)));
+  const fingerprints = Array.from(new Set(rows.map((row) => row.fingerprint).filter(Boolean)));
 
   if (action === 'ban') {
     sessionIds.forEach((sessionId) => {
@@ -1211,15 +1316,27 @@ app.post('/api/admin/posts/batch', requireAdmin, (req, res) => {
         reason,
       });
     });
+    fingerprints.forEach((fingerprint) => {
+      db.prepare('INSERT OR IGNORE INTO banned_fingerprints (fingerprint, banned_at) VALUES (?, ?)')
+        .run(fingerprint, now);
+      logAdminAction(req, {
+        action: 'ban_fingerprint',
+        targetType: 'fingerprint',
+        targetId: fingerprint,
+        before: null,
+        after: { banned: true },
+        reason,
+      });
+    });
     logAdminAction(req, {
       action: 'post_batch_ban',
       targetType: 'post_batch',
       targetId: ids.join(','),
       before: null,
-      after: { posts: ids.length, sessions: sessionIds.length, ips: ips.length },
+      after: { posts: ids.length, sessions: sessionIds.length, ips: ips.length, fingerprints: fingerprints.length },
       reason,
     });
-    return res.json({ updated: ids.length, sessions: sessionIds.length, ips: ips.length });
+    return res.json({ updated: ids.length, sessions: sessionIds.length, ips: ips.length, fingerprints: fingerprints.length });
   }
 
   sessionIds.forEach((sessionId) => {
@@ -1244,15 +1361,26 @@ app.post('/api/admin/posts/batch', requireAdmin, (req, res) => {
       reason,
     });
   });
+  fingerprints.forEach((fingerprint) => {
+    db.prepare('DELETE FROM banned_fingerprints WHERE fingerprint = ?').run(fingerprint);
+    logAdminAction(req, {
+      action: 'unban_fingerprint',
+      targetType: 'fingerprint',
+      targetId: fingerprint,
+      before: { banned: true },
+      after: { banned: false },
+      reason,
+    });
+  });
   logAdminAction(req, {
     action: 'post_batch_unban',
     targetType: 'post_batch',
     targetId: ids.join(','),
     before: null,
-    after: { posts: ids.length, sessions: sessionIds.length, ips: ips.length },
+    after: { posts: ids.length, sessions: sessionIds.length, ips: ips.length, fingerprints: fingerprints.length },
     reason,
   });
-  return res.json({ updated: ids.length, sessions: sessionIds.length, ips: ips.length });
+  return res.json({ updated: ids.length, sessions: sessionIds.length, ips: ips.length, fingerprints: fingerprints.length });
 });
 
 app.get('/api/admin/posts', requireAdmin, (req, res) => {
@@ -1348,9 +1476,9 @@ app.get('/api/admin/feedback', requireAdmin, (req, res) => {
   }
 
   if (search) {
-    conditions.push('(content LIKE ? OR email LIKE ? OR wechat LIKE ? OR qq LIKE ? OR session_id LIKE ? OR ip LIKE ?)');
+    conditions.push('(content LIKE ? OR email LIKE ? OR wechat LIKE ? OR qq LIKE ? OR session_id LIKE ? OR ip LIKE ? OR fingerprint LIKE ?)');
     const keyword = `%${search}%`;
-    params.push(keyword, keyword, keyword, keyword, keyword, keyword);
+    params.push(keyword, keyword, keyword, keyword, keyword, keyword, keyword);
   }
 
   const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -1381,6 +1509,7 @@ app.get('/api/admin/feedback', requireAdmin, (req, res) => {
     readAt: row.read_at,
     sessionId: row.session_id || null,
     ip: row.ip || null,
+    fingerprint: row.fingerprint || null,
   }));
 
   return res.json({
@@ -1447,7 +1576,8 @@ app.post('/api/admin/feedback/:id/action', requireAdmin, (req, res) => {
 
   const sessionId = row.session_id;
   const ip = row.ip;
-  if (!sessionId && !ip) {
+  const fingerprint = row.fingerprint;
+  if (!sessionId && !ip && !fingerprint) {
     return res.status(400).json({ error: '无法获取封禁标识' });
   }
 
@@ -1475,16 +1605,33 @@ app.post('/api/admin/feedback/:id/action', requireAdmin, (req, res) => {
       reason,
     });
   }
+  if (fingerprint) {
+    db.prepare('INSERT OR IGNORE INTO banned_fingerprints (fingerprint, banned_at) VALUES (?, ?)')
+      .run(fingerprint, now);
+    logAdminAction(req, {
+      action: 'ban_fingerprint',
+      targetType: 'fingerprint',
+      targetId: fingerprint,
+      before: null,
+      after: { banned: true },
+      reason,
+    });
+  }
   logAdminAction(req, {
     action: 'feedback_ban',
     targetType: 'feedback',
     targetId: feedbackId,
     before: null,
-    after: { sessionId: sessionId || null, ip: ip || null },
+    after: { sessionId: sessionId || null, ip: ip || null, fingerprint: fingerprint || null },
     reason,
   });
 
-  return res.json({ id: feedbackId, sessionBanned: Boolean(sessionId), ipBanned: Boolean(ip) });
+  return res.json({
+    id: feedbackId,
+    sessionBanned: Boolean(sessionId),
+    ipBanned: Boolean(ip),
+    fingerprintBanned: Boolean(fingerprint),
+  });
 });
 
 app.get('/api/admin/bans', requireAdmin, (req, res) => {
@@ -1504,7 +1651,15 @@ app.get('/api/admin/bans', requireAdmin, (req, res) => {
       bannedAt: row.banned_at,
     }));
 
-  return res.json({ sessions, ips });
+  const fingerprints = db
+    .prepare('SELECT fingerprint, banned_at FROM banned_fingerprints ORDER BY banned_at DESC')
+    .all()
+    .map((row) => ({
+      fingerprint: row.fingerprint,
+      bannedAt: row.banned_at,
+    }));
+
+  return res.json({ sessions, ips, fingerprints });
 });
 
 app.post('/api/admin/bans/action', requireAdmin, (req, res) => {
@@ -1513,7 +1668,7 @@ app.post('/api/admin/bans/action', requireAdmin, (req, res) => {
   const value = String(req.body?.value || '').trim();
   const reason = String(req.body?.reason || '').trim();
 
-  if (!['ban', 'unban'].includes(action) || !['session', 'ip'].includes(type) || !value) {
+  if (!['ban', 'unban'].includes(action) || !['session', 'ip', 'fingerprint'].includes(type) || !value) {
     return res.status(400).json({ error: '无效操作' });
   }
 
@@ -1541,7 +1696,7 @@ app.post('/api/admin/bans/action', requireAdmin, (req, res) => {
         reason,
       });
     }
-  } else {
+  } else if (type === 'ip') {
     if (action === 'ban') {
       db.prepare('INSERT OR IGNORE INTO banned_ips (ip, banned_at) VALUES (?, ?)')
         .run(value, now);
@@ -1558,6 +1713,29 @@ app.post('/api/admin/bans/action', requireAdmin, (req, res) => {
       logAdminAction(req, {
         action: 'unban_ip',
         targetType: 'ip',
+        targetId: value,
+        before: { banned: true },
+        after: { banned: false },
+        reason,
+      });
+    }
+  } else {
+    if (action === 'ban') {
+      db.prepare('INSERT OR IGNORE INTO banned_fingerprints (fingerprint, banned_at) VALUES (?, ?)')
+        .run(value, now);
+      logAdminAction(req, {
+        action: 'ban_fingerprint',
+        targetType: 'fingerprint',
+        targetId: value,
+        before: null,
+        after: { banned: true },
+        reason,
+      });
+    } else {
+      db.prepare('DELETE FROM banned_fingerprints WHERE fingerprint = ?').run(value);
+      logAdminAction(req, {
+        action: 'unban_fingerprint',
+        targetType: 'fingerprint',
         targetId: value,
         before: { banned: true },
         after: { banned: false },
@@ -1724,7 +1902,8 @@ app.get('/api/admin/stats', requireAdmin, (req, res) => {
   const totalPosts = db.prepare('SELECT COUNT(1) AS count FROM posts WHERE deleted = 0').get().count;
   const bannedSessions = db.prepare('SELECT COUNT(1) AS count FROM banned_sessions').get().count;
   const bannedIps = db.prepare('SELECT COUNT(1) AS count FROM banned_ips').get().count;
-  const bannedUsers = bannedSessions + bannedIps;
+  const bannedFingerprints = db.prepare('SELECT COUNT(1) AS count FROM banned_fingerprints').get().count;
+  const bannedUsers = bannedSessions + bannedIps + bannedFingerprints;
 
   return res.json({
     todayReports: todayStats?.reports || 0,

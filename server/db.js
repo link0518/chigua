@@ -95,6 +95,19 @@ CREATE TABLE IF NOT EXISTS banned_ips (
   banned_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS banned_fingerprints (
+  fingerprint TEXT PRIMARY KEY,
+  banned_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS report_fingerprints (
+  post_id TEXT NOT NULL,
+  fingerprint TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (post_id, fingerprint),
+  FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS feedback_messages (
   id TEXT PRIMARY KEY,
   content TEXT NOT NULL,
@@ -169,6 +182,10 @@ const ensureColumn = (table, column, definition) => {
 };
 
 ensureColumn('posts', 'ip', 'TEXT');
+ensureColumn('posts', 'fingerprint', 'TEXT');
+ensureColumn('comments', 'fingerprint', 'TEXT');
+ensureColumn('reports', 'fingerprint', 'TEXT');
+ensureColumn('feedback_messages', 'fingerprint', 'TEXT');
 
 export const formatDateKey = (date = new Date()) => {
   const year = date.getFullYear();
