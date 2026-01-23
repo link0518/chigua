@@ -47,7 +47,7 @@ const HomeView: React.FC = () => {
     const load = async () => {
       setLoading(true);
       try {
-        await loadHomePosts(30);
+        await loadHomePosts(10);
       } catch {
         // 忽略加载失败，交由空态处理
       }

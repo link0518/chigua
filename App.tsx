@@ -167,8 +167,9 @@ const App: React.FC = () => {
                 <div className="size-10 sm:size-12 flex items-center justify-center rounded-full border-2 border-black bg-alert shadow-sketch group-hover:rotate-12 transition-transform duration-300">
                   <span className="text-black text-[22px] font-sans font-bold">瓜</span>
                 </div>
-              <h1 className="text-black text-2xl sm:text-3xl font-display font-bold tracking-widest relative">
-                JX3瓜田
+              <h1 className="text-black text-2xl sm:text-3xl font-display font-bold tracking-widest relative leading-none sm:leading-tight">
+                <span className="block sm:inline">JX3</span>
+                <span className="block sm:inline">瓜田</span>
                 <span className="absolute -bottom-1 left-0 w-full h-[6px] bg-marker-green/50 -rotate-1 rounded-full"></span>
               </h1>
             </div>
@@ -185,7 +186,7 @@ const App: React.FC = () => {
                 onClick={() => navigate(ViewType.SUBMISSION)}
                 className="flex items-center justify-center rounded-full px-4 py-2 sm:px-5 sm:py-2.5 bg-black text-white hover:bg-ink/90 transition-all shadow-sketch active:shadow-sketch-active active:translate-x-[2px] active:translate-y-[2px] transform rotate-1 hover:-rotate-1"
               >
-                <span className="flex items-center gap-2 font-hand text-base sm:text-lg font-bold">
+                <span className="flex items-center gap-2 font-sans text-base sm:text-lg font-semibold">
                   <span className="material-symbols-outlined text-[20px]">edit</span>
                   <span className="hidden md:inline">投稿</span>
                   <span className="md:hidden">投稿</span>
