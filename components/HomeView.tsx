@@ -143,6 +143,14 @@ const HomeView: React.FC = () => {
     }, 200);
   };
 
+  const handlePrev = () => {
+    setAnimate(true);
+    setTimeout(() => {
+      setCurrentIndex((prev) => (prev - 1 + posts.length) % posts.length);
+      setAnimate(false);
+    }, 200);
+  };
+
   const handleLike = async () => {
     const wasLiked = isLiked(currentPost.id);
     try {
@@ -330,7 +338,14 @@ const HomeView: React.FC = () => {
       </article>
 
       {/* Navigation Button */}
-      <div className="flex justify-center mt-10 mb-4">
+      <div className="flex flex-wrap justify-center gap-4 mt-10 mb-4">
+        <button
+          onClick={handlePrev}
+          className="group relative flex items-center gap-3 px-10 py-4 bg-white border-[3px] border-black rounded-full shadow-sketch-lg hover:shadow-sketch-hover hover:-translate-y-1 hover:bg-highlight transition-all duration-200 active:shadow-sketch-active active:translate-y-[4px] transform rotate-1"
+        >
+          <span className="material-symbols-outlined text-3xl group-hover:rotate-12 transition-transform">arrow_back</span>
+          <span className="font-hand font-bold text-2xl tracking-widest pt-1 group-hover:animate-wiggle">上一个瓜</span>
+        </button>
         <button
           onClick={handleNext}
           className="group relative flex items-center gap-3 px-10 py-4 bg-white border-[3px] border-black rounded-full shadow-sketch-lg hover:shadow-sketch-hover hover:-translate-y-1 hover:bg-highlight transition-all duration-200 active:shadow-sketch-active active:translate-y-[4px] transform -rotate-1"
