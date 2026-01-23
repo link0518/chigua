@@ -161,6 +161,15 @@ body {
   }
 }
 
+@media (max-width: 640px) {
+  .mascot-burst {
+    right: 1rem;
+    bottom: 1rem;
+    width: 90px;
+    height: 90px;
+  }
+}
+
 ::-webkit-scrollbar {
   width: 10px;
 }

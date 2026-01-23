@@ -88,6 +88,7 @@ const AdminDashboard: React.FC = () => {
   const [feedbackSearch, setFeedbackSearch] = useState('');
   const [feedbackPage, setFeedbackPage] = useState(1);
   const [feedbackTotal, setFeedbackTotal] = useState(0);
+  const [feedbackUnreadCount, setFeedbackUnreadCount] = useState(0);
   const [feedbackLoading, setFeedbackLoading] = useState(false);
   const [feedbackActionModal, setFeedbackActionModal] = useState<{
     isOpen: boolean;
@@ -211,6 +212,9 @@ const AdminDashboard: React.FC = () => {
       });
       setFeedbackItems(data.items || []);
       setFeedbackTotal(data.total || 0);
+      if (feedbackStatus === 'unread') {
+        setFeedbackUnreadCount(data.total || 0);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : '留言加载失败';
       showToast(message, 'error');
@@ -218,6 +222,19 @@ const AdminDashboard: React.FC = () => {
       setFeedbackLoading(false);
     }
   }, [feedbackPage, feedbackSearch, feedbackStatus, showToast]);
+
+  const fetchFeedbackUnreadCount = useCallback(async () => {
+    try {
+      const data = await api.getAdminFeedback({
+        status: 'unread',
+        page: 1,
+        limit: 1,
+      });
+      setFeedbackUnreadCount(data.total || 0);
+    } catch {
+      setFeedbackUnreadCount(0);
+    }
+  }, []);
 
   const fetchAnnouncement = useCallback(async () => {
     setAnnouncementLoading(true);
@@ -269,6 +286,10 @@ const AdminDashboard: React.FC = () => {
     }, 300);
     return () => clearTimeout(timer);
   }, [currentView, fetchFeedback]);
+
+  useEffect(() => {
+    fetchFeedbackUnreadCount().catch(() => { });
+  }, [currentView, fetchFeedbackUnreadCount]);
 
   useEffect(() => {
     if (currentView !== 'announcement') {
@@ -507,6 +528,7 @@ const AdminDashboard: React.FC = () => {
       await api.handleAdminFeedback(feedbackId, 'read');
       showToast('已标记已读', 'success');
       await fetchFeedback();
+      await fetchFeedbackUnreadCount();
     } catch (error) {
       const message = error instanceof Error ? error.message : '标记失败';
       showToast(message, 'error');
@@ -530,6 +552,7 @@ const AdminDashboard: React.FC = () => {
       showToast(action === 'delete' ? '留言已删除' : '已封禁该用户', 'success');
       setFeedbackActionModal({ isOpen: false, feedbackId: '', action: 'delete', content: '', reason: '' });
       await fetchFeedback();
+      await fetchFeedbackUnreadCount();
       if (action === 'ban') {
         fetchBans().catch(() => { });
         loadStats().catch(() => { });
@@ -662,9 +685,9 @@ const AdminDashboard: React.FC = () => {
             <NavItem view="posts" icon={<FileText size={18} />} label="帖子管理" />
             <NavItem view="compose" icon={<PenSquare size={18} />} label="后台投稿" />
             <NavItem view="announcement" icon={<Bell size={18} />} label="公告发布" />
-            <NavItem view="feedback" icon={<MessageSquare size={18} />} label="留言管理" />
+            <NavItem view="feedback" icon={<MessageSquare size={18} />} label="留言管理" badge={feedbackUnreadCount} />
             <NavItem view="reports" icon={<Flag size={18} />} label="待处理举报" badge={pendingReports.length} />
-            <NavItem view="processed" icon={<Gavel size={18} />} label="已处理" badge={processedReports.length} />
+            <NavItem view="processed" icon={<Gavel size={18} />} label="已处理" />
             <NavItem view="bans" icon={<Shield size={18} />} label="封禁管理" />
             <NavItem view="audit" icon={<ClipboardList size={18} />} label="操作审计" />
             <NavItem view="stats" icon={<BarChart2 size={18} />} label="数据统计" />
@@ -776,9 +799,9 @@ const AdminDashboard: React.FC = () => {
                 <NavItem view="posts" icon={<FileText size={18} />} label="帖子管理" onSelect={() => setMobileNavOpen(false)} />
                 <NavItem view="compose" icon={<PenSquare size={18} />} label="后台投稿" onSelect={() => setMobileNavOpen(false)} />
                 <NavItem view="announcement" icon={<Bell size={18} />} label="公告发布" onSelect={() => setMobileNavOpen(false)} />
-                <NavItem view="feedback" icon={<MessageSquare size={18} />} label="留言管理" onSelect={() => setMobileNavOpen(false)} />
+                <NavItem view="feedback" icon={<MessageSquare size={18} />} label="留言管理" badge={feedbackUnreadCount} onSelect={() => setMobileNavOpen(false)} />
                 <NavItem view="reports" icon={<Flag size={18} />} label="待处理举报" badge={pendingReports.length} onSelect={() => setMobileNavOpen(false)} />
-                <NavItem view="processed" icon={<Gavel size={18} />} label="已处理" badge={processedReports.length} onSelect={() => setMobileNavOpen(false)} />
+                <NavItem view="processed" icon={<Gavel size={18} />} label="已处理" onSelect={() => setMobileNavOpen(false)} />
                 <NavItem view="bans" icon={<Shield size={18} />} label="封禁管理" onSelect={() => setMobileNavOpen(false)} />
                 <NavItem view="audit" icon={<ClipboardList size={18} />} label="操作审计" onSelect={() => setMobileNavOpen(false)} />
                 <NavItem view="stats" icon={<BarChart2 size={18} />} label="数据统计" onSelect={() => setMobileNavOpen(false)} />
