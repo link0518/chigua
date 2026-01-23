@@ -9,12 +9,17 @@ const toQuery = (params) => {
   return `?${query}`;
 };
 
+let csrfToken = '';
+
+const isAdminPath = (path: string) => path.startsWith('/admin');
+
 const apiFetch = async (path, options = {}) => {
   const fingerprint = await getBrowserFingerprint().catch(() => '');
   const response = await fetch(`/api${path}`, {
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
+      ...(csrfToken && isAdminPath(path) ? { 'X-CSRF-Token': csrfToken } : {}),
       ...(fingerprint ? { 'X-Client-Fingerprint': fingerprint } : {}),
       ...(options.headers || {}),
     },
@@ -36,6 +41,9 @@ const apiFetch = async (path, options = {}) => {
 };
 
 export const api = {
+  setCsrfToken: (token) => {
+    csrfToken = token || '';
+  },
   getHomePosts: (limit, offset = 0) => apiFetch(`/posts/home${toQuery({ limit, offset })}`),
   getPostById: (postId) => apiFetch(`/posts/${postId}`),
   getFeedPosts: (filter, search) => apiFetch(`/posts/feed${toQuery({ filter, search })}`),

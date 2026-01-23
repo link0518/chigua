@@ -25,6 +25,24 @@ const AdminGate: React.FC = () => {
   if (state.adminSession.loggedIn) {
     return <AdminDashboard />;
   }
+  if (state.adminSession.disabled) {
+    return (
+      <div className="admin-font flex flex-col items-center justify-center min-h-[70vh] p-4">
+        <div className="max-w-md w-full text-center">
+          <SketchCard rotate className="relative">
+            <Tape />
+            <div className="flex flex-col items-center gap-3 py-6">
+              <div className="mx-auto mb-2 w-12 h-12 rounded-full bg-ink text-white flex items-center justify-center">
+                <Lock size={20} />
+              </div>
+              <h2 className="font-display text-2xl text-ink">后台未启用</h2>
+              <p className="font-hand text-pencil">请配置 SESSION_SECRET 和管理员账号密码</p>
+            </div>
+          </SketchCard>
+        </div>
+      </div>
+    );
+  }
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();

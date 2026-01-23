@@ -20,6 +20,8 @@ interface AdminSession {
   loggedIn: boolean;
   username?: string;
   checked: boolean;
+  csrfToken?: string | null;
+  disabled?: boolean;
 }
 
 interface AppState {
@@ -83,7 +85,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     toasts: [],
     likedPosts: new Set(),
     dislikedPosts: new Set(),
-    adminSession: { loggedIn: false, checked: false },
+    adminSession: { loggedIn: false, checked: false, disabled: false, csrfToken: null },
   });
 
   const showToast = useCallback((message: string, type: Toast['type'] = 'info') => {
@@ -184,35 +186,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const loadAdminSession = useCallback(async () => {
     const data = await api.getAdminSession();
+    api.setCsrfToken(data?.csrfToken || '');
     setState((prev) => ({
       ...prev,
       adminSession: {
         loggedIn: Boolean(data.loggedIn),
         username: data.username,
         checked: true,
+        csrfToken: data?.csrfToken || null,
+        disabled: Boolean(data?.disabled),
       },
     }));
   }, []);
 
   const loginAdmin = useCallback(async (username: string, password: string) => {
     const data = await api.adminLogin(username, password);
+    api.setCsrfToken(data?.csrfToken || '');
     setState((prev) => ({
       ...prev,
       adminSession: {
         loggedIn: Boolean(data.loggedIn),
         username: data.username,
         checked: true,
+        csrfToken: data?.csrfToken || null,
+        disabled: false,
       },
     }));
   }, []);
 
   const logoutAdmin = useCallback(async () => {
     await api.adminLogout();
+    api.setCsrfToken('');
     setState((prev) => ({
       ...prev,
       adminSession: {
         loggedIn: false,
         checked: true,
+        csrfToken: null,
+        disabled: prev.adminSession.disabled,
       },
     }));
   }, []);

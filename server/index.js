@@ -53,7 +53,15 @@ const PORT = Number(process.env.PORT || 4395);
 const TURNSTILE_SECRET_KEY = String(process.env.TURNSTILE_SECRET_KEY || '').trim();
 const TURNSTILE_VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
 const FINGERPRINT_HEADER = 'x-client-fingerprint';
-const FINGERPRINT_SALT = String(process.env.FINGERPRINT_SALT || process.env.SESSION_SECRET || 'gossipsketch-fingerprint-salt').trim();
+const SESSION_SECRET = String(process.env.SESSION_SECRET || '').trim();
+const FINGERPRINT_SALT = String(process.env.FINGERPRINT_SALT || SESSION_SECRET || 'gossipsketch-fingerprint-salt').trim();
+const adminUsername = String(process.env.ADMIN_USERNAME || '').trim();
+const adminPassword = String(process.env.ADMIN_PASSWORD || '').trim();
+const adminEnabled = Boolean(SESSION_SECRET && adminUsername && adminPassword);
+const sessionSecret = SESSION_SECRET || crypto.randomBytes(32).toString('hex');
+if (!SESSION_SECRET) {
+  console.warn('SESSION_SECRET 未配置，已生成临时密钥（后台将被禁用）');
+}
 
 app.use(express.json({ limit: '2mb' }));
 
@@ -68,7 +76,7 @@ const sessionStore = new SqliteStore({
 
 app.use(
   session({
-    secret: process.env.SESSION_SECRET || 'gossipsketch-secret',
+    secret: sessionSecret,
     resave: false,
     saveUninitialized: true,
     store: sessionStore,
@@ -81,8 +89,11 @@ app.use(
 );
 
 const ensureAdminUser = () => {
-  const username = process.env.ADMIN_USERNAME || 'tiancai';
-  const password = process.env.ADMIN_PASSWORD || 'tiancai0528';
+  if (!adminEnabled) {
+    return;
+  }
+  const username = adminUsername;
+  const password = adminPassword;
   const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
   if (!existing) {
     const hash = bcrypt.hashSync(password, 10);
@@ -425,8 +436,20 @@ const seedSamplePosts = () => {
 // 示例数据已改为手动执行 init-data 脚本
 
 const requireAdmin = (req, res, next) => {
+  if (!adminEnabled) {
+    return res.status(503).json({ error: '后台未启用，请配置管理员与会话密钥' });
+  }
   if (!req.session?.admin) {
     return res.status(401).json({ error: '未登录' });
+  }
+  return next();
+};
+
+const requireAdminCsrf = (req, res, next) => {
+  const token = String(req.headers['x-csrf-token'] || '').trim();
+  const sessionToken = String(req.session?.admin?.csrfToken || '').trim();
+  if (!token || !sessionToken || token !== sessionToken) {
+    return res.status(403).json({ error: 'CSRF 验证失败' });
   }
   return next();
 };
@@ -1122,7 +1145,7 @@ app.get('/api/reports', requireAdmin, (req, res) => {
   return res.json({ items: reports });
 });
 
-app.post('/api/reports/:id/action', requireAdmin, (req, res) => {
+app.post('/api/reports/:id/action', requireAdmin, requireAdminCsrf, (req, res) => {
   const reportId = req.params.id;
   const action = String(req.body?.action || '').trim();
   const reason = String(req.body?.reason || '').trim();
@@ -1207,7 +1230,7 @@ app.post('/api/reports/:id/action', requireAdmin, (req, res) => {
   return res.json({ status: nextStatus, action });
 });
 
-app.post('/api/admin/reports/batch', requireAdmin, (req, res) => {
+app.post('/api/admin/reports/batch', requireAdmin, requireAdminCsrf, (req, res) => {
   const action = String(req.body?.action || '').trim();
   const reason = String(req.body?.reason || '').trim();
   const reportIds = Array.isArray(req.body?.reportIds) ? req.body.reportIds : [];
@@ -1250,7 +1273,7 @@ app.post('/api/admin/reports/batch', requireAdmin, (req, res) => {
   return res.json({ updated: result.changes || 0 });
 });
 
-app.post('/api/admin/posts', requireAdmin, (req, res) => {
+app.post('/api/admin/posts', requireAdmin, requireAdminCsrf, (req, res) => {
   const content = String(req.body?.content || '').trim();
   const tags = Array.isArray(req.body?.tags) ? req.body.tags : [];
   const reason = String(req.body?.reason || '').trim();
@@ -1309,7 +1332,7 @@ app.post('/api/admin/posts', requireAdmin, (req, res) => {
   return res.status(201).json({ post: mapPostRow(row, false) });
 });
 
-app.post('/api/admin/posts/:id/edit', requireAdmin, (req, res) => {
+app.post('/api/admin/posts/:id/edit', requireAdmin, requireAdminCsrf, (req, res) => {
   const postId = String(req.params.id || '').trim();
   const content = String(req.body?.content || '').trim();
   const reason = String(req.body?.reason || '').trim();
@@ -1382,7 +1405,7 @@ app.post('/api/admin/posts/:id/edit', requireAdmin, (req, res) => {
   return res.json({ id: postId, content });
 });
 
-app.post('/api/admin/posts/batch', requireAdmin, (req, res) => {
+app.post('/api/admin/posts/batch', requireAdmin, requireAdminCsrf, (req, res) => {
   const action = String(req.body?.action || '').trim();
   const reason = String(req.body?.reason || '').trim();
   const postIds = Array.isArray(req.body?.postIds) ? req.body.postIds : [];
@@ -1659,7 +1682,7 @@ app.get('/api/admin/feedback', requireAdmin, (req, res) => {
   });
 });
 
-app.post('/api/admin/feedback/:id/action', requireAdmin, (req, res) => {
+app.post('/api/admin/feedback/:id/action', requireAdmin, requireAdminCsrf, (req, res) => {
   const feedbackId = String(req.params.id || '').trim();
   const action = String(req.body?.action || '').trim();
   const reason = String(req.body?.reason || '').trim();
@@ -1801,7 +1824,7 @@ app.get('/api/admin/bans', requireAdmin, (req, res) => {
   return res.json({ sessions, ips, fingerprints });
 });
 
-app.post('/api/admin/bans/action', requireAdmin, (req, res) => {
+app.post('/api/admin/bans/action', requireAdmin, requireAdminCsrf, (req, res) => {
   const action = String(req.body?.action || '').trim();
   const type = String(req.body?.type || '').trim();
   const value = String(req.body?.value || '').trim();
@@ -1944,7 +1967,7 @@ app.get('/api/admin/audit-logs', requireAdmin, (req, res) => {
   });
 });
 
-app.post('/api/admin/posts/:id/action', requireAdmin, (req, res) => {
+app.post('/api/admin/posts/:id/action', requireAdmin, requireAdminCsrf, (req, res) => {
   const postId = String(req.params.id || '').trim();
   const action = String(req.body?.action || '').trim();
   const reason = String(req.body?.reason || '').trim();
@@ -1984,13 +2007,23 @@ app.post('/api/admin/posts/:id/action', requireAdmin, (req, res) => {
 });
 
 app.get('/api/admin/session', (req, res) => {
-  if (req.session?.admin) {
-    return res.json({ loggedIn: true, username: req.session.admin.username });
+  if (!adminEnabled) {
+    return res.json({ loggedIn: false, disabled: true });
   }
-  return res.json({ loggedIn: false });
+  if (req.session?.admin) {
+    return res.json({
+      loggedIn: true,
+      username: req.session.admin.username,
+      csrfToken: req.session.admin.csrfToken || null,
+    });
+  }
+  return res.json({ loggedIn: false, disabled: false });
 });
 
 app.post('/api/admin/login', (req, res) => {
+  if (!adminEnabled) {
+    return res.status(503).json({ error: '后台未启用，请配置管理员与会话密钥' });
+  }
   const username = String(req.body?.username || '').trim();
   const password = String(req.body?.password || '').trim();
 
@@ -2003,11 +2036,12 @@ app.post('/api/admin/login', (req, res) => {
     return res.status(401).json({ error: '账号或密码错误' });
   }
 
-  req.session.admin = { id: user.id, username: user.username, role: 'admin' };
-  return res.json({ loggedIn: true, username: user.username });
+  const csrfToken = crypto.randomBytes(32).toString('hex');
+  req.session.admin = { id: user.id, username: user.username, role: 'admin', csrfToken };
+  return res.json({ loggedIn: true, username: user.username, csrfToken });
 });
 
-app.post('/api/admin/logout', requireAdmin, (req, res) => {
+app.post('/api/admin/logout', requireAdmin, requireAdminCsrf, (req, res) => {
   req.session.destroy(() => {
     res.json({ loggedIn: false });
   });
@@ -2021,7 +2055,7 @@ app.get('/api/admin/announcement', requireAdmin, (req, res) => {
   return res.json({ content: row.content, updatedAt: row.updated_at });
 });
 
-app.post('/api/admin/announcement', requireAdmin, (req, res) => {
+app.post('/api/admin/announcement', requireAdmin, requireAdminCsrf, (req, res) => {
   const content = String(req.body?.content || '').trim();
   if (!content) {
     return res.status(400).json({ error: '公告内容不能为空' });
@@ -2048,7 +2082,7 @@ app.post('/api/admin/announcement', requireAdmin, (req, res) => {
   return res.json({ content, updatedAt: now });
 });
 
-app.post('/api/admin/announcement/clear', requireAdmin, (req, res) => {
+app.post('/api/admin/announcement/clear', requireAdmin, requireAdminCsrf, (req, res) => {
   db.prepare('DELETE FROM announcements WHERE id = ?').run('current');
   logAdminAction(req, {
     action: 'announcement_clear',
