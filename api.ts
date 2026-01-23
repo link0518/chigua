@@ -36,7 +36,7 @@ const apiFetch = async (path, options = {}) => {
 };
 
 export const api = {
-  getHomePosts: (limit) => apiFetch(`/posts/home${toQuery({ limit })}`),
+  getHomePosts: (limit, offset = 0) => apiFetch(`/posts/home${toQuery({ limit, offset })}`),
   getPostById: (postId) => apiFetch(`/posts/${postId}`),
   getFeedPosts: (filter, search) => apiFetch(`/posts/feed${toQuery({ filter, search })}`),
   createPost: (content, tags = [], turnstileToken) => apiFetch('/posts', {

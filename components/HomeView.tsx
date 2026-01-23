@@ -10,6 +10,7 @@ import Turnstile, { TurnstileHandle } from './Turnstile';
 
 const HomeView: React.FC = () => {
   const {
+    state,
     getHomePosts,
     likePost,
     dislikePost,
@@ -35,6 +36,10 @@ const HomeView: React.FC = () => {
   const [mascotPop, setMascotPop] = useState(false);
   const [mascotBurstKey, setMascotBurstKey] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const [pendingAdvance, setPendingAdvance] = useState(false);
+  const prevPostCountRef = useRef(0);
 
   const posts = getHomePosts();
   const currentPost = posts[currentIndex];
@@ -85,6 +90,45 @@ const HomeView: React.FC = () => {
   useEffect(() => {
     setCommentModalOpen(false);
   }, [currentPost?.id]);
+
+  useEffect(() => {
+    if (state.homeTotal > 0) {
+      setHasMore(posts.length < state.homeTotal);
+    } else {
+      setHasMore(false);
+    }
+  }, [posts.length, state.homeTotal]);
+
+  useEffect(() => {
+    const prevCount = prevPostCountRef.current;
+    if (pendingAdvance && posts.length > prevCount) {
+      setCurrentIndex((prev) => Math.min(prev + 1, posts.length - 1));
+      setPendingAdvance(false);
+    }
+    if (!hasMore && pendingAdvance) {
+      setPendingAdvance(false);
+    }
+    prevPostCountRef.current = posts.length;
+  }, [posts.length, pendingAdvance, hasMore]);
+
+  const loadMorePosts = async () => {
+    if (loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    try {
+      await loadHomePosts({ limit: 10, offset: posts.length, append: true });
+    } catch {
+      showToast('加载更多失败，请稍后重试', 'error');
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
+  useEffect(() => {
+    if (loadingMore || !hasMore) return;
+    if (currentIndex >= posts.length - 3) {
+      loadMorePosts();
+    }
+  }, [currentIndex, posts.length, hasMore, loadingMore]);
 
   const shareUrl = useMemo(() => {
     if (!currentPost?.id) return '';
@@ -138,6 +182,11 @@ const HomeView: React.FC = () => {
   }
 
   const handleNext = () => {
+    if (currentIndex >= posts.length - 1 && hasMore) {
+      setPendingAdvance(true);
+      loadMorePosts();
+      return;
+    }
     setAnimate(true);
     setTimeout(() => {
       setCurrentIndex((prev) => (prev + 1) % posts.length);
@@ -384,7 +433,7 @@ const HomeView: React.FC = () => {
         isOpen={commentModalOpen}
         onClose={() => setCommentModalOpen(false)}
         postId={currentPost.id}
-        contentPreview={currentPost.content.substring(0, 80)}
+        contentPreview={currentPost.content}
       />
 
       <Modal

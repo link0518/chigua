@@ -628,26 +628,37 @@ app.post('/api/feedback', async (req, res) => {
 
 app.get('/api/posts/home', (req, res) => {
   const limit = Math.min(Number(req.query.limit || 10), 50);
+  const offset = Math.max(Number(req.query.offset || 0), 0);
   const dateKey = formatDateKey();
   trackDailyVisit(dateKey, req.sessionID);
+
+  const total = db
+    .prepare(
+      `
+        SELECT COUNT(*) as count
+        FROM posts
+        WHERE deleted = 0
+      `
+    )
+    .get()?.count ?? 0;
 
   const rows = db
     .prepare(
       `
-      SELECT posts.*, ${hotScoreSql} AS hot_score, pr.reaction AS viewer_reaction
+        SELECT posts.*, ${hotScoreSql} AS hot_score, pr.reaction AS viewer_reaction
       FROM posts
       LEFT JOIN post_reactions pr
         ON pr.post_id = posts.id
         AND pr.session_id = ?
-      WHERE posts.deleted = 0
-      ORDER BY posts.created_at DESC
-      LIMIT ?
-      `
-    )
-    .all(req.sessionID, limit);
+        WHERE posts.deleted = 0
+        ORDER BY posts.created_at DESC
+        LIMIT ? OFFSET ?
+        `
+      )
+      .all(req.sessionID, limit, offset);
 
   const posts = rows.map((row) => mapPostRow(row, row.hot_score >= 20));
-  res.json({ items: posts });
+  res.json({ items: posts, total });
 });
 
 app.get('/api/posts/feed', (req, res) => {

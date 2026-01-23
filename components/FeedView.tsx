@@ -105,7 +105,7 @@ const PostItem: React.FC<{
           isOpen={commentOpen}
           onClose={onCommentClose}
           postId={post.id}
-          contentPreview={post.content.substring(0, 80)}
+          contentPreview={post.content}
         />
 
       </div>

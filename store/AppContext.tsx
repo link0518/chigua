@@ -24,6 +24,7 @@ interface AdminSession {
 
 interface AppState {
   homePosts: Post[];
+  homeTotal: number;
   feedPosts: Post[];
   feedTotal: number;
   reports: Report[];
@@ -50,7 +51,7 @@ interface AppContextType {
   getHomePosts: () => Post[];
   getFeedPosts: (filter?: 'week' | 'today' | 'all') => Post[];
   getPendingReports: () => Report[];
-  loadHomePosts: (limit?: number) => Promise<void>;
+  loadHomePosts: (options?: number | { limit?: number; offset?: number; append?: boolean }) => Promise<void>;
   loadFeedPosts: (filter?: 'week' | 'today' | 'all', search?: string) => Promise<void>;
   loadReports: () => Promise<void>;
   loadStats: () => Promise<void>;
@@ -74,6 +75,7 @@ const initialStats: Stats = {
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [state, setState] = useState<AppState>({
     homePosts: [],
+    homeTotal: 0,
     feedPosts: [],
     feedTotal: 0,
     reports: [],
@@ -126,13 +128,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   }, []);
 
-  const loadHomePosts = useCallback(async (limit?: number) => {
-    const data = await api.getHomePosts(limit);
+  const loadHomePosts = useCallback(async (options?: number | { limit?: number; offset?: number; append?: boolean }) => {
+    const resolved = typeof options === 'number' ? { limit: options } : options || {};
+    const limit = resolved.limit;
+    const offset = resolved.offset ?? 0;
+    const append = Boolean(resolved.append);
+    const data = await api.getHomePosts(limit, offset);
     const items: Post[] = data.items || [];
-    setState((prev) => ({
-      ...prev,
-      homePosts: items,
-    }));
+    setState((prev) => {
+      const existingIds = new Set(prev.homePosts.map((post) => post.id));
+      const merged = append
+        ? [...prev.homePosts, ...items.filter((post) => !existingIds.has(post.id))]
+        : items;
+      return {
+        ...prev,
+        homePosts: merged,
+        homeTotal: data.total ?? (append ? prev.homeTotal : items.length),
+      };
+    });
     syncReactions(items);
   }, [syncReactions]);
 
@@ -210,6 +223,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setState((prev) => ({
       ...prev,
       homePosts: [newPost, ...prev.homePosts],
+      homeTotal: prev.homeTotal + 1,
       feedPosts: [newPost, ...prev.feedPosts],
       feedTotal: prev.feedTotal + 1,
     }));
@@ -302,6 +316,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setState((prev) => ({
       ...prev,
       homePosts: prev.homePosts.filter((post) => post.id !== postId),
+      homeTotal: Math.max(prev.homeTotal - 1, 0),
       feedPosts: prev.feedPosts.filter((post) => post.id !== postId),
       feedTotal: Math.max(prev.feedTotal - 1, 0),
       likedPosts: (() => {

@@ -17,40 +17,36 @@ const escapeHtml = (value: unknown) => {
     .replace(/'/g, '&#39;');
 };
 
-const normalizeLink = (
-  href: string | { href?: string; title?: string; text?: string },
-  title?: string | null,
-  text?: string,
-) => {
-  if (typeof href === 'object' && href !== null) {
-    return {
-      href: href.href ?? '',
-      title: href.title ?? null,
-      text: href.text ?? '',
-    };
-  }
-  return {
-    href: href ?? '',
-    title: title ?? null,
-    text: text ?? '',
-  };
-};
-
 const renderer = new marked.Renderer();
 
-renderer.heading = (text, level) => {
-  const safeLevel = Math.min(Math.max(level, 1), 3);
+renderer.heading = function (token) {
+  const safeLevel = Math.min(Math.max(token.depth || 1, 1), 3);
   const sizeClass = safeLevel === 1 ? 'text-2xl' : safeLevel === 2 ? 'text-xl' : 'text-lg';
+  const text = token.tokens ? this.parser.parseInline(token.tokens) : escapeHtml(token.text);
   return `<h${safeLevel} class="font-display ${sizeClass} text-ink mt-3 mb-1">${text}</h${safeLevel}>`;
 };
 
-renderer.blockquote = (quote) =>
-  `<blockquote class="border-l-4 border-gray-300 pl-3 my-2 text-pencil italic">${quote}</blockquote>`;
+renderer.blockquote = function (token) {
+  const content = token.tokens ? this.parser.parse(token.tokens) : '';
+  return `<blockquote class="border-l-4 border-gray-300 pl-3 my-2 text-pencil italic">${content}</blockquote>`;
+};
 
-renderer.list = (body, ordered) =>
-  `<${ordered ? 'ol' : 'ul'} class="ml-5 ${ordered ? 'list-decimal' : 'list-disc'}">${body}</${ordered ? 'ol' : 'ul'}>`;
+renderer.list = function (token) {
+  const ordered = Boolean(token.ordered);
+  const start = typeof token.start === 'number' ? token.start : 1;
+  let body = '';
+  for (const item of token.items || []) {
+    body += this.listitem(item);
+  }
+  const tag = ordered ? 'ol' : 'ul';
+  const startAttr = ordered && start !== 1 ? ` start="${start}"` : '';
+  return `<${tag}${startAttr} class="ml-5 ${ordered ? 'list-decimal' : 'list-disc'}">${body}</${tag}>`;
+};
 
-renderer.listitem = (text) => `<li class="my-1">${text}</li>`;
+renderer.listitem = function (token) {
+  const content = token.tokens ? this.parser.parse(token.tokens) : escapeHtml(token.text);
+  return `<li class="my-1">${content}</li>`;
+};
 
 renderer.codespan = (code) =>
   `<code class="bg-gray-100 px-1.5 py-0.5 rounded text-sm font-mono border border-gray-200">${escapeHtml(code)}</code>`;
@@ -58,14 +54,44 @@ renderer.codespan = (code) =>
 renderer.code = (code) =>
   `<pre class="bg-gray-100 border border-gray-200 rounded p-3 overflow-x-auto"><code class="font-mono text-sm">${escapeHtml(code)}</code></pre>`;
 
-renderer.link = (href, title, text) => {
-  const normalized = normalizeLink(href, title, text);
-  const safeHref = escapeHtml(normalized.href);
-  const safeTitle = normalized.title ? escapeHtml(normalized.title) : '';
-  const safeText =
-    typeof normalized.text === 'string' ? normalized.text : escapeHtml(normalized.text);
+renderer.link = function (token) {
+  const href = token.href || '';
+  const safeHref = escapeHtml(href);
+  const safeTitle = token.title ? escapeHtml(token.title) : '';
+  const safeText = token.tokens ? this.parser.parseInline(token.tokens) : escapeHtml(token.text);
   const titleAttr = safeTitle ? ` title="${safeTitle}"` : '';
+  if (isAllowedImageUrl(href) && (!token.text || token.text === href)) {
+    return `<img src="${safeHref}" alt="" class="max-w-full rounded-md border border-gray-200" loading="lazy" />`;
+  }
   return `<a href="${safeHref}"${titleAttr} target="_blank" rel="noopener noreferrer" class="text-blue-600 underline hover:text-blue-800">${safeText}</a>`;
+};
+
+renderer.paragraph = function (token) {
+  const text = token.tokens ? this.parser.parseInline(token.tokens) : escapeHtml(token.text);
+  return `<p>${text}</p>`;
+};
+
+renderer.strong = function (token) {
+  return `<strong>${token.tokens ? this.parser.parseInline(token.tokens) : escapeHtml(token.text)}</strong>`;
+};
+
+renderer.em = function (token) {
+  return `<em>${token.tokens ? this.parser.parseInline(token.tokens) : escapeHtml(token.text)}</em>`;
+};
+
+renderer.del = function (token) {
+  return `<del>${token.tokens ? this.parser.parseInline(token.tokens) : escapeHtml(token.text)}</del>`;
+};
+
+renderer.image = function (token) {
+  const href = token.href || '';
+  if (!isAllowedImageUrl(href)) {
+    return '';
+  }
+  const safeHref = escapeHtml(href);
+  const altText = escapeHtml(token.text || '');
+  const titleAttr = token.title ? ` title="${escapeHtml(token.title)}"` : '';
+  return `<img src="${safeHref}" alt="${altText}"${titleAttr} class="max-w-full rounded-md border border-gray-200" loading="lazy" />`;
 };
 
 marked.setOptions({
@@ -132,8 +158,10 @@ const normalizeImageOnlyLines = (value: string) => {
   const lines = value.split(/\r?\n/);
   const normalized = lines.map((line) => {
     const trimmed = line.trim();
-    if (isAllowedImageUrl(trimmed)) {
-      return `![](${trimmed})`;
+    const quotedMatch = trimmed.match(/^["'](https?:\/\/[^"']+)["']$/);
+    const candidate = quotedMatch ? quotedMatch[1] : trimmed;
+    if (isAllowedImageUrl(candidate)) {
+      return `![](${candidate})`;
     }
     return line;
   });

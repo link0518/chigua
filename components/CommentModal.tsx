@@ -304,8 +304,8 @@ const CommentModal: React.FC<CommentModalProps> = ({
       </div>
 
       {contentPreview && (
-        <div className="p-3 bg-gray-50 border border-dashed border-ink rounded-lg mb-3">
-          <p className="text-sm text-pencil line-clamp-2">"{contentPreview}"</p>
+        <div className="p-3 bg-gray-50 border border-dashed border-ink rounded-lg mb-3 max-h-28 overflow-hidden">
+          <MarkdownRenderer content={contentPreview} className="markdown-preview text-sm text-pencil" />
         </div>
       )}
 
