@@ -121,6 +121,12 @@ CREATE TABLE IF NOT EXISTS feedback_messages (
   read_at INTEGER
 );
 
+CREATE TABLE IF NOT EXISTS announcements (
+  id TEXT PRIMARY KEY,
+  content TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS post_edits (
   id TEXT PRIMARY KEY,
   post_id TEXT NOT NULL,

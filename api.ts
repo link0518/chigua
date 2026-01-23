@@ -96,6 +96,15 @@ export const api = {
     body: JSON.stringify({ action, type, value, reason }),
   }),
   getAdminAuditLogs: (params = {}) => apiFetch(`/admin/audit-logs${toQuery(params)}`),
+  getAnnouncement: () => apiFetch('/announcement'),
+  getAdminAnnouncement: () => apiFetch('/admin/announcement'),
+  updateAdminAnnouncement: (content) => apiFetch('/admin/announcement', {
+    method: 'POST',
+    body: JSON.stringify({ content }),
+  }),
+  clearAdminAnnouncement: () => apiFetch('/admin/announcement/clear', {
+    method: 'POST',
+  }),
   getAdminSession: () => apiFetch('/admin/session'),
   adminLogin: (username, password) => apiFetch('/admin/login', {
     method: 'POST',

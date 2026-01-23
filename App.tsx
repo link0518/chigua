@@ -5,6 +5,9 @@ import FeedView from './components/FeedView';
 import AdminGate from './components/AdminGate';
 import HomeView from './components/HomeView';
 import Toast from './components/Toast';
+import Modal from './components/Modal';
+import MarkdownRenderer from './components/MarkdownRenderer';
+import { api } from './api';
 import { Menu, X } from 'lucide-react';
 
 const normalizePath = (path: string) => {
@@ -36,6 +39,10 @@ const getPathForView = (view: ViewType) => {
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<ViewType>(() => resolveViewFromPath(window.location.pathname));
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [announcementOpen, setAnnouncementOpen] = useState(false);
+  const [announcementContent, setAnnouncementContent] = useState('');
+  const [announcementUpdatedAt, setAnnouncementUpdatedAt] = useState<number | null>(null);
+  const [announcementUnread, setAnnouncementUnread] = useState(false);
 
   useEffect(() => {
     const handlePopState = () => {
@@ -49,6 +56,38 @@ const App: React.FC = () => {
       window.removeEventListener('popstate', handlePopState);
     };
   }, []);
+
+  useEffect(() => {
+    api.getAnnouncement()
+      .then((data) => {
+        const content = String(data?.content || '').trim();
+        const updatedAt = typeof data?.updatedAt === 'number' ? data.updatedAt : null;
+        setAnnouncementContent(content);
+        setAnnouncementUpdatedAt(updatedAt);
+        if (!content || !updatedAt) {
+          setAnnouncementUnread(false);
+          return;
+        }
+        const lastSeen = Number(localStorage.getItem('announcement:lastSeen') || '0');
+        setAnnouncementUnread(updatedAt > lastSeen);
+      })
+      .catch(() => {});
+  }, []);
+
+  const formatAnnouncementTime = (value: number | null) => {
+    if (!value) {
+      return '';
+    }
+    return new Date(value).toLocaleString('zh-CN');
+  };
+
+  const openAnnouncement = () => {
+    setAnnouncementOpen(true);
+    if (announcementUpdatedAt) {
+      localStorage.setItem('announcement:lastSeen', String(announcementUpdatedAt));
+      setAnnouncementUnread(false);
+    }
+  };
 
   const navigate = useCallback((view: ViewType) => {
     const targetPath = getPathForView(view);
@@ -141,6 +180,20 @@ const App: React.FC = () => {
                 </span>
               </button>
 
+              <button
+                onClick={openAnnouncement}
+                className="flex items-center justify-center rounded-full px-3 py-2.5 border-2 border-ink bg-white hover:bg-highlight transition-all shadow-sketch active:shadow-sketch-active active:translate-x-[2px] active:translate-y-[2px]"
+                aria-label="公告"
+                title="公告"
+              >
+                <span className="relative flex items-center">
+                  <span className="material-symbols-outlined text-[20px]">campaign</span>
+                  {announcementUnread && (
+                    <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-red-500" />
+                  )}
+                </span>
+              </button>
+
               {/* Mobile Menu Toggle (Simplified) */}
               <button
                 className="sm:hidden ml-2"
@@ -167,6 +220,23 @@ const App: React.FC = () => {
 
       {/* Toast Notifications */}
       <Toast />
+
+      <Modal
+        isOpen={announcementOpen}
+        onClose={() => setAnnouncementOpen(false)}
+        title="公告"
+      >
+        {announcementContent ? (
+          <div className="space-y-3">
+            {announcementUpdatedAt && (
+              <div className="text-xs text-pencil">更新时间：{formatAnnouncementTime(announcementUpdatedAt)}</div>
+            )}
+            <MarkdownRenderer content={announcementContent} className="text-sm text-ink" />
+          </div>
+        ) : (
+          <p className="text-sm text-pencil">暂无公告</p>
+        )}
+      </Modal>
 
       {/* Footer only for non-admin */}
       {currentView !== ViewType.ADMIN && (

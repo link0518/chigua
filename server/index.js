@@ -467,6 +467,10 @@ const mapCommentRow = (row) => ({
   createdAt: row.created_at,
 });
 
+const getAnnouncement = () => {
+  return db.prepare('SELECT content, updated_at FROM announcements WHERE id = ?').get('current');
+};
+
 const buildCommentTree = (rows) => {
   const nodes = new Map();
   rows.forEach((row) => {
@@ -511,6 +515,14 @@ const hotScoreSql = '(views_count * 0.2 + likes_count * 3 + comments_count * 2)'
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
+});
+
+app.get('/api/announcement', (req, res) => {
+  const row = getAnnouncement();
+  if (!row) {
+    return res.json({ content: '', updatedAt: null });
+  }
+  return res.json({ content: row.content, updatedAt: row.updated_at });
 });
 
 app.post('/api/feedback', async (req, res) => {
@@ -1970,6 +1982,54 @@ app.post('/api/admin/logout', requireAdmin, (req, res) => {
   req.session.destroy(() => {
     res.json({ loggedIn: false });
   });
+});
+
+app.get('/api/admin/announcement', requireAdmin, (req, res) => {
+  const row = getAnnouncement();
+  if (!row) {
+    return res.json({ content: '', updatedAt: null });
+  }
+  return res.json({ content: row.content, updatedAt: row.updated_at });
+});
+
+app.post('/api/admin/announcement', requireAdmin, (req, res) => {
+  const content = String(req.body?.content || '').trim();
+  if (!content) {
+    return res.status(400).json({ error: '公告内容不能为空' });
+  }
+  if (content.length > 5000) {
+    return res.status(400).json({ error: '公告内容过长' });
+  }
+  const now = Date.now();
+  db.prepare(
+    `
+    INSERT INTO announcements (id, content, updated_at)
+    VALUES (?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET content = excluded.content, updated_at = excluded.updated_at
+    `
+  ).run('current', content, now);
+  logAdminAction(req, {
+    action: 'announcement_update',
+    targetType: 'announcement',
+    targetId: 'current',
+    before: null,
+    after: { updatedAt: now },
+    reason: null,
+  });
+  return res.json({ content, updatedAt: now });
+});
+
+app.post('/api/admin/announcement/clear', requireAdmin, (req, res) => {
+  db.prepare('DELETE FROM announcements WHERE id = ?').run('current');
+  logAdminAction(req, {
+    action: 'announcement_clear',
+    targetType: 'announcement',
+    targetId: 'current',
+    before: null,
+    after: null,
+    reason: null,
+  });
+  return res.json({ content: '', updatedAt: null });
 });
 
 app.get('/api/admin/stats', requireAdmin, (req, res) => {

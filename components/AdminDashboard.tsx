@@ -11,7 +11,7 @@ import Modal from './Modal';
 import { api } from '../api';
 import MarkdownRenderer from './MarkdownRenderer';
 
-type AdminView = 'overview' | 'reports' | 'processed' | 'stats' | 'posts' | 'compose' | 'bans' | 'audit' | 'feedback';
+type AdminView = 'overview' | 'reports' | 'processed' | 'stats' | 'posts' | 'compose' | 'bans' | 'audit' | 'feedback' | 'announcement';
 type PostStatusFilter = 'all' | 'active' | 'deleted';
 type PostSort = 'time' | 'hot' | 'reports';
 
@@ -52,6 +52,11 @@ const AdminDashboard: React.FC = () => {
   const [composeText, setComposeText] = useState('');
   const [composePreview, setComposePreview] = useState(false);
   const [composeSubmitting, setComposeSubmitting] = useState(false);
+  const [announcementText, setAnnouncementText] = useState('');
+  const [announcementPreview, setAnnouncementPreview] = useState(false);
+  const [announcementLoading, setAnnouncementLoading] = useState(false);
+  const [announcementSubmitting, setAnnouncementSubmitting] = useState(false);
+  const [announcementUpdatedAt, setAnnouncementUpdatedAt] = useState<number | null>(null);
   const [editModal, setEditModal] = useState<{
     isOpen: boolean;
     postId: string;
@@ -214,6 +219,20 @@ const AdminDashboard: React.FC = () => {
     }
   }, [feedbackPage, feedbackSearch, feedbackStatus, showToast]);
 
+  const fetchAnnouncement = useCallback(async () => {
+    setAnnouncementLoading(true);
+    try {
+      const data = await api.getAdminAnnouncement();
+      setAnnouncementText(String(data?.content || ''));
+      setAnnouncementUpdatedAt(typeof data?.updatedAt === 'number' ? data.updatedAt : null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '公告加载失败';
+      showToast(message, 'error');
+    } finally {
+      setAnnouncementLoading(false);
+    }
+  }, [showToast]);
+
   useEffect(() => {
     if (currentView !== 'posts') {
       return;
@@ -250,6 +269,16 @@ const AdminDashboard: React.FC = () => {
     }, 300);
     return () => clearTimeout(timer);
   }, [currentView, fetchFeedback]);
+
+  useEffect(() => {
+    if (currentView !== 'announcement') {
+      return;
+    }
+    const timer = setTimeout(() => {
+      fetchAnnouncement().catch(() => { });
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [currentView, fetchAnnouncement]);
 
   useEffect(() => {
     setSelectedPosts(new Set());
@@ -537,6 +566,52 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
+  const handleAnnouncementSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const trimmed = announcementText.trim();
+    if (!trimmed) {
+      showToast('公告内容不能为空', 'warning');
+      return;
+    }
+    if (trimmed.length > 5000) {
+      showToast('公告内容过长', 'error');
+      return;
+    }
+    setAnnouncementSubmitting(true);
+    try {
+      const data = await api.updateAdminAnnouncement(trimmed);
+      setAnnouncementUpdatedAt(typeof data?.updatedAt === 'number' ? data.updatedAt : Date.now());
+      showToast('公告已更新', 'success');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '公告发布失败';
+      showToast(message, 'error');
+    } finally {
+      setAnnouncementSubmitting(false);
+    }
+  };
+
+  const handleAnnouncementClear = async () => {
+    setAnnouncementSubmitting(true);
+    try {
+      await api.clearAdminAnnouncement();
+      setAnnouncementText('');
+      setAnnouncementUpdatedAt(null);
+      showToast('公告已清空', 'success');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '公告清空失败';
+      showToast(message, 'error');
+    } finally {
+      setAnnouncementSubmitting(false);
+    }
+  };
+
+  const formatAnnouncementTime = (value: number | null) => {
+    if (!value) {
+      return '';
+    }
+    return new Date(value).toLocaleString('zh-CN');
+  };
+
   const NavItem: React.FC<{ view: AdminView; icon: React.ReactNode; label: string; badge?: number; onSelect?: () => void }> = ({ view, icon, label, badge, onSelect }) => (
     <button
       onClick={() => {
@@ -586,6 +661,7 @@ const AdminDashboard: React.FC = () => {
             <NavItem view="overview" icon={<LayoutDashboard size={18} />} label="概览" />
             <NavItem view="posts" icon={<FileText size={18} />} label="帖子管理" />
             <NavItem view="compose" icon={<PenSquare size={18} />} label="后台投稿" />
+            <NavItem view="announcement" icon={<Bell size={18} />} label="公告发布" />
             <NavItem view="feedback" icon={<MessageSquare size={18} />} label="留言管理" />
             <NavItem view="reports" icon={<Flag size={18} />} label="待处理举报" badge={pendingReports.length} />
             <NavItem view="processed" icon={<Gavel size={18} />} label="已处理" badge={processedReports.length} />
@@ -623,6 +699,7 @@ const AdminDashboard: React.FC = () => {
               {currentView === 'overview' && <><LayoutDashboard /> 概览</>}
               {currentView === 'posts' && <><FileText /> 帖子管理</>}
               {currentView === 'compose' && <><PenSquare /> 后台投稿</>}
+              {currentView === 'announcement' && <><Bell /> 公告发布</>}
               {currentView === 'feedback' && <><MessageSquare /> 留言管理</>}
               {currentView === 'reports' && <><Flag /> 待处理举报</>}
               {currentView === 'processed' && <><Gavel /> 已处理</>}
@@ -698,6 +775,7 @@ const AdminDashboard: React.FC = () => {
                 <NavItem view="overview" icon={<LayoutDashboard size={18} />} label="概览" onSelect={() => setMobileNavOpen(false)} />
                 <NavItem view="posts" icon={<FileText size={18} />} label="帖子管理" onSelect={() => setMobileNavOpen(false)} />
                 <NavItem view="compose" icon={<PenSquare size={18} />} label="后台投稿" onSelect={() => setMobileNavOpen(false)} />
+                <NavItem view="announcement" icon={<Bell size={18} />} label="公告发布" onSelect={() => setMobileNavOpen(false)} />
                 <NavItem view="feedback" icon={<MessageSquare size={18} />} label="留言管理" onSelect={() => setMobileNavOpen(false)} />
                 <NavItem view="reports" icon={<Flag size={18} />} label="待处理举报" badge={pendingReports.length} onSelect={() => setMobileNavOpen(false)} />
                 <NavItem view="processed" icon={<Gavel size={18} />} label="已处理" badge={processedReports.length} onSelect={() => setMobileNavOpen(false)} />
@@ -1090,6 +1168,83 @@ const AdminDashboard: React.FC = () => {
                     >
                       {composeSubmitting ? '发布中...' : '发布'}
                     </SketchButton>
+                  </div>
+                </form>
+              </section>
+            )}
+
+            {/* Announcement View */}
+            {currentView === 'announcement' && (
+              <section>
+                <form
+                  onSubmit={handleAnnouncementSubmit}
+                  className="bg-white p-6 border-2 border-ink rounded-lg shadow-sketch-sm"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+                    <div>
+                      <h3 className="font-display text-xl">公告发布</h3>
+                      <p className="text-xs text-pencil font-sans">支持 Markdown，仅保留当前公告</p>
+                    </div>
+                    {announcementUpdatedAt && (
+                      <span className="text-xs text-pencil font-sans">更新时间：{formatAnnouncementTime(announcementUpdatedAt)}</span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setAnnouncementPreview(!announcementPreview)}
+                      className="flex items-center gap-1 px-3 py-1 text-sm font-hand font-bold text-pencil hover:text-ink border-2 border-gray-200 hover:border-ink rounded-full transition-all"
+                    >
+                      {announcementPreview ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      {announcementPreview ? '编辑' : '预览'}
+                    </button>
+                  </div>
+
+                  <div className="min-h-[240px] mb-4">
+                    {announcementPreview ? (
+                      <div className="w-full h-full min-h-[240px] p-4 border-2 border-dashed border-gray-300 rounded-lg bg-gray-50 overflow-auto">
+                        {announcementText.trim() ? (
+                          <MarkdownRenderer content={announcementText} className="font-sans text-lg text-ink" />
+                        ) : (
+                          <p className="text-pencil/50 font-hand text-xl">预览区域（请先输入内容）</p>
+                        )}
+                      </div>
+                    ) : (
+                      <textarea
+                        value={announcementText}
+                        onChange={(e) => setAnnouncementText(e.target.value)}
+                        placeholder="发布公告内容... 支持 Markdown"
+                        maxLength={5200}
+                        className="w-full min-h-[240px] resize-none bg-transparent border-2 border-gray-200 rounded-lg outline-none font-sans text-lg leading-8 text-ink placeholder:text-pencil/40 p-4 focus:border-ink transition-colors"
+                      />
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <span className={`font-hand text-lg ${announcementText.length > 5000 ? 'text-red-500 font-bold' : announcementText.length > 4500 ? 'text-yellow-600' : 'text-pencil'}`}>
+                        {announcementText.length} / 5000
+                      </span>
+                      {announcementText.length > 5000 && (
+                        <span className="text-red-500 text-sm font-hand">超出限制！</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <SketchButton
+                        type="button"
+                        variant="secondary"
+                        className="h-10 px-4 text-sm"
+                        onClick={handleAnnouncementClear}
+                        disabled={announcementSubmitting || announcementLoading || !announcementText.trim()}
+                      >
+                        清空公告
+                      </SketchButton>
+                      <SketchButton
+                        type="submit"
+                        className="h-10 px-6 text-sm"
+                        disabled={announcementSubmitting || announcementLoading || !announcementText.trim() || announcementText.length > 5000}
+                      >
+                        {announcementSubmitting ? '发布中...' : '发布公告'}
+                      </SketchButton>
+                    </div>
                   </div>
                 </form>
               </section>
