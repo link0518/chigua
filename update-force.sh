@@ -1,17 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_URL="https://github.com/link0518/chigua"
 APP_DIR="$(pwd)"
-DOMAIN="${DOMAIN:-:80}"
-CADDY_DIR="/etc/caddy"
-CADDYFILE="${CADDY_DIR}/Caddyfile"
-CADDY_SNIPPET="${CADDY_DIR}/conf.d/chigua.caddy"
 ENV_FILE="${APP_DIR}/.env.local"
 ENV_EXAMPLE="${APP_DIR}/.env.example"
 
 log() {
-  printf "[deploy] %s\n" "$1"
+  printf "[update-force] %s\n" "$1"
 }
 
 require_cmd() {
@@ -90,59 +85,40 @@ ensure_env() {
   fi
 }
 
-ensure_caddy() {
-  if require_cmd caddy; then
-    return
-  fi
-  log "Installing Caddy..."
-  as_root apt-get update -y
-  as_root apt-get install -y caddy
-}
-
-configure_caddy() {
-  ensure_caddy
-  log "Configuring Caddy reverse proxy..."
-  as_root mkdir -p "${CADDY_DIR}/conf.d"
-
-  local snippet
-  snippet=$(cat <<EOF
-${DOMAIN} {
-  reverse_proxy /api/* 127.0.0.1:4395
-  reverse_proxy 127.0.0.1:4396
-}
-EOF
-)
-
-  printf "%s\n" "$snippet" | as_root tee "$CADDY_SNIPPET" >/dev/null
-
-  if [ ! -f "$CADDYFILE" ]; then
-    printf "%s\n" "import ${CADDY_DIR}/conf.d/*.caddy" | as_root tee "$CADDYFILE" >/dev/null
-  elif ! grep -q "${CADDY_DIR}/conf.d/*.caddy" "$CADDYFILE"; then
-    printf "\nimport %s\n" "${CADDY_DIR}/conf.d/*.caddy" | as_root tee -a "$CADDYFILE" >/dev/null
-  fi
-
-  if require_cmd systemctl; then
-    as_root systemctl reload caddy || as_root systemctl restart caddy
-  fi
-}
-
-sync_repo() {
-  if [ -d "$APP_DIR/.git" ]; then
-    log "Updating existing repo..."
-    git fetch --all
-    git reset --hard origin/main
-    return
-  fi
-
-local entries
-entries="$(ls -A 2>/dev/null | tr '\n' ' ')"
-if [ -n "$entries" ]; then
-    log "Current directory is not empty. Abort to avoid overwriting files."
+ensure_repo() {
+  if [ ! -d "$APP_DIR/.git" ]; then
+    log "No git repo found in current directory. Abort."
     exit 1
   fi
+}
 
-  log "Cloning repo into current directory..."
-  git clone "$REPO_URL" .
+resolve_remote_ref() {
+  local default_branch=""
+  if git show-ref --quiet refs/remotes/origin/HEAD; then
+    default_branch="$(git symbolic-ref refs/remotes/origin/HEAD | sed 's@^refs/remotes/origin/@@')"
+  fi
+
+  if [ -n "$default_branch" ]; then
+    printf "origin/%s" "$default_branch"
+    return
+  fi
+
+  if git show-ref --quiet refs/remotes/origin/main; then
+    printf "%s" "origin/main"
+    return
+  fi
+
+  printf "%s" "origin/master"
+}
+
+sync_repo_force() {
+  ensure_repo
+  log "Force updating repo (discarding local changes)..."
+  git fetch --all
+  local remote_ref
+  remote_ref="$(resolve_remote_ref)"
+  git reset --hard "$remote_ref"
+  git clean -fd
 }
 
 install_deps() {
@@ -155,18 +131,20 @@ build_app() {
   npm run build
 }
 
-start_services() {
-  log "Starting API (pm2)..."
+restart_services() {
+  log "Restarting API (pm2)..."
   if pm2 describe chigua-api >/dev/null 2>&1; then
-    pm2 delete chigua-api
+    pm2 restart chigua-api --update-env
+  else
+    pm2 start npm --name chigua-api -- run server
   fi
-  pm2 start npm --name chigua-api -- run server
 
-  log "Starting frontend (pm2 serve)..."
+  log "Restarting frontend (pm2 serve)..."
   if pm2 describe chigua-web >/dev/null 2>&1; then
-    pm2 delete chigua-web
+    pm2 restart chigua-web
+  else
+    pm2 serve dist 4396 --spa --name chigua-web
   fi
-  pm2 serve dist 4396 --spa --name chigua-web
 
   pm2 save
 }
@@ -175,12 +153,11 @@ main() {
   ensure_git
   ensure_node
   ensure_pm2
-  sync_repo
+  sync_repo_force
   ensure_env
   install_deps
   build_app
-  start_services
-  configure_caddy
+  restart_services
   log "Done. API: 4395, Web: 4396"
 }
 
