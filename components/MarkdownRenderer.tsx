@@ -67,7 +67,7 @@ renderer.link = function (token) {
 
 renderer.paragraph = function (token) {
   const text = token.tokens ? this.parser.parseInline(token.tokens) : marked.parseInline(token.text || '');
-  return `<p>${text}</p>`;
+  return `<p class="my-2">${text}</p>`;
 };
 
 renderer.strong = function (token) {
