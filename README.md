@@ -27,6 +27,8 @@
 - `PORT`：API 端口（默认 `4395`）
 - `SESSION_SECRET`：会话密钥
 - `ADMIN_USERNAME` / `ADMIN_PASSWORD`：初始化管理员账号密码
+- `VITE_TURNSTILE_SITE_KEY`：Turnstile 站点密钥（前端）
+- `TURNSTILE_SECRET_KEY`：Turnstile 密钥（后端验证）
 
 ## 安装依赖
 ```bash

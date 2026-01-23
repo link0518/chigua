@@ -1,10 +1,11 @@
-﻿import React, { useEffect, useState } from 'react';
+﻿import React, { useEffect, useRef, useState } from 'react';
 import { Send } from 'lucide-react';
 import { SketchButton } from './SketchUI';
 import { api } from '../api';
 import { Comment } from '../types';
 import { useApp } from '../store/AppContext';
 import MarkdownRenderer from './MarkdownRenderer';
+import Turnstile, { TurnstileHandle } from './Turnstile';
 
 interface CommentModalProps {
   isOpen: boolean;
@@ -26,6 +27,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [text, setText] = useState('');
+  const turnstileRef = useRef<TurnstileHandle | null>(null);
 
   useEffect(() => {
     if (!isOpen || !postId) return;
@@ -59,7 +61,11 @@ const CommentModal: React.FC<CommentModalProps> = ({
 
     setSubmitting(true);
     try {
-      const comment = await addComment(postId, trimmed);
+      if (!turnstileRef.current) {
+        throw new Error('安全验证加载中，请稍后再试');
+      }
+      const turnstileToken = await turnstileRef.current.execute();
+      const comment = await addComment(postId, trimmed, turnstileToken);
       setComments((prev) => [comment, ...prev]);
       setText('');
       showToast('评论已发布', 'success');
@@ -135,6 +141,8 @@ const CommentModal: React.FC<CommentModalProps> = ({
           {submitting ? '发布中...' : '发布评论'}
         </SketchButton>
       </form>
+
+      <Turnstile ref={turnstileRef} action="comment" enabled={isOpen} />
     </div>
   );
 };

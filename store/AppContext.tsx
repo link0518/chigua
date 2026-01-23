@@ -36,8 +36,8 @@ interface AppState {
 
 interface AppContextType {
   state: AppState;
-  addPost: (post: Omit<Post, 'id' | 'likes' | 'comments' | 'createdAt'>) => Promise<void>;
-  addComment: (postId: string, content: string) => Promise<Comment>;
+  addPost: (post: Omit<Post, 'id' | 'likes' | 'comments' | 'createdAt'>, turnstileToken: string) => Promise<void>;
+  addComment: (postId: string, content: string, turnstileToken: string) => Promise<Comment>;
   likePost: (postId: string) => Promise<void>;
   dislikePost: (postId: string) => Promise<void>;
   deletePost: (postId: string) => void;
@@ -204,8 +204,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }));
   }, []);
 
-  const addPost = useCallback(async (post: Omit<Post, 'id' | 'likes' | 'comments' | 'createdAt'>) => {
-    const data = await api.createPost(post.content, post.tags || []);
+  const addPost = useCallback(async (post: Omit<Post, 'id' | 'likes' | 'comments' | 'createdAt'>, turnstileToken: string) => {
+    const data = await api.createPost(post.content, post.tags || [], turnstileToken);
     const newPost: Post = data.post;
     setState((prev) => ({
       ...prev,
@@ -215,8 +215,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }));
   }, []);
 
-  const addComment = useCallback(async (postId: string, content: string) => {
-    const data = await api.addComment(postId, content);
+  const addComment = useCallback(async (postId: string, content: string, turnstileToken: string) => {
+    const data = await api.addComment(postId, content, turnstileToken);
     const comment: Comment = data.comment;
     setState((prev) => {
       const updateList = (list: Post[]) =>

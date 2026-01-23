@@ -35,25 +35,25 @@ export const api = {
   getHomePosts: (limit) => apiFetch(`/posts/home${toQuery({ limit })}`),
   getPostById: (postId) => apiFetch(`/posts/${postId}`),
   getFeedPosts: (filter, search) => apiFetch(`/posts/feed${toQuery({ filter, search })}`),
-  createPost: (content, tags = []) => apiFetch('/posts', {
+  createPost: (content, tags = [], turnstileToken) => apiFetch('/posts', {
     method: 'POST',
-    body: JSON.stringify({ content, tags }),
+    body: JSON.stringify({ content, tags, turnstileToken }),
   }),
   likePost: (postId) => apiFetch(`/posts/${postId}/like`, { method: 'POST' }),
   dislikePost: (postId) => apiFetch(`/posts/${postId}/dislike`, { method: 'POST' }),
   viewPost: (postId) => apiFetch(`/posts/${postId}/view`, { method: 'POST' }),
   getComments: (postId) => apiFetch(`/posts/${postId}/comments`),
-  addComment: (postId, content) => apiFetch(`/posts/${postId}/comments`, {
+  addComment: (postId, content, turnstileToken) => apiFetch(`/posts/${postId}/comments`, {
     method: 'POST',
-    body: JSON.stringify({ content }),
+    body: JSON.stringify({ content, turnstileToken }),
   }),
   reportPost: (postId, reason) => apiFetch('/reports', {
     method: 'POST',
     body: JSON.stringify({ postId, reason }),
   }),
-  createFeedback: (content, email, wechat = '', qq = '') => apiFetch('/feedback', {
+  createFeedback: (content, email, wechat = '', qq = '', turnstileToken) => apiFetch('/feedback', {
     method: 'POST',
-    body: JSON.stringify({ content, email, wechat, qq }),
+    body: JSON.stringify({ content, email, wechat, qq, turnstileToken }),
   }),
   getReports: (status?: string, search?: string) => apiFetch(`/reports${toQuery({ status, search })}`),
   handleReport: (reportId, action, reason = '') => apiFetch(`/reports/${reportId}/action`, {

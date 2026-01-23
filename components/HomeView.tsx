@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../store/AppContext';
 import ReportModal from './ReportModal';
 import CommentModal from './CommentModal';
@@ -6,6 +6,7 @@ import MarkdownRenderer from './MarkdownRenderer';
 import { api } from '../api';
 import Modal from './Modal';
 import { SketchButton } from './SketchUI';
+import Turnstile, { TurnstileHandle } from './Turnstile';
 
 const HomeView: React.FC = () => {
   const {
@@ -29,6 +30,7 @@ const HomeView: React.FC = () => {
   const [feedbackWechat, setFeedbackWechat] = useState('');
   const [feedbackQq, setFeedbackQq] = useState('');
   const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
+  const feedbackTurnstileRef = useRef<TurnstileHandle | null>(null);
   const [mascotClicks, setMascotClicks] = useState(0);
   const [loading, setLoading] = useState(true);
 
@@ -208,7 +210,11 @@ const HomeView: React.FC = () => {
     }
     setFeedbackSubmitting(true);
     try {
-      await api.createFeedback(content, email, wechat, qq);
+      if (!feedbackTurnstileRef.current) {
+        throw new Error('安全验证加载中，请稍后再试');
+      }
+      const turnstileToken = await feedbackTurnstileRef.current.execute();
+      await api.createFeedback(content, email, wechat, qq, turnstileToken);
       showToast('留言已发送！', 'success');
       closeFeedbackModal();
     } catch (error) {
@@ -417,6 +423,8 @@ const HomeView: React.FC = () => {
             </SketchButton>
           </div>
         </form>
+
+        <Turnstile ref={feedbackTurnstileRef} action="feedback" enabled={feedbackOpen} />
       </Modal>
     </div>
   );

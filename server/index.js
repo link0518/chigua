@@ -17,6 +17,8 @@ import {
 
 const app = express();
 const PORT = Number(process.env.PORT || 4395);
+const TURNSTILE_SECRET_KEY = String(process.env.TURNSTILE_SECRET_KEY || '').trim();
+const TURNSTILE_VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
 
 app.use(express.json({ limit: '2mb' }));
 
@@ -139,6 +141,45 @@ const getClientIp = (req) => {
     return forwarded[0].trim();
   }
   return req.socket?.remoteAddress || req.ip || 'unknown';
+};
+
+const verifyTurnstile = async (token, req, expectedAction) => {
+  if (!TURNSTILE_SECRET_KEY) {
+    return { ok: false, status: 500, error: '安全验证未配置' };
+  }
+
+  const trimmed = String(token || '').trim();
+  if (!trimmed) {
+    return { ok: false, status: 400, error: '请完成安全验证' };
+  }
+
+  try {
+    const params = new URLSearchParams();
+    params.append('secret', TURNSTILE_SECRET_KEY);
+    params.append('response', trimmed);
+    const clientIp = getClientIp(req);
+    if (clientIp && clientIp !== 'unknown') {
+      params.append('remoteip', clientIp);
+    }
+
+    const response = await fetch(TURNSTILE_VERIFY_URL, {
+      method: 'POST',
+      body: params,
+    });
+    const data = await response.json();
+
+    if (!data?.success) {
+      return { ok: false, status: 403, error: '安全验证失败，请重试' };
+    }
+    if (expectedAction && data?.action && data.action !== expectedAction) {
+      return { ok: false, status: 403, error: '安全验证失败，请重试' };
+    }
+
+    return { ok: true };
+  } catch (error) {
+    console.error('Turnstile 验证失败:', error);
+    return { ok: false, status: 502, error: '安全验证失败，请稍后重试' };
+  }
 };
 
 const AUDIT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
@@ -354,7 +395,7 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
-app.post('/api/feedback', (req, res) => {
+app.post('/api/feedback', async (req, res) => {
   const content = String(req.body?.content || '').trim();
   const email = String(req.body?.email || '').trim();
   const wechat = String(req.body?.wechat || '').trim();
@@ -405,6 +446,11 @@ app.post('/api/feedback', (req, res) => {
   }
   if (lastCreatedAt && now - lastCreatedAt < FEEDBACK_LIMIT_MS) {
     return res.status(429).json({ error: '留言过于频繁，请稍后再试' });
+  }
+
+  const feedbackVerification = await verifyTurnstile(req.body?.turnstileToken, req, 'feedback');
+  if (!feedbackVerification.ok) {
+    return res.status(feedbackVerification.status).json({ error: feedbackVerification.error });
   }
 
   const feedbackId = crypto.randomUUID();
@@ -501,7 +547,7 @@ app.get('/api/posts/feed', (req, res) => {
   res.json({ items: posts, total: posts.length });
 });
 
-app.post('/api/posts', (req, res) => {
+app.post('/api/posts', async (req, res) => {
   const content = String(req.body?.content || '').trim();
   const tags = Array.isArray(req.body?.tags) ? req.body.tags : [];
 
@@ -524,6 +570,11 @@ app.post('/api/posts', (req, res) => {
   const clientIp = getClientIp(req);
   if (isBanned(req.sessionID, clientIp)) {
     return res.status(403).json({ error: '账号已被封禁，无法投稿' });
+  }
+
+  const postVerification = await verifyTurnstile(req.body?.turnstileToken, req, 'post');
+  if (!postVerification.ok) {
+    return res.status(postVerification.status).json({ error: postVerification.error });
   }
 
   const now = Date.now();
@@ -695,7 +746,7 @@ app.get('/api/posts/:id/comments', (req, res) => {
   return res.json({ items: rows.map(mapCommentRow) });
 });
 
-app.post('/api/posts/:id/comments', (req, res) => {
+app.post('/api/posts/:id/comments', async (req, res) => {
   const postId = req.params.id;
   const content = String(req.body?.content || '').trim();
 
@@ -723,6 +774,11 @@ app.post('/api/posts/:id/comments', (req, res) => {
   const post = db.prepare('SELECT id FROM posts WHERE id = ? AND deleted = 0').get(postId);
   if (!post) {
     return res.status(404).json({ error: '内容不存在' });
+  }
+
+  const commentVerification = await verifyTurnstile(req.body?.turnstileToken, req, 'comment');
+  if (!commentVerification.ok) {
+    return res.status(commentVerification.status).json({ error: commentVerification.error });
   }
 
   const now = Date.now();

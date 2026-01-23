@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Send, Eye, EyeOff, CheckCircle } from 'lucide-react';
 import { SketchCard, SketchButton, Tape } from './SketchUI';
 import { useApp } from '../store/AppContext';
 import MarkdownRenderer from './MarkdownRenderer';
+import Turnstile, { TurnstileHandle } from './Turnstile';
 
 const SubmissionView: React.FC = () => {
   const { addPost, showToast } = useApp();
@@ -10,7 +11,15 @@ const SubmissionView: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+  const turnstileRef = useRef<TurnstileHandle | null>(null);
   const maxLength = 2000;
+
+  const requestTurnstileToken = async () => {
+    if (!turnstileRef.current) {
+      throw new Error('安全验证加载中，请稍后再试');
+    }
+    return turnstileRef.current.execute();
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -27,6 +36,16 @@ const SubmissionView: React.FC = () => {
 
     setIsSubmitting(true);
 
+    let turnstileToken = '';
+    try {
+      turnstileToken = await requestTurnstileToken();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '安全验证失败，请重试';
+      showToast(message, 'error');
+      setIsSubmitting(false);
+      return;
+    }
+
     // Simulate API call
     await new Promise(resolve => setTimeout(resolve, 800));
 
@@ -36,7 +55,7 @@ const SubmissionView: React.FC = () => {
         author: '匿名',
         timestamp: '刚刚',
         tags: [],
-      });
+      }, turnstileToken);
     } catch (error) {
       const message = error instanceof Error ? error.message : '投稿失败，请稍后重试';
       showToast(message, 'error');
@@ -161,6 +180,8 @@ const SubmissionView: React.FC = () => {
               </SketchButton>
             </div>
           </form>
+
+          <Turnstile ref={turnstileRef} action="post" />
         </SketchCard>
 
         {/* Markdown Help */}
