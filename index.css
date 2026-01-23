@@ -129,14 +129,6 @@ body {
   margin: 0;
 }
 
-.markdown-content .md-blank {
-  display: block;
-  height: 0.8em;
-  margin: 0.2em 0;
-  font-size: 0;
-  line-height: 0;
-}
-
 @keyframes mascot-float {
   0%,
   100% {

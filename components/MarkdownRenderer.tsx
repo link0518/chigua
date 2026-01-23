@@ -62,9 +62,6 @@ renderer.link = function (token) {
   const safeTitle = token.title ? escapeHtml(token.title) : '';
   const safeText = token.tokens ? this.parser.parseInline(token.tokens) : escapeHtml(token.text);
   const titleAttr = safeTitle ? ` title="${safeTitle}"` : '';
-  if (isAllowedImageUrl(href) && (!token.text || token.text === href)) {
-    return `<img src="${safeHref}" alt="" class="max-w-full rounded-md border border-gray-200" loading="lazy" />`;
-  }
   return `<a href="${safeHref}"${titleAttr} target="_blank" rel="noopener noreferrer" class="text-blue-600 underline hover:text-blue-800">${safeText}</a>`;
 };
 
@@ -156,26 +153,88 @@ const isAllowedImageUrl = (value: string) => {
   }
 };
 
-const normalizeImageOnlyLines = (value: string) => {
-  const lines = value.split(/\r?\n/);
-  const normalized = lines.map((line) => {
-    const trimmed = line.trim();
-    const quotedMatch = trimmed.match(/^["'](https?:\/\/[^"']+)["']$/);
-    const candidate = quotedMatch ? quotedMatch[1] : trimmed;
-    if (isAllowedImageUrl(candidate)) {
-      return `![](${candidate})`;
+const transformInlineTokens = (tokens: any[], inBlockquote: boolean): any[] => {
+  return tokens.map((token) => {
+    if (!token) {
+      return token;
     }
-    return line;
+    if (!inBlockquote && token.type === 'link' && isAllowedImageUrl(token.href || '')) {
+      return {
+        type: 'image',
+        href: token.href,
+        title: token.title || null,
+        text: token.text || '',
+      };
+    }
+    if (token.tokens && Array.isArray(token.tokens)) {
+      token.tokens = transformInlineTokens(token.tokens, inBlockquote);
+    }
+    return token;
   });
-  return normalized.join('\n');
 };
 
-const preserveExtraBlankLines = (value: string) => {
-  return value.replace(/\n{2,}/g, (match) => {
-    const blanks = Math.max(match.length - 1, 1);
-    const fillers = Array.from({ length: blanks }, () => '<p class="md-blank">&nbsp;</p>\n\n').join('');
-    return `\n\n${fillers}`;
-  });
+const transformTokens = (tokens: any[], inBlockquote: boolean): any[] => {
+  const result: any[] = [];
+
+  for (let i = 0; i < tokens.length; i += 1) {
+    const token = tokens[i];
+    if (!token) continue;
+
+    if (token.type === 'paragraph') {
+      if (token.tokens && Array.isArray(token.tokens)) {
+        token.tokens = transformInlineTokens(token.tokens, inBlockquote);
+      }
+      result.push(token);
+      continue;
+    }
+
+    if (token.type === 'list' && token.items) {
+      token.items = token.items.map((item: any) => {
+        if (item.tokens) {
+          item.tokens = transformTokens(item.tokens, inBlockquote);
+        }
+        return item;
+      });
+      result.push(token);
+      continue;
+    }
+
+    if (token.type === 'table') {
+      if (Array.isArray(token.header)) {
+        token.header = token.header.map((cell: any) => {
+          if (cell.tokens) {
+            cell.tokens = transformInlineTokens(cell.tokens, inBlockquote);
+          }
+          return cell;
+        });
+      }
+      if (Array.isArray(token.rows)) {
+        token.rows = token.rows.map((row: any[]) =>
+          row.map((cell: any) => {
+            if (cell.tokens) {
+              cell.tokens = transformInlineTokens(cell.tokens, inBlockquote);
+            }
+            return cell;
+          })
+        );
+      }
+      result.push(token);
+      continue;
+    }
+
+    if (token.type === 'blockquote' && token.tokens) {
+      token.tokens = transformTokens(token.tokens, true);
+      result.push(token);
+      continue;
+    }
+
+    if (token.tokens && Array.isArray(token.tokens)) {
+      token.tokens = transformTokens(token.tokens, inBlockquote);
+    }
+    result.push(token);
+  }
+
+  return result;
 };
 
 const getSanitizer = () => {
@@ -207,8 +266,12 @@ const getSanitizer = () => {
 const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, className = '' }) => {
   const rendered = useMemo(() => {
     if (!content) return '';
-    const normalizedContent = preserveExtraBlankLines(normalizeImageOnlyLines(content));
-    const rawHtml = marked.parse(normalizedContent);
+    const baseTokens: any = marked.lexer(content);
+    const tokens = transformTokens(baseTokens, false);
+    if (baseTokens?.links) {
+      tokens.links = baseTokens.links;
+    }
+    const rawHtml = marked.parser(tokens, { renderer, gfm: true, breaks: true });
     const purifier = getSanitizer();
     if (!purifier) {
       return '';
