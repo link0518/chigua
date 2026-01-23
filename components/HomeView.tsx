@@ -32,6 +32,8 @@ const HomeView: React.FC = () => {
   const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
   const feedbackTurnstileRef = useRef<TurnstileHandle | null>(null);
   const [mascotClicks, setMascotClicks] = useState(0);
+  const [mascotPop, setMascotPop] = useState(false);
+  const [mascotBurstKey, setMascotBurstKey] = useState(0);
   const [loading, setLoading] = useState(true);
 
   const posts = getHomePosts();
@@ -178,6 +180,11 @@ const HomeView: React.FC = () => {
   };
 
   const handleMascotClick = () => {
+    setMascotPop(true);
+    setMascotBurstKey((prev) => prev + 1);
+    setTimeout(() => {
+      setMascotPop(false);
+    }, 320);
     setMascotClicks((prev) => {
       const next = prev + 1;
       if (next >= 5) {
@@ -237,9 +244,19 @@ const HomeView: React.FC = () => {
       <img
         src="/chxb.png"
         alt="吉祥物"
-        className="mascot-float hidden md:block fixed right-6 bottom-6 w-28 h-28 object-contain drop-shadow-md select-none z-10 cursor-pointer"
+        className={`mascot-float hidden md:block fixed right-6 bottom-6 w-28 h-28 object-contain drop-shadow-md select-none z-10 cursor-pointer ${mascotPop ? 'mascot-pop' : ''}`}
         onClick={handleMascotClick}
       />
+      {mascotBurstKey > 0 && (
+        <div key={mascotBurstKey} className="mascot-burst hidden md:block">
+          <span />
+          <span />
+          <span />
+          <span />
+          <span />
+          <span />
+        </div>
+      )}
 
       {/* Card Container */}
       <article className={`group relative w-full my-auto transition-all duration-200 ${animate ? 'opacity-0 translate-x-10' : 'opacity-100 translate-x-0'}`}>
