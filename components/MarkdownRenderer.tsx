@@ -22,7 +22,7 @@ const renderer = new marked.Renderer();
 renderer.heading = function (token) {
   const safeLevel = Math.min(Math.max(token.depth || 1, 1), 3);
   const sizeClass = safeLevel === 1 ? 'text-2xl' : safeLevel === 2 ? 'text-xl' : 'text-lg';
-  const text = token.tokens ? this.parser.parseInline(token.tokens) : escapeHtml(token.text);
+  const text = token.tokens ? this.parser.parseInline(token.tokens) : marked.parseInline(token.text || '');
   return `<h${safeLevel} class="font-display ${sizeClass} text-ink mt-3 mb-1">${text}</h${safeLevel}>`;
 };
 
@@ -44,15 +44,17 @@ renderer.list = function (token) {
 };
 
 renderer.listitem = function (token) {
-  const content = token.tokens ? this.parser.parse(token.tokens) : escapeHtml(token.text);
+  const content = token.tokens ? this.parser.parse(token.tokens) : marked.parseInline(token.text || '');
   return `<li class="my-1">${content}</li>`;
 };
 
-renderer.codespan = (code) =>
-  `<code class="bg-gray-100 px-1.5 py-0.5 rounded text-sm font-mono border border-gray-200">${escapeHtml(code)}</code>`;
+renderer.codespan = function (token) {
+  return `<code class="bg-gray-100 px-1.5 py-0.5 rounded text-sm font-mono border border-gray-200">${escapeHtml(token.text)}</code>`;
+};
 
-renderer.code = (code) =>
-  `<pre class="bg-gray-100 border border-gray-200 rounded p-3 overflow-x-auto"><code class="font-mono text-sm">${escapeHtml(code)}</code></pre>`;
+renderer.code = function (token) {
+  return `<pre class="bg-gray-100 border border-gray-200 rounded p-3 overflow-x-auto"><code class="font-mono text-sm">${escapeHtml(token.text)}</code></pre>`;
+};
 
 renderer.link = function (token) {
   const href = token.href || '';
@@ -67,20 +69,20 @@ renderer.link = function (token) {
 };
 
 renderer.paragraph = function (token) {
-  const text = token.tokens ? this.parser.parseInline(token.tokens) : escapeHtml(token.text);
+  const text = token.tokens ? this.parser.parseInline(token.tokens) : marked.parseInline(token.text || '');
   return `<p>${text}</p>`;
 };
 
 renderer.strong = function (token) {
-  return `<strong>${token.tokens ? this.parser.parseInline(token.tokens) : escapeHtml(token.text)}</strong>`;
+  return `<strong>${token.tokens ? this.parser.parseInline(token.tokens) : marked.parseInline(token.text || '')}</strong>`;
 };
 
 renderer.em = function (token) {
-  return `<em>${token.tokens ? this.parser.parseInline(token.tokens) : escapeHtml(token.text)}</em>`;
+  return `<em>${token.tokens ? this.parser.parseInline(token.tokens) : marked.parseInline(token.text || '')}</em>`;
 };
 
 renderer.del = function (token) {
-  return `<del>${token.tokens ? this.parser.parseInline(token.tokens) : escapeHtml(token.text)}</del>`;
+  return `<del>${token.tokens ? this.parser.parseInline(token.tokens) : marked.parseInline(token.text || '')}</del>`;
 };
 
 renderer.image = function (token) {
@@ -168,6 +170,14 @@ const normalizeImageOnlyLines = (value: string) => {
   return normalized.join('\n');
 };
 
+const preserveExtraBlankLines = (value: string) => {
+  return value.replace(/\n{2,}/g, (match) => {
+    const blanks = Math.max(match.length - 1, 1);
+    const fillers = Array.from({ length: blanks }, () => '<p class="md-blank">&nbsp;</p>\n\n').join('');
+    return `\n\n${fillers}`;
+  });
+};
+
 const getSanitizer = () => {
   if (typeof window === 'undefined') {
     return null;
@@ -197,7 +207,7 @@ const getSanitizer = () => {
 const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, className = '' }) => {
   const rendered = useMemo(() => {
     if (!content) return '';
-    const normalizedContent = normalizeImageOnlyLines(content);
+    const normalizedContent = preserveExtraBlankLines(normalizeImageOnlyLines(content));
     const rawHtml = marked.parse(normalizedContent);
     const purifier = getSanitizer();
     if (!purifier) {
