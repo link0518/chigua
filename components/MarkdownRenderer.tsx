@@ -267,7 +267,7 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, className 
   const rendered = useMemo(() => {
     if (!content) return '';
     const baseTokens: any = marked.lexer(content);
-    const tokens = transformTokens(baseTokens, false);
+    const tokens = transformTokens(baseTokens, false) as any[] & { links?: Record<string, { href: string; title: string }> };
     if (baseTokens?.links) {
       tokens.links = baseTokens.links;
     }
