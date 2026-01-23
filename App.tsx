@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { ViewType } from './types';
 import SubmissionView from './components/SubmissionView';
 import FeedView from './components/FeedView';
-import AdminGate from './components/AdminGate';
+const AdminGate = React.lazy(() => import('./components/AdminGate'));
 import HomeView from './components/HomeView';
 import Toast from './components/Toast';
 import Modal from './components/Modal';
@@ -107,7 +107,19 @@ const App: React.FC = () => {
       case ViewType.FEED:
         return <FeedView />;
       case ViewType.ADMIN:
-        return <AdminGate />;
+        return (
+          <React.Suspense
+            fallback={(
+              <div className="flex-grow w-full max-w-2xl mx-auto px-4 py-12 flex flex-col items-center text-center min-h-[70vh]">
+                <span className="text-5xl mb-4 block">⏳</span>
+                <h2 className="font-display text-3xl text-ink mb-2">后台加载中</h2>
+                <p className="font-hand text-lg text-pencil">马上就好</p>
+              </div>
+            )}
+          >
+            <AdminGate />
+          </React.Suspense>
+        );
       case ViewType.NOT_FOUND:
         return (
           <div className="flex-grow w-full max-w-2xl mx-auto px-4 py-12 flex flex-col items-center text-center min-h-[70vh]">
