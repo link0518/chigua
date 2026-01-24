@@ -444,17 +444,17 @@ const HomeView: React.FC = () => {
       </article>
 
       {/* Navigation Button */}
-      <div className="flex flex-wrap justify-center gap-4 mt-10 mb-4">
+      <div className="flex items-center gap-3 mt-10 mb-4 w-full max-w-md mx-auto md:max-w-none md:justify-center md:gap-4">
         <button
           onClick={handlePrev}
-          className="group relative flex items-center gap-3 px-10 py-4 bg-white border-[3px] border-black rounded-full shadow-sketch-lg hover:shadow-sketch-hover hover:-translate-y-1 hover:bg-highlight transition-all duration-200 active:shadow-sketch-active active:translate-y-[4px] transform rotate-1"
+          className="group relative flex items-center justify-center gap-2 px-4 py-3 bg-white border-[3px] border-black rounded-full shadow-sketch-lg hover:shadow-sketch-hover hover:-translate-y-1 hover:bg-highlight transition-all duration-200 active:shadow-sketch-active active:translate-y-[4px] transform rotate-1 md:px-10 md:py-4 md:gap-3"
         >
-          <span className="material-symbols-outlined text-3xl group-hover:rotate-12 transition-transform">arrow_back</span>
-          <span className="font-hand font-bold text-2xl tracking-widest pt-1 group-hover:animate-wiggle">上一个瓜</span>
+          <span className="material-symbols-outlined text-2xl group-hover:rotate-12 transition-transform md:text-3xl">arrow_back</span>
+          <span className="font-hand font-bold text-base tracking-widest pt-1 group-hover:animate-wiggle hidden md:inline md:text-2xl">上一个瓜</span>
         </button>
         <button
           onClick={handleNext}
-          className="group relative flex items-center gap-3 px-10 py-4 bg-white border-[3px] border-black rounded-full shadow-sketch-lg hover:shadow-sketch-hover hover:-translate-y-1 hover:bg-highlight transition-all duration-200 active:shadow-sketch-active active:translate-y-[4px] transform -rotate-1"
+          className="group relative flex flex-1 items-center justify-center gap-3 px-6 py-4 bg-white border-[3px] border-black rounded-full shadow-sketch-lg hover:shadow-sketch-hover hover:-translate-y-1 hover:bg-highlight transition-all duration-200 active:shadow-sketch-active active:translate-y-[4px] transform -rotate-1 md:flex-none md:px-10 md:py-4"
         >
           <span className="font-hand font-bold text-2xl tracking-widest pt-1 group-hover:animate-wiggle">下一个瓜</span>
           <span className="material-symbols-outlined text-3xl group-hover:rotate-12 transition-transform">arrow_forward</span>
