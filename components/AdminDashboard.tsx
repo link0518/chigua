@@ -73,7 +73,6 @@ const AdminDashboard: React.FC = () => {
     isOpen: boolean;
     reason: string;
   }>({ isOpen: false, reason: '' });
-  const [bannedSessions, setBannedSessions] = useState<Array<{ sessionId: string; bannedAt: number }>>([]);
   const [bannedIps, setBannedIps] = useState<Array<{ ip: string; bannedAt: number }>>([]);
   const [bannedFingerprints, setBannedFingerprints] = useState<Array<{ fingerprint: string; bannedAt: number }>>([]);
   const [banLoading, setBanLoading] = useState(false);
@@ -172,7 +171,6 @@ const AdminDashboard: React.FC = () => {
     setBanLoading(true);
     try {
       const data = await api.getAdminBans();
-      setBannedSessions(data.sessions || []);
       setBannedIps(data.ips || []);
       setBannedFingerprints(data.fingerprints || []);
     } catch (error) {
@@ -377,10 +375,28 @@ const AdminDashboard: React.FC = () => {
     return new Date(timestamp).toLocaleString('zh-CN');
   };
 
+  const stripSessionFields = (value: unknown): unknown => {
+    if (Array.isArray(value)) {
+      return value.map(stripSessionFields);
+    }
+    if (value && typeof value === 'object') {
+      const next: Record<string, unknown> = {};
+      Object.entries(value).forEach(([key, val]) => {
+        if (key === 'sessionId' || key === 'session_id') {
+          return;
+        }
+        next[key] = stripSessionFields(val);
+      });
+      return next;
+    }
+    return value;
+  };
+
   const formatAuditJson = (value?: string | null) => {
     if (!value) return '—';
     try {
-      return JSON.stringify(JSON.parse(value), null, 2);
+      const parsed = JSON.parse(value);
+      return JSON.stringify(stripSessionFields(parsed), null, 2);
     } catch {
       return value;
     }
@@ -511,7 +527,7 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
-  const handleUnban = async (type: 'session' | 'ip' | 'fingerprint', value: string) => {
+  const handleUnban = async (type: 'ip' | 'fingerprint', value: string) => {
     try {
       await api.handleAdminBan('unban', type, value);
       showToast('已解除封禁', 'success');
@@ -1329,7 +1345,6 @@ const AdminDashboard: React.FC = () => {
                               <span>邮箱：{message.email}</span>
                               {message.wechat && <span>微信：{message.wechat}</span>}
                               {message.qq && <span>QQ：{message.qq}</span>}
-                              {message.sessionId && <span>Session：{message.sessionId}</span>}
                               {message.ip && <span>IP：{message.ip}</span>}
                               {message.fingerprint && <span>指纹：{message.fingerprint}</span>}
                             </div>
@@ -1391,38 +1406,7 @@ const AdminDashboard: React.FC = () => {
 
             {/* Bans View */}
             {currentView === 'bans' && (
-              <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="bg-white p-6 border-2 border-ink rounded-lg shadow-sketch-sm">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="font-display text-lg">Session 封禁</h3>
-                    <span className="text-xs text-pencil font-sans">{bannedSessions.length} 条</span>
-                  </div>
-                  {banLoading ? (
-                    <div className="text-center py-8 text-pencil font-hand">加载中...</div>
-                  ) : bannedSessions.length === 0 ? (
-                    <div className="text-center py-8 text-pencil font-hand">暂无封禁</div>
-                  ) : (
-                    <div className="flex flex-col gap-3">
-                      {bannedSessions.map((item) => (
-                        <div key={item.sessionId} className="flex items-center justify-between gap-4 border-2 border-dashed border-gray-200 rounded-lg p-3">
-                          <div>
-                            <p className="text-xs text-pencil font-sans">Session</p>
-                            <p className="font-sans text-sm break-all">{item.sessionId}</p>
-                            <p className="text-xs text-pencil mt-1">{formatTimestamp(item.bannedAt)}</p>
-                          </div>
-                          <SketchButton
-                            variant="secondary"
-                            className="h-8 px-3 text-xs"
-                            onClick={() => handleUnban('session', item.sessionId)}
-                          >
-                            解封
-                          </SketchButton>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
+              <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div className="bg-white p-6 border-2 border-ink rounded-lg shadow-sketch-sm">
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="font-display text-lg">IP 封禁</h3>

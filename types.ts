@@ -79,7 +79,7 @@ export interface AdminAuditLog {
 export interface BanEntry {
   value: string;
   bannedAt: number;
-  type: 'session' | 'ip' | 'fingerprint';
+  type: 'ip' | 'fingerprint';
 }
 
 export interface FeedbackMessage {
