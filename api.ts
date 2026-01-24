@@ -115,6 +115,7 @@ export const api = {
     method: 'POST',
     body: JSON.stringify({ action, type, value, reason, ...options }),
   }),
+  sendHeartbeat: () => apiFetch('/online/heartbeat', { method: 'POST' }),
   getAccessStatus: () => apiFetch('/access'),
   getAdminAuditLogs: (params = {}) => apiFetch(`/admin/audit-logs${toQuery(params)}`),
   getAnnouncement: () => apiFetch('/announcement'),

@@ -97,6 +97,31 @@ const App: React.FC = () => {
       });
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    const sendHeartbeat = async () => {
+      if (!active) return;
+      try {
+        await api.sendHeartbeat();
+      } catch {
+        // 忽略心跳失败
+      }
+    };
+    sendHeartbeat();
+    const timer = setInterval(sendHeartbeat, 60000);
+    const handleVisibility = () => {
+      if (!document.hidden) {
+        sendHeartbeat();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      active = false;
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, []);
+
   const formatAnnouncementTime = (value: number | null) => {
     if (!value) {
       return '';

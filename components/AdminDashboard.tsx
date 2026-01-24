@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  BarChart, Bar, XAxis, Tooltip, ResponsiveContainer,
+  BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, LabelList,
   LineChart, Line
 } from 'recharts';
 import { Flag, Gavel, BarChart2, Bell, Search, Trash2, Ban, Eye, EyeOff, LayoutDashboard, LogOut, CheckCircle, XCircle, FileText, PenSquare, Pencil, RotateCcw, Shield, ClipboardList, MessageSquare, Menu, X } from 'lucide-react';
@@ -151,6 +151,13 @@ const AdminDashboard: React.FC = () => {
     loadStats().catch(() => { });
   }, [loadReports, loadStats]);
 
+  useEffect(() => {
+    const timer = setInterval(() => {
+      loadStats().catch(() => { });
+    }, 60000);
+    return () => clearInterval(timer);
+  }, [loadStats]);
+
   // Generate chart data from state
   const visitData = useMemo(() =>
     WEEK_DAYS.map((name, i) => ({
@@ -163,6 +170,7 @@ const AdminDashboard: React.FC = () => {
       name,
       value: state.stats.weeklyPosts[i] || 0
     })), [state.stats.weeklyPosts]);
+  const totalWeeklyVisits = useMemo(() => visitData.reduce((sum, item) => sum + item.value, 0), [visitData]);
 
   const pendingReports = getPendingReports();
   const processedReports = state.reports.filter(r => r.status !== 'pending');
@@ -1178,31 +1186,36 @@ const AdminDashboard: React.FC = () => {
                     </div>
                     <div className="h-48 w-full">
                       <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={postVolumeData}>
-                          <Line type="monotone" dataKey="value" stroke="#2c2c2c" strokeWidth={3} strokeDasharray="5 5" dot={{ r: 4, fill: '#2c2c2c' }} />
-                          <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#555' }} dy={10} />
+                        <LineChart data={postVolumeData} margin={{ top: 24, right: 12, left: 12, bottom: 6 }}>
+                        <Line type="monotone" dataKey="value" stroke="#2c2c2c" strokeWidth={3} strokeDasharray="5 5" dot={{ r: 4, fill: '#2c2c2c' }}>
+                          <LabelList dataKey="value" position="top" offset={12} fill="#2c2c2c" fontSize={11} />
+                        </Line>
+                          <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#555' }} dy={10} interval={0} />
                         </LineChart>
                       </ResponsiveContainer>
                     </div>
                   </div>
 
                   <div className={`bg-white p-6 border-2 border-ink shadow-sketch ${roughBorderClassSm}`}>
-                    <div className="flex justify-between items-start mb-6">
+                    <div className="flex items-start justify-between gap-4">
                       <div>
                         <h3 className="font-display text-lg">访问统计</h3>
-                        <p className="text-pencil text-xs font-sans">本周独立访客</p>
+                        <p className="text-pencil text-xs font-sans">本周独立访客 · {totalWeeklyVisits}</p>
+                        <p className="text-xs text-pencil font-sans mt-2">当前在线</p>
+                        <p className="font-display text-2xl">{state.stats.onlineCount}</p>
                       </div>
-                      <p className="font-display text-2xl">{(visitData.reduce((a, b) => a + b.value, 0) / 1000).toFixed(1)}k</p>
+                      <div className="text-right">
+                        <p className="text-xs text-pencil font-sans">总访问量</p>
+                        <p className="font-display text-2xl">{totalWeeklyVisits}</p>
+                      </div>
                     </div>
                     <div className="h-48 w-full">
                       <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={visitData}>
-                          <Bar dataKey="value" fill="white" stroke="#2c2c2c" strokeWidth={2} radius={[4, 4, 0, 0]} />
-                          <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#555' }} dy={10} />
-                          <Tooltip
-                            cursor={{ fill: '#fef08a', opacity: 0.4 }}
-                            contentStyle={{ border: '2px solid #2c2c2c', borderRadius: '8px', boxShadow: '2px 2px 0px 0px #000' }}
-                          />
+                        <BarChart data={visitData} margin={{ top: 28, right: 12, left: 12, bottom: 6 }}>
+                          <Bar dataKey="value" fill="white" stroke="#2c2c2c" strokeWidth={2} radius={[4, 4, 0, 0]}>
+                            <LabelList dataKey="value" position="top" offset={12} fill="#2c2c2c" fontSize={12} />
+                          </Bar>
+                          <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#555' }} dy={10} interval={0} />
                         </BarChart>
                       </ResponsiveContainer>
                     </div>
@@ -1918,12 +1931,13 @@ const AdminDashboard: React.FC = () => {
               <section className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 <div className={`bg-white p-6 border-2 border-ink shadow-sketch ${roughBorderClassSm}`}>
                   <h3 className="font-display text-xl mb-6">每日发帖量</h3>
-                  <div className="h-64 w-full">
+                    <div className="h-64 w-full">
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={postVolumeData}>
-                        <Line type="monotone" dataKey="value" stroke="#2c2c2c" strokeWidth={3} dot={{ r: 6, fill: '#2c2c2c' }} />
-                        <XAxis dataKey="name" axisLine={false} tickLine={false} />
-                        <Tooltip />
+                      <LineChart data={postVolumeData} margin={{ top: 24, right: 12, left: 12, bottom: 6 }}>
+                        <Line type="monotone" dataKey="value" stroke="#2c2c2c" strokeWidth={3} dot={{ r: 6, fill: '#2c2c2c' }}>
+                          <LabelList dataKey="value" position="top" offset={12} fill="#2c2c2c" fontSize={11} />
+                        </Line>
+                        <XAxis dataKey="name" axisLine={false} tickLine={false} interval={0} />
                       </LineChart>
                     </ResponsiveContainer>
                   </div>
@@ -1931,11 +1945,23 @@ const AdminDashboard: React.FC = () => {
 
                 <div className={`bg-white p-6 border-2 border-ink shadow-sketch ${roughBorderClassSm}`}>
                   <h3 className="font-display text-xl mb-6">访问统计</h3>
+                  <div className="mb-4 flex items-end justify-between gap-4">
+                    <div>
+                      <p className="text-xs text-pencil font-sans">本周访问</p>
+                      <p className="font-display text-2xl">{totalWeeklyVisits}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs text-pencil font-sans">当前在线</p>
+                      <p className="font-display text-2xl">{state.stats.onlineCount}</p>
+                    </div>
+                  </div>
                   <div className="h-64 w-full">
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={visitData}>
-                        <Bar dataKey="value" fill="#fef08a" stroke="#2c2c2c" strokeWidth={2} radius={[4, 4, 0, 0]} />
-                        <XAxis dataKey="name" axisLine={false} tickLine={false} />
+                      <BarChart data={visitData} margin={{ top: 28, right: 12, left: 12, bottom: 6 }}>
+                        <Bar dataKey="value" fill="#fef08a" stroke="#2c2c2c" strokeWidth={2} radius={[4, 4, 0, 0]}>
+                          <LabelList dataKey="value" position="top" offset={12} fill="#2c2c2c" fontSize={12} />
+                        </Bar>
+                        <XAxis dataKey="name" axisLine={false} tickLine={false} interval={0} />
                         <Tooltip />
                       </BarChart>
                     </ResponsiveContainer>

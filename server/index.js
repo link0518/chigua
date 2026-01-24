@@ -175,8 +175,31 @@ const RATE_LIMITS = {
   report: { limit: 1, windowMs: 60 * 1000, message: '举报过于频繁，请稍后再试' },
 };
 const FEEDBACK_LIMIT_MS = 60 * 60 * 1000;
+const ONLINE_WINDOW_MS = 2 * 60 * 1000;
+const onlineSessions = new Map();
 
 const rateBuckets = new Map();
+
+const pruneOnlineSessions = (now) => {
+  for (const [sessionId, lastSeen] of onlineSessions.entries()) {
+    if (now - lastSeen > ONLINE_WINDOW_MS) {
+      onlineSessions.delete(sessionId);
+    }
+  }
+};
+
+const touchOnlineSession = (sessionId) => {
+  if (!sessionId) return;
+  const now = Date.now();
+  onlineSessions.set(sessionId, now);
+  pruneOnlineSessions(now);
+};
+
+const getOnlineCount = () => {
+  const now = Date.now();
+  pruneOnlineSessions(now);
+  return onlineSessions.size;
+};
 
 const normalizeIp = (value) => {
   const raw = String(value || '').trim();
@@ -755,6 +778,11 @@ app.get('/api/announcement', (req, res) => {
     return res.json({ content: '', updatedAt: null });
   }
   return res.json({ content: row.content, updatedAt: row.updated_at });
+});
+
+app.post('/api/online/heartbeat', (req, res) => {
+  touchOnlineSession(req.sessionID);
+  return res.json({ onlineCount: getOnlineCount() });
 });
 
 app.get('/api/notifications', (req, res) => {
@@ -2650,6 +2678,7 @@ app.get('/api/admin/stats', requireAdmin, (req, res) => {
     weeklyVisits,
     weeklyPosts,
     totalPosts,
+    onlineCount: getOnlineCount(),
   });
 });
 
