@@ -65,10 +65,10 @@ if (!SESSION_SECRET) {
 }
 
 const PUBLIC_DIR = path.resolve(process.cwd(), 'public');
-const SNAPSHOT_DIR = path.join(PUBLIC_DIR, 'post');
+const DIST_DIR = path.resolve(process.cwd(), 'dist');
+const SNAPSHOT_DIR = path.join(DIST_DIR, 'post');
 const BOT_UA_REGEX = /(bot|crawler|spider|bingpreview|bingbot|baiduspider|yandex|duckduckbot|sogou|360spider|googlebot|slurp)/i;
 const SITE_URL = String(process.env.SITE_URL || 'https://933211.xyz').replace(/\/+$/, '');
-const DIST_DIR = path.resolve(process.cwd(), 'dist');
 const isFilePath = (filePath) => {
   try {
     return fs.statSync(filePath).isFile();
@@ -125,15 +125,15 @@ const generateSnapshotForPost = (post) => {
     <meta name="robots" content="index,follow" />
     <script type="application/ld+json">
 ${JSON.stringify({
-  '@context': 'https://schema.org',
-  '@type': 'Article',
-  headline: title,
-  datePublished: publishedAt || undefined,
-  dateModified: publishedAt || undefined,
-  mainEntityOfPage: canonical,
-  author: { '@type': 'Person', name: '匿名' },
-  publisher: { '@type': 'Organization', name: 'JX3瓜田', url: SITE_URL },
-}, null, 2)}
+    '@context': 'https://schema.org',
+    '@type': 'Article',
+    headline: title,
+    datePublished: publishedAt || undefined,
+    dateModified: publishedAt || undefined,
+    mainEntityOfPage: canonical,
+    author: { '@type': 'Person', name: '匿名' },
+    publisher: { '@type': 'Organization', name: 'JX3瓜田', url: SITE_URL },
+  }, null, 2)}
     </script>
   </head>
   <body>
@@ -1130,8 +1130,8 @@ app.get('/api/posts/home', (req, res) => {
         ORDER BY posts.created_at DESC
         LIMIT ? OFFSET ?
         `
-      )
-      .all(viewerFingerprint, limit, offset);
+    )
+    .all(viewerFingerprint, limit, offset);
 
   const posts = rows.map((row) => mapPostRow(row, row.hot_score >= 20));
   res.json({ items: posts, total });

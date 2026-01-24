@@ -3,7 +3,7 @@ import path from 'path';
 import { db } from './db.js';
 
 const SITE_URL = String(process.env.SITE_URL || 'https://933211.xyz').replace(/\/+$/, '');
-const OUTPUT_DIR = path.resolve(process.cwd(), 'public');
+const OUTPUT_DIR = path.resolve(process.cwd(), 'dist');
 const POSTS_DIR = path.join(OUTPUT_DIR, 'post');
 
 const escapeHtml = (value) => {
@@ -63,15 +63,15 @@ posts.forEach((post) => {
     <meta name="robots" content="index,follow" />
     <script type="application/ld+json">
 ${JSON.stringify({
-  '@context': 'https://schema.org',
-  '@type': 'Article',
-  headline: title,
-  datePublished: publishedAt || undefined,
-  dateModified: publishedAt || undefined,
-  mainEntityOfPage: canonical,
-  author: { '@type': 'Person', name: '匿名' },
-  publisher: { '@type': 'Organization', name: 'JX3瓜田', url: SITE_URL },
-}, null, 2)}
+    '@context': 'https://schema.org',
+    '@type': 'Article',
+    headline: title,
+    datePublished: publishedAt || undefined,
+    dateModified: publishedAt || undefined,
+    mainEntityOfPage: canonical,
+    author: { '@type': 'Person', name: '匿名' },
+    publisher: { '@type': 'Organization', name: 'JX3瓜田', url: SITE_URL },
+  }, null, 2)}
     </script>
   </head>
   <body>
