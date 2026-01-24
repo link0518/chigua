@@ -268,10 +268,6 @@ const HomeView: React.FC = () => {
       showToast('内容不能为空哦！', 'warning');
       return;
     }
-    if (!email) {
-      showToast('邮箱不能为空哦！', 'warning');
-      return;
-    }
     setFeedbackSubmitting(true);
     try {
       if (!feedbackTurnstileRef.current) {
@@ -453,7 +449,7 @@ const HomeView: React.FC = () => {
             />
           </div>
           <div>
-            <label className="text-xs text-pencil font-sans">邮箱（必填）</label>
+            <label className="text-xs text-pencil font-sans">邮箱（选填）</label>
             <input
               type="email"
               value={feedbackEmail}
@@ -461,6 +457,9 @@ const HomeView: React.FC = () => {
               className="w-full mt-2 h-10 border-2 border-gray-200 rounded-lg px-3 text-sm font-sans focus:border-ink outline-none"
               placeholder="name@example.com"
             />
+            <p className="mt-2 text-xs text-pencil font-sans">
+              如果期待开发者的回复，请正确填写邮箱信息
+            </p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>

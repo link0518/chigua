@@ -558,10 +558,6 @@ app.post('/api/feedback', async (req, res) => {
     return res.status(400).json({ error: '内容不能为空' });
   }
 
-  if (!email) {
-    return res.status(400).json({ error: '邮箱不能为空' });
-  }
-
   if (content.length > 2000) {
     return res.status(400).json({ error: '内容超过字数限制' });
   }
@@ -570,7 +566,7 @@ app.post('/api/feedback', async (req, res) => {
     return res.status(400).json({ error: '联系方式过长' });
   }
 
-  if (!email.includes('@')) {
+  if (email && !email.includes('@')) {
     return res.status(400).json({ error: '邮箱格式不正确' });
   }
 
