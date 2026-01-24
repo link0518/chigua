@@ -959,7 +959,7 @@ const AdminDashboard: React.FC = () => {
   const totalFeedbackPages = Math.max(Math.ceil(feedbackTotal / FEEDBACK_PAGE_SIZE), 1);
 
   return (
-    <div className="admin-font flex min-h-screen bg-paper overflow-hidden">
+    <div className="admin-font flex min-h-screen bg-paper overflow-hidden overflow-x-hidden">
       {/* Sidebar */}
       <aside className="w-64 flex-shrink-0 flex flex-col border-r-2 border-ink bg-paper z-20 hidden md:flex">
         <div className="p-6">
@@ -1001,7 +1001,7 @@ const AdminDashboard: React.FC = () => {
       {/* Main Content */}
       <main className="flex-1 flex flex-col h-screen overflow-hidden">
         {/* Header */}
-        <header className="h-20 flex items-center justify-between px-4 md:px-8 border-b-2 border-ink bg-paper/90 backdrop-blur-sm z-10">
+        <header className="min-h-[72px] sm:h-20 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-4 md:px-8 border-b-2 border-ink bg-paper/90 backdrop-blur-sm z-10 py-3 sm:py-0">
           <div className="flex items-center gap-3">
             <button
               type="button"
@@ -1011,7 +1011,7 @@ const AdminDashboard: React.FC = () => {
             >
               <Menu size={18} />
             </button>
-            <h2 className="text-2xl font-display flex items-center gap-2">
+            <h2 className="text-xl sm:text-2xl font-display flex items-center gap-2 flex-wrap">
               {currentView === 'overview' && <><LayoutDashboard /> 概览</>}
               {currentView === 'posts' && <><FileText /> 帖子管理</>}
               {currentView === 'compose' && <><PenSquare /> 后台投稿</>}
@@ -1024,9 +1024,9 @@ const AdminDashboard: React.FC = () => {
               {currentView === 'stats' && <><BarChart2 /> 数据统计</>}
             </h2>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap sm:flex-nowrap items-center gap-3 w-full sm:w-auto">
             {(isReportView || isPostView || isAuditView || isFeedbackView) && (
-              <div className="relative">
+              <div className="relative w-full sm:w-64">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-pencil w-4 h-4" />
                 <input
                   type="text"
@@ -1046,7 +1046,7 @@ const AdminDashboard: React.FC = () => {
                     }
                   }}
                   placeholder={isPostView ? '搜索 ID/内容/IP/指纹...' : isAuditView ? '搜索操作/目标/管理员...' : isFeedbackView ? '搜索内容或联系方式/IP/指纹...' : '搜索 ID/内容/IP/指纹...'}
-                  className="pl-9 pr-4 py-2 rounded-full border-2 border-ink bg-white text-sm focus:shadow-sketch-sm outline-none transition-all w-64 font-sans"
+                  className="pl-9 pr-4 py-2 rounded-full border-2 border-ink bg-white text-sm focus:shadow-sketch-sm outline-none transition-all w-full font-sans"
                 />
               </div>
             )}
@@ -1372,7 +1372,7 @@ const AdminDashboard: React.FC = () => {
                               <span>标识 {formatIdentity(post.ip, post.fingerprint)}</span>
                             </div>
                           </div>
-                          <div className="flex items-center gap-2 min-w-fit mt-2 md:mt-0 font-sans">
+                          <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 min-w-fit mt-2 md:mt-0 font-sans">
                             <SketchButton
                               variant="secondary"
                               className="h-10 px-3 text-xs flex items-center gap-1"
@@ -1641,7 +1641,7 @@ const AdminDashboard: React.FC = () => {
                               <span>标识：{formatIdentity(message.ip, message.fingerprint)}</span>
                             </div>
                           </div>
-                          <div className="flex items-center gap-2 min-w-fit mt-2 md:mt-0 font-sans">
+                          <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 min-w-fit mt-2 md:mt-0 font-sans">
                             {!message.readAt && (
                               <SketchButton
                                 variant="secondary"
@@ -1971,7 +1971,7 @@ const AdminDashboard: React.FC = () => {
             />
           </div>
           {confirmModal.action === 'ban' && renderBanOptions()}
-          <div className="flex gap-3 mt-2">
+          <div className="flex flex-col sm:flex-row gap-3 mt-2">
             <SketchButton
               variant="secondary"
               className="flex-1"
@@ -2011,7 +2011,7 @@ const AdminDashboard: React.FC = () => {
               placeholder="填写理由便于审计追溯"
             />
           </div>
-          <div className="flex gap-3 mt-2">
+          <div className="flex flex-col sm:flex-row gap-3 mt-2">
             <SketchButton
               variant="secondary"
               className="flex-1"
@@ -2052,7 +2052,7 @@ const AdminDashboard: React.FC = () => {
             />
           </div>
           {renderBanOptions()}
-          <div className="flex gap-3 mt-2">
+          <div className="flex flex-col sm:flex-row gap-3 mt-2">
             <SketchButton
               variant="secondary"
               className="flex-1"
@@ -2115,7 +2115,7 @@ const AdminDashboard: React.FC = () => {
             />
           </div>
           {bulkPostModal.action === 'ban' && renderBanOptions()}
-          <div className="flex gap-3 mt-2">
+          <div className="flex flex-col sm:flex-row gap-3 mt-2">
             <SketchButton
               variant="secondary"
               className="flex-1"
@@ -2152,7 +2152,7 @@ const AdminDashboard: React.FC = () => {
               placeholder="填写理由便于审计追溯"
             />
           </div>
-          <div className="flex gap-3 mt-2">
+          <div className="flex flex-col sm:flex-row gap-3 mt-2">
             <SketchButton
               variant="secondary"
               className="flex-1"
@@ -2193,7 +2193,7 @@ const AdminDashboard: React.FC = () => {
             />
           </div>
           {feedbackActionModal.action === 'ban' && renderBanOptions()}
-          <div className="flex gap-3 mt-2">
+          <div className="flex flex-col sm:flex-row gap-3 mt-2">
             <SketchButton
               variant="secondary"
               className="flex-1"
@@ -2416,7 +2416,7 @@ const ReportCard: React.FC<{
         </div>
 
         {!showStatus && (
-          <div className="flex items-center gap-2 min-w-fit mt-2 md:mt-0 font-sans">
+          <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 min-w-fit mt-2 md:mt-0 font-sans">
             <SketchButton
               variant="secondary"
               className="h-10 px-3 text-xs flex items-center gap-1"

@@ -294,6 +294,17 @@ const App: React.FC = () => {
     </button>
   );
 
+  const MobileNavItem: React.FC<{ label: string; onClick: () => void; dot?: boolean }> = ({ label, onClick, dot = false }) => (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full flex items-center justify-between rounded-lg border-2 border-ink bg-white px-4 py-3 font-hand text-lg font-bold hover:bg-highlight transition-all"
+    >
+      <span>{label}</span>
+      {dot && <span className="h-2.5 w-2.5 rounded-full bg-red-500 border border-ink" />}
+    </button>
+  );
+
   if (accessChecked && accessBlocked) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center px-6 text-center bg-paper">
@@ -311,7 +322,7 @@ const App: React.FC = () => {
       {currentView !== ViewType.ADMIN && (
         <header className="sticky top-0 z-50 w-full border-b-2 border-black bg-[#f9f7f1] px-4 md:px-6 py-3 shadow-[0_4px_0_0_rgba(0,0,0,0.1)]">
           <div className="absolute top-full left-0 w-full h-2 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAiIGhlaWdodD0iMTAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHBhdGggZD0iTTAgMTAgTTEwIDAgTDIwIDEwIiBmaWxsPSJub25lIiBzdHJva2U9IiMwMDAiIHN0cm9rZS13aWR0aD0iMSIvPjwvc3ZnPg==')] opacity-10"></div>
-          <div className="max-w-3xl mx-auto flex items-center justify-between gap-4">
+          <div className="max-w-3xl mx-auto flex items-center justify-between gap-3 sm:gap-4 flex-wrap sm:flex-nowrap">
             {/* Logo */}
             <div
               className="flex items-center gap-3 cursor-pointer group"
@@ -327,7 +338,7 @@ const App: React.FC = () => {
               </h1>
             </div>
 
-            <div className="flex items-center gap-6">
+            <div className="flex items-center gap-2 sm:gap-6">
               {/* Desktop Nav */}
               <nav className="hidden sm:flex gap-6">
                 <NavItem view={ViewType.HOME} label="最新" />
@@ -337,12 +348,11 @@ const App: React.FC = () => {
               {/* Action Button */}
               <button
                 onClick={() => navigate(ViewType.SUBMISSION)}
-                className="flex items-center justify-center rounded-full px-4 py-2 sm:px-5 sm:py-2.5 bg-black text-white hover:bg-ink/90 transition-all shadow-sketch active:shadow-sketch-active active:translate-x-[2px] active:translate-y-[2px] transform rotate-1 hover:-rotate-1"
+                className="flex items-center justify-center rounded-full px-3 py-2 sm:px-5 sm:py-2.5 bg-black text-white hover:bg-ink/90 transition-all shadow-sketch active:shadow-sketch-active active:translate-x-[2px] active:translate-y-[2px] transform rotate-1 hover:-rotate-1"
               >
-                <span className="flex items-center gap-2 font-sans text-base sm:text-lg font-semibold">
-                  <span className="material-symbols-outlined text-[20px]">edit</span>
-                  <span className="hidden md:inline">投稿</span>
-                  <span className="md:hidden">投稿</span>
+                <span className="flex items-center gap-2 font-sans text-base sm:text-lg font-semibold whitespace-nowrap">
+                  <span className="material-symbols-outlined text-[20px] shrink-0">edit</span>
+                  <span className="leading-none">投稿</span>
                 </span>
               </button>
 
@@ -350,7 +360,7 @@ const App: React.FC = () => {
                 <div className="relative" ref={notificationRef}>
                   <button
                     onClick={() => setNotificationsOpen((prev) => !prev)}
-                    className="flex items-center justify-center rounded-full px-3 py-2.5 border-2 border-ink bg-white hover:bg-highlight transition-all shadow-sketch active:shadow-sketch-active active:translate-x-[2px] active:translate-y-[2px]"
+                    className="flex items-center justify-center rounded-full px-2.5 py-2 sm:px-3 sm:py-2.5 border-2 border-ink bg-white hover:bg-highlight transition-all shadow-sketch active:shadow-sketch-active active:translate-x-[2px] active:translate-y-[2px]"
                     aria-label="提醒"
                     title="提醒"
                   >
@@ -414,7 +424,7 @@ const App: React.FC = () => {
 
               <button
                 onClick={openAnnouncement}
-                className="flex items-center justify-center rounded-full px-3 py-2.5 border-2 border-ink bg-white hover:bg-highlight transition-all shadow-sketch active:shadow-sketch-active active:translate-x-[2px] active:translate-y-[2px]"
+                className="hidden sm:flex items-center justify-center rounded-full px-2.5 py-2 sm:px-3 sm:py-2.5 border-2 border-ink bg-white hover:bg-highlight transition-all shadow-sketch active:shadow-sketch-active active:translate-x-[2px] active:translate-y-[2px]"
                 aria-label="公告"
                 title="公告"
               >
@@ -428,18 +438,42 @@ const App: React.FC = () => {
 
               {/* Mobile Menu Toggle (Simplified) */}
               <button
-                className="sm:hidden ml-2"
+                className="sm:hidden ml-2 relative"
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                aria-label="打开菜单"
               >
                 {mobileMenuOpen ? <X /> : <Menu />}
+                {(announcementUnread || notificationsUnread > 0) && (
+                  <span className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-red-500 border-2 border-ink" />
+                )}
               </button>
             </div>
           </div>
           {/* Mobile Nav Dropdown */}
           {mobileMenuOpen && (
-            <div className={`sm:hidden absolute top-full left-0 w-full bg-paper border-b-2 border-ink shadow-xl p-4 flex flex-col gap-4 animate-in slide-in-from-top-2 z-50`}>
-              <NavItem view={ViewType.HOME} label="最新吃瓜" />
-              <NavItem view={ViewType.FEED} label="热门榜单" />
+            <div className="sm:hidden absolute top-full left-0 w-full bg-paper border-b-2 border-ink shadow-xl p-4 flex flex-col gap-3 animate-in slide-in-from-top-2 z-50">
+              <MobileNavItem
+                label="最新吃瓜"
+                onClick={() => {
+                  navigate(ViewType.HOME);
+                  setMobileMenuOpen(false);
+                }}
+              />
+              <MobileNavItem
+                label="热门榜单"
+                onClick={() => {
+                  navigate(ViewType.FEED);
+                  setMobileMenuOpen(false);
+                }}
+              />
+              <MobileNavItem
+                label="公告"
+                dot={announcementUnread}
+                onClick={() => {
+                  openAnnouncement();
+                  setMobileMenuOpen(false);
+                }}
+              />
             </div>
           )}
         </header>

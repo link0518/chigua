@@ -5,11 +5,19 @@
 body {
   background-color: #f9f7f1;
   color: #2c2c2c;
+  font-family: 'Source Han Sans', 'Source Han Sans SC', 'Noto Sans CJK SC', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
   background-image:
     linear-gradient(#e5e7eb 1px, transparent 1px),
     linear-gradient(90deg, #e5e7eb 1px, transparent 1px);
   background-size: 20px 20px;
   background-position: -1px -1px;
+}
+
+.font-hand,
+.font-display,
+.font-sans,
+.font-mono {
+  font-family: 'Source Han Sans', 'Source Han Sans SC', 'Noto Sans CJK SC', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
 }
 
 .admin-font,
