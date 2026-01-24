@@ -69,9 +69,18 @@ const SNAPSHOT_DIR = path.join(PUBLIC_DIR, 'post');
 const BOT_UA_REGEX = /(bot|crawler|spider|bingpreview|bingbot|baiduspider|yandex|duckduckbot|sogou|360spider|googlebot|slurp)/i;
 const SITE_URL = String(process.env.SITE_URL || 'https://933211.xyz').replace(/\/+$/, '');
 const DIST_DIR = path.resolve(process.cwd(), 'dist');
-const SPA_INDEX = fs.existsSync(path.join(DIST_DIR, 'index.html'))
+const isFilePath = (filePath) => {
+  try {
+    return fs.statSync(filePath).isFile();
+  } catch {
+    return false;
+  }
+};
+const SPA_INDEX = isFilePath(path.join(DIST_DIR, 'index.html'))
   ? path.join(DIST_DIR, 'index.html')
-  : path.resolve(process.cwd(), 'index.html');
+  : isFilePath(path.resolve(process.cwd(), 'index.html'))
+    ? path.resolve(process.cwd(), 'index.html')
+    : '';
 
 app.use(express.json({ limit: '2mb' }));
 
@@ -153,10 +162,19 @@ app.use((req, res, next) => {
   const postId = shouldServeSnapshot(req);
   if (!postId) return next();
   const snapshotPath = path.join(SNAPSHOT_DIR, postId, 'index.html');
-  if (!snapshotPath.startsWith(SNAPSHOT_DIR) || !fs.existsSync(snapshotPath)) {
+  if (!snapshotPath.startsWith(SNAPSHOT_DIR) || !isFilePath(snapshotPath)) {
     return next();
   }
   return res.sendFile(snapshotPath);
+});
+
+app.get('/post/:id', (req, res, next) => {
+  const postId = String(req.params.id || '').trim();
+  if (!postId) return next();
+  if (!SPA_INDEX) {
+    return res.status(404).send('Not Found');
+  }
+  return res.sendFile(SPA_INDEX);
 });
 
 app.get('/robots.txt', (req, res) => {
@@ -2815,7 +2833,7 @@ app.use((req, res, next) => {
   if (!['GET', 'HEAD'].includes(req.method)) return next();
   if (req.path.startsWith('/api')) return next();
   if (req.path === '/robots.txt' || req.path === '/sitemap.xml') return next();
-  if (!fs.existsSync(SPA_INDEX)) {
+  if (!SPA_INDEX || !isFilePath(SPA_INDEX)) {
     return res.status(404).send('Not Found');
   }
   return res.sendFile(SPA_INDEX);
