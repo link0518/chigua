@@ -11,7 +11,7 @@ import Modal from './Modal';
 import { api } from '../api';
 import MarkdownRenderer from './MarkdownRenderer';
 
-type AdminView = 'overview' | 'reports' | 'processed' | 'stats' | 'posts' | 'compose' | 'bans' | 'audit' | 'feedback' | 'announcement';
+type AdminView = 'overview' | 'reports' | 'processed' | 'posts' | 'compose' | 'bans' | 'audit' | 'feedback' | 'announcement';
 type PostStatusFilter = 'all' | 'active' | 'deleted';
 type PostSort = 'time' | 'hot' | 'reports';
 
@@ -991,7 +991,6 @@ const AdminDashboard: React.FC = () => {
             <NavItem view="processed" icon={<Gavel size={18} />} label="已处理" />
             <NavItem view="bans" icon={<Shield size={18} />} label="封禁管理" />
             <NavItem view="audit" icon={<ClipboardList size={18} />} label="操作审计" />
-            <NavItem view="stats" icon={<BarChart2 size={18} />} label="数据统计" />
           </nav>
         </div>
         <div className="mt-auto p-6 border-t-2 border-ink/10">
@@ -1029,7 +1028,6 @@ const AdminDashboard: React.FC = () => {
               {currentView === 'processed' && <><Gavel /> 已处理</>}
               {currentView === 'bans' && <><Shield /> 封禁管理</>}
               {currentView === 'audit' && <><ClipboardList /> 操作审计</>}
-              {currentView === 'stats' && <><BarChart2 /> 数据统计</>}
             </h2>
           </div>
           <div className="flex flex-wrap sm:flex-nowrap items-center gap-3 w-full sm:w-auto">
@@ -1105,7 +1103,6 @@ const AdminDashboard: React.FC = () => {
                 <NavItem view="processed" icon={<Gavel size={18} />} label="已处理" onSelect={() => setMobileNavOpen(false)} />
                 <NavItem view="bans" icon={<Shield size={18} />} label="封禁管理" onSelect={() => setMobileNavOpen(false)} />
                 <NavItem view="audit" icon={<ClipboardList size={18} />} label="操作审计" onSelect={() => setMobileNavOpen(false)} />
-                <NavItem view="stats" icon={<BarChart2 size={18} />} label="数据统计" onSelect={() => setMobileNavOpen(false)} />
               </nav>
               <div className="mt-auto pt-6 border-t-2 border-ink/10">
                 <button
@@ -1923,50 +1920,6 @@ const AdminDashboard: React.FC = () => {
                     ))}
                   </div>
                 )}
-              </section>
-            )}
-
-            {/* Stats View */}
-            {currentView === 'stats' && (
-              <section className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <div className={`bg-white p-6 border-2 border-ink shadow-sketch ${roughBorderClassSm}`}>
-                  <h3 className="font-display text-xl mb-6">每日发帖量</h3>
-                    <div className="h-64 w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={postVolumeData} margin={{ top: 24, right: 12, left: 12, bottom: 6 }}>
-                        <Line type="monotone" dataKey="value" stroke="#2c2c2c" strokeWidth={3} dot={{ r: 6, fill: '#2c2c2c' }}>
-                          <LabelList dataKey="value" position="top" offset={12} fill="#2c2c2c" fontSize={11} />
-                        </Line>
-                        <XAxis dataKey="name" axisLine={false} tickLine={false} interval={0} />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-
-                <div className={`bg-white p-6 border-2 border-ink shadow-sketch ${roughBorderClassSm}`}>
-                  <h3 className="font-display text-xl mb-6">访问统计</h3>
-                  <div className="mb-4 flex items-end justify-between gap-4">
-                    <div>
-                      <p className="text-xs text-pencil font-sans">本周访问</p>
-                      <p className="font-display text-2xl">{totalWeeklyVisits}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-xs text-pencil font-sans">当前在线</p>
-                      <p className="font-display text-2xl">{state.stats.onlineCount}</p>
-                    </div>
-                  </div>
-                  <div className="h-64 w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={visitData} margin={{ top: 28, right: 12, left: 12, bottom: 6 }}>
-                        <Bar dataKey="value" fill="#fef08a" stroke="#2c2c2c" strokeWidth={2} radius={[4, 4, 0, 0]}>
-                          <LabelList dataKey="value" position="top" offset={12} fill="#2c2c2c" fontSize={12} />
-                        </Bar>
-                        <XAxis dataKey="name" axisLine={false} tickLine={false} interval={0} />
-                        <Tooltip />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
               </section>
             )}
 
