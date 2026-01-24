@@ -25,8 +25,15 @@ export interface Post {
 export interface Report {
   id: string;
   targetId: string;
+  targetType: 'post' | 'comment';
+  postId?: string;
   reason: string;
   contentSnippet: string;
+  postContent?: string;
+  commentContent?: string;
+  targetContent?: string;
+  targetIp?: string | null;
+  targetFingerprint?: string | null;
   timestamp: string;
   status: 'pending' | 'resolved' | 'ignored';
   riskLevel: 'low' | 'medium' | 'high';
@@ -42,6 +49,7 @@ export interface Comment {
   timestamp: string;
   createdAt?: number;
   replies?: Comment[];
+  deleted?: boolean;
 }
 
 export interface NotificationItem {
@@ -71,6 +79,22 @@ export interface AdminPost {
   fingerprint?: string | null;
 }
 
+export interface AdminComment {
+  id: string;
+  postId: string;
+  parentId?: string | null;
+  replyToId?: string | null;
+  content: string;
+  author: string;
+  timestamp: string;
+  createdAt: number;
+  deleted: boolean;
+  deletedAt?: number | null;
+  ip?: string | null;
+  fingerprint?: string | null;
+  replies?: AdminComment[];
+}
+
 export interface AdminAuditLog {
   id: number;
   adminId?: number | null;
@@ -89,6 +113,9 @@ export interface AdminAuditLog {
 export interface BanEntry {
   value: string;
   bannedAt: number;
+  expiresAt?: number | null;
+  permissions?: string[];
+  reason?: string | null;
   type: 'ip' | 'fingerprint';
 }
 

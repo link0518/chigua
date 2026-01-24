@@ -8,6 +8,8 @@ interface ReportModalProps {
   isOpen: boolean;
   onClose: () => void;
   postId: string;
+  commentId?: string;
+  targetType?: 'post' | 'comment';
   contentPreview?: string;
 }
 
@@ -23,9 +25,11 @@ const ReportModal: React.FC<ReportModalProps> = ({
   isOpen,
   onClose,
   postId,
+  commentId,
+  targetType = 'post',
   contentPreview,
 }) => {
-  const { reportPost, showToast } = useApp();
+  const { reportPost, reportComment, showToast } = useApp();
   const [selectedReason, setSelectedReason] = useState<string>('');
   const [customReason, setCustomReason] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -37,7 +41,14 @@ const ReportModal: React.FC<ReportModalProps> = ({
 
     const reason = selectedReason === 'other' ? customReason : REPORT_REASONS.find(r => r.id === selectedReason)?.label || '';
     try {
-      await reportPost(postId, reason);
+      if (targetType === 'comment') {
+        if (!commentId) {
+          throw new Error('评论不存在');
+        }
+        await reportComment(commentId, reason);
+      } else {
+        await reportPost(postId, reason);
+      }
       setSelectedReason('');
       setCustomReason('');
       onClose();

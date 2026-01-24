@@ -5,7 +5,7 @@ import {
 } from 'recharts';
 import { Flag, Gavel, BarChart2, Bell, Search, Trash2, Ban, Eye, EyeOff, LayoutDashboard, LogOut, CheckCircle, XCircle, FileText, PenSquare, Pencil, RotateCcw, Shield, ClipboardList, MessageSquare, Menu, X } from 'lucide-react';
 import { SketchButton, Badge, roughBorderClassSm } from './SketchUI';
-import { AdminAuditLog, AdminPost, FeedbackMessage, Report } from '../types';
+import { AdminAuditLog, AdminComment, AdminPost, FeedbackMessage, Report } from '../types';
 import { useApp } from '../store/AppContext';
 import Modal from './Modal';
 import { api } from '../api';
@@ -19,6 +19,20 @@ const WEEK_DAYS = ['周一', '周二', '周三', '周四', '周五', '周六', '
 const POST_PAGE_SIZE = 10;
 const AUDIT_PAGE_SIZE = 12;
 const FEEDBACK_PAGE_SIZE = 8;
+const BAN_PERMISSION_LABELS: Record<string, string> = {
+  post: '发帖',
+  comment: '回帖',
+  like: '点赞',
+  view: '查看',
+  site: '禁止进入网站',
+};
+const BAN_DURATION_OPTIONS = [
+  { id: '1h', label: '1 小时', ms: 60 * 60 * 1000 },
+  { id: '1d', label: '1 天', ms: 24 * 60 * 60 * 1000 },
+  { id: '7d', label: '7 天', ms: 7 * 24 * 60 * 60 * 1000 },
+  { id: 'forever', label: '永久', ms: null },
+  { id: 'custom', label: '自定义日期', ms: null },
+];
 
 const StatCard: React.FC<{ title: string; value: string; trend: string; trendUp: boolean; icon: React.ReactNode; color?: string; valueClassName?: string }> = ({ title, value, trend, trendUp, icon, color = 'bg-white', valueClassName = '' }) => (
   <div className={`${color} p-6 border-2 border-ink shadow-sketch relative overflow-hidden group hover:-translate-y-1 transition-transform duration-200 sticky-curl ${roughBorderClassSm}`}>
@@ -73,9 +87,13 @@ const AdminDashboard: React.FC = () => {
     isOpen: boolean;
     reason: string;
   }>({ isOpen: false, reason: '' });
-  const [bannedIps, setBannedIps] = useState<Array<{ ip: string; bannedAt: number }>>([]);
-  const [bannedFingerprints, setBannedFingerprints] = useState<Array<{ fingerprint: string; bannedAt: number }>>([]);
+  const [bannedIps, setBannedIps] = useState<Array<{ ip: string; bannedAt: number; expiresAt?: number | null; permissions?: string[]; reason?: string | null }>>([]);
+  const [bannedFingerprints, setBannedFingerprints] = useState<Array<{ fingerprint: string; bannedAt: number; expiresAt?: number | null; permissions?: string[]; reason?: string | null }>>([]);
   const [banLoading, setBanLoading] = useState(false);
+  const [banDuration, setBanDuration] = useState<'1h' | '1d' | '7d' | 'forever' | 'custom'>('7d');
+  const [banCustomUntil, setBanCustomUntil] = useState('');
+  const [banPermissions, setBanPermissions] = useState<string[]>(['post', 'comment', 'like', 'view', 'site']);
+  const [banSearch, setBanSearch] = useState('');
   const [auditLogs, setAuditLogs] = useState<AdminAuditLog[]>([]);
   const [auditSearch, setAuditSearch] = useState('');
   const [auditPage, setAuditPage] = useState(1);
@@ -110,6 +128,20 @@ const AdminDashboard: React.FC = () => {
     content: string;
     reason: string;
   }>({ isOpen: false, postId: '', action: 'delete', content: '', reason: '' });
+  const [postBanModal, setPostBanModal] = useState<{
+    isOpen: boolean;
+    postId: string;
+    content: string;
+    reason: string;
+  }>({ isOpen: false, postId: '', content: '', reason: '' });
+  const [postCommentsModal, setPostCommentsModal] = useState<{
+    isOpen: boolean;
+    postId: string;
+    content: string;
+  }>({ isOpen: false, postId: '', content: '' });
+  const [postComments, setPostComments] = useState<AdminComment[]>([]);
+  const [postCommentsLoading, setPostCommentsLoading] = useState(false);
+  const [reportDetail, setReportDetail] = useState<{ isOpen: boolean; report: Report | null }>({ isOpen: false, report: null });
   const composeMaxLength = 2000;
   const appVersion = import.meta.env.VITE_APP_VERSION || '0.0.0';
   const appVersionLabel = appVersion.startsWith('v') ? appVersion : `v${appVersion}`;
@@ -140,12 +172,42 @@ const AdminDashboard: React.FC = () => {
     const reports = currentView === 'processed' ? processedReports : pendingReports;
     if (!searchQuery.trim()) return reports;
     const query = searchQuery.toLowerCase();
-    return reports.filter(r =>
-      r.id.toLowerCase().includes(query) ||
-      r.contentSnippet.toLowerCase().includes(query) ||
-      r.reason.toLowerCase().includes(query)
-    );
+    return reports.filter((r) => {
+      const values = [
+        r.id,
+        r.contentSnippet,
+        r.reason,
+        r.postId,
+        r.targetId,
+        r.postContent,
+        r.commentContent,
+        r.targetContent,
+        r.targetIp || '',
+        r.targetFingerprint || '',
+      ].filter(Boolean) as string[];
+      return values.some((value) => value.toLowerCase().includes(query));
+    });
   }, [currentView, pendingReports, processedReports, searchQuery]);
+
+  const mergedBans = useMemo(() => {
+    const items = [
+      ...bannedIps.map((item) => ({ ...item, type: 'ip' as const, value: item.ip })),
+      ...bannedFingerprints.map((item) => ({ ...item, type: 'fingerprint' as const, value: item.fingerprint })),
+    ];
+    const query = banSearch.trim().toLowerCase();
+    if (!query) {
+      return items;
+    }
+    return items.filter((item) => {
+      const fields = [
+        item.value,
+        item.reason || '',
+        (item.permissions || []).join(' '),
+        item.type,
+      ];
+      return fields.some((field) => field.toLowerCase().includes(query));
+    });
+  }, [bannedFingerprints, bannedIps, banSearch]);
 
   const fetchAdminPosts = useCallback(async () => {
     setPostLoading(true);
@@ -166,6 +228,19 @@ const AdminDashboard: React.FC = () => {
       setPostLoading(false);
     }
   }, [postPage, postSearch, postSort, postStatus, showToast]);
+
+  const fetchPostComments = useCallback(async (postId: string) => {
+    setPostCommentsLoading(true);
+    try {
+      const data = await api.getAdminPostComments(postId);
+      setPostComments(data.items || []);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '评论加载失败';
+      showToast(message, 'error');
+    } finally {
+      setPostCommentsLoading(false);
+    }
+  }, [showToast]);
 
   const fetchBans = useCallback(async () => {
     setBanLoading(true);
@@ -314,7 +389,7 @@ const AdminDashboard: React.FC = () => {
   const confirmAction = async () => {
     const { reportId, action, reason } = confirmModal;
     try {
-      await handleReport(reportId, action, reason);
+      await handleReport(reportId, action, reason, action === 'ban' ? buildBanOptions() : undefined);
       const messages = {
         ignore: '已忽略该举报',
         delete: '已删除该内容',
@@ -340,6 +415,15 @@ const AdminDashboard: React.FC = () => {
     setPostConfirmModal({ isOpen: true, postId, action, content, reason: '' });
   };
 
+  const openPostBanModal = (post: AdminPost) => {
+    setPostBanModal({ isOpen: true, postId: post.id, content: post.content, reason: '' });
+  };
+
+  const openPostComments = (post: AdminPost) => {
+    setPostCommentsModal({ isOpen: true, postId: post.id, content: post.content });
+    fetchPostComments(post.id).catch(() => { });
+  };
+
   const confirmPostAction = async () => {
     const { postId, action, reason } = postConfirmModal;
     try {
@@ -348,6 +432,40 @@ const AdminDashboard: React.FC = () => {
       setPostConfirmModal({ isOpen: false, postId: '', action: 'delete', content: '', reason: '' });
       await fetchAdminPosts();
       await loadStats();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '操作失败，请稍后重试';
+      showToast(message, 'error');
+    }
+  };
+
+  const confirmPostBan = async () => {
+    const { postId, reason } = postBanModal;
+    try {
+      await api.batchAdminPosts('ban', [postId], reason, buildBanOptions());
+      showToast('已封禁该用户', 'success');
+      setPostBanModal({ isOpen: false, postId: '', content: '', reason: '' });
+      await fetchAdminPosts();
+      await loadStats();
+      await fetchBans();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '封禁失败，请稍后重试';
+      showToast(message, 'error');
+    }
+  };
+
+  const handleAdminCommentAction = async (commentId: string, action: 'delete' | 'ban') => {
+    if (!postCommentsModal.postId) {
+      return;
+    }
+    try {
+      await api.handleAdminComment(commentId, action, '', action === 'ban' ? buildBanOptions() : undefined);
+      showToast(action === 'ban' ? '已封禁并删除评论' : '评论已删除', 'success');
+      await fetchPostComments(postCommentsModal.postId);
+      await fetchAdminPosts();
+      await loadStats();
+      if (action === 'ban') {
+        await fetchBans();
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : '操作失败，请稍后重试';
       showToast(message, 'error');
@@ -374,6 +492,165 @@ const AdminDashboard: React.FC = () => {
     if (!timestamp) return '-';
     return new Date(timestamp).toLocaleString('zh-CN');
   };
+
+  const formatBanPermissions = (permissions?: string[]) => {
+    const list = permissions && permissions.length ? permissions : Object.keys(BAN_PERMISSION_LABELS);
+    return list.map((perm) => BAN_PERMISSION_LABELS[perm] || perm).join('、');
+  };
+
+  const formatIdentity = (ip?: string | null, fingerprint?: string | null) => {
+    if (!ip && !fingerprint) {
+      return '-';
+    }
+    const parts = [];
+    if (ip) {
+      parts.push(`IP: ${ip}`);
+    }
+    if (fingerprint) {
+      parts.push(`指纹: ${fingerprint}`);
+    }
+    return parts.join(' / ');
+  };
+
+  const getBanExpiresAt = () => {
+    const now = Date.now();
+    if (banDuration === 'forever') {
+      return null;
+    }
+    if (banDuration === 'custom') {
+      if (!banCustomUntil) {
+        return null;
+      }
+      const time = new Date(banCustomUntil).getTime();
+      return Number.isFinite(time) && time > now ? time : null;
+    }
+    const option = BAN_DURATION_OPTIONS.find((item) => item.id === banDuration);
+    if (!option || !option.ms) {
+      return null;
+    }
+    return now + option.ms;
+  };
+
+  const toggleBanPermission = (permission: string) => {
+    setBanPermissions((prev) => {
+      if (prev.includes(permission)) {
+        return prev.filter((item) => item !== permission);
+      }
+      return [...prev, permission];
+    });
+  };
+
+  const buildBanOptions = () => ({
+    permissions: banPermissions,
+    expiresAt: getBanExpiresAt(),
+  });
+
+  const buildAdminCommentTree = (items: AdminComment[]) => {
+    const nodes = new Map<string, AdminComment & { replies: AdminComment[] }>();
+    items.forEach((item) => {
+      nodes.set(item.id, { ...item, replies: [] });
+    });
+    const roots: Array<AdminComment & { replies: AdminComment[] }> = [];
+    nodes.forEach((node) => {
+      if (node.parentId && nodes.has(node.parentId)) {
+        nodes.get(node.parentId)?.replies.push(node);
+      } else {
+        roots.push(node);
+      }
+    });
+    const sortByCreatedAt = (a: AdminComment, b: AdminComment) => (a.createdAt || 0) - (b.createdAt || 0);
+    const sortTree = (list: Array<AdminComment & { replies: AdminComment[] }>) => {
+      list.sort(sortByCreatedAt);
+      list.forEach((item) => {
+        if (item.replies?.length) {
+          sortTree(item.replies as Array<AdminComment & { replies: AdminComment[] }>);
+        }
+      });
+    };
+    sortTree(roots);
+    return roots;
+  };
+
+  const renderAdminCommentItem = (item: AdminComment, depth = 0): React.ReactNode => {
+    const indent = Math.min(depth * 16, 48);
+    const contentClass = item.deleted ? 'text-pencil line-through' : 'text-ink';
+    return (
+      <div key={item.id} style={{ marginLeft: indent }} className="border-l border-dashed border-gray-200 pl-3 py-2">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-pencil font-sans mb-1">
+          <span className="bg-gray-100 border border-ink text-ink text-[10px] font-bold px-2 py-0.5 rounded font-sans">#{item.id}</span>
+          <span>{item.timestamp}</span>
+          {item.deleted && <Badge color="bg-gray-200">已删除</Badge>}
+          <span>标识：{formatIdentity(item.ip, item.fingerprint)}</span>
+        </div>
+        <p className={`text-sm font-sans leading-6 ${contentClass}`}>{item.content || '（无内容）'}</p>
+        <div className="flex items-center gap-2 mt-2">
+          <SketchButton
+            variant="danger"
+            className="h-8 px-3 text-xs"
+            disabled={item.deleted}
+            onClick={() => handleAdminCommentAction(item.id, 'delete')}
+          >
+            删除
+          </SketchButton>
+          <SketchButton
+            variant="secondary"
+            className="h-8 px-3 text-xs"
+            onClick={() => handleAdminCommentAction(item.id, 'ban')}
+          >
+            封禁
+          </SketchButton>
+        </div>
+        {item.replies?.length ? (
+          <div className="mt-2 flex flex-col gap-2">
+            {item.replies.map((reply) => renderAdminCommentItem(reply, depth + 1))}
+          </div>
+        ) : null}
+      </div>
+    );
+  };
+
+  const renderBanOptions = () => (
+    <div className="flex flex-col gap-3 border-2 border-dashed border-gray-200 rounded-lg p-3">
+      <div>
+        <p className="text-xs text-pencil font-sans mb-2">封禁权限</p>
+        <div className="flex flex-wrap gap-2">
+          {Object.keys(BAN_PERMISSION_LABELS).map((permission) => (
+            <label key={permission} className="flex items-center gap-2 text-xs font-sans text-pencil">
+              <input
+                type="checkbox"
+                className="accent-black"
+                checked={banPermissions.includes(permission)}
+                onChange={() => toggleBanPermission(permission)}
+              />
+              <span>{BAN_PERMISSION_LABELS[permission]}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+      <div>
+        <p className="text-xs text-pencil font-sans mb-2">封禁时间</p>
+        <div className="flex flex-col gap-2">
+          <select
+            value={banDuration}
+            onChange={(e) => setBanDuration(e.target.value as typeof banDuration)}
+            className="w-full h-9 border-2 border-gray-200 rounded-lg px-2 text-xs font-sans focus:border-ink outline-none"
+          >
+            {BAN_DURATION_OPTIONS.map((option) => (
+              <option key={option.id} value={option.id}>{option.label}</option>
+            ))}
+          </select>
+          {banDuration === 'custom' && (
+            <input
+              type="datetime-local"
+              value={banCustomUntil}
+              onChange={(e) => setBanCustomUntil(e.target.value)}
+              className="w-full h-9 border-2 border-gray-200 rounded-lg px-2 text-xs font-sans focus:border-ink outline-none"
+            />
+          )}
+        </div>
+      </div>
+    </div>
+  );
 
   const stripSessionFields = (value: unknown): unknown => {
     if (Array.isArray(value)) {
@@ -464,7 +741,7 @@ const AdminDashboard: React.FC = () => {
     const { action, reason } = bulkPostModal;
     const ids = Array.from(selectedPosts);
     try {
-      await api.batchAdminPosts(action, ids, reason);
+      await api.batchAdminPosts(action, ids, reason, action === 'ban' ? buildBanOptions() : undefined);
       showToast('批量操作已完成', 'success');
       setSelectedPosts(new Set());
       setBulkPostModal({ isOpen: false, action: 'delete', reason: '' });
@@ -564,7 +841,7 @@ const AdminDashboard: React.FC = () => {
   const confirmFeedbackAction = async () => {
     const { feedbackId, action, reason } = feedbackActionModal;
     try {
-      await api.handleAdminFeedback(feedbackId, action, reason);
+      await api.handleAdminFeedback(feedbackId, action, reason, action === 'ban' ? buildBanOptions() : undefined);
       showToast(action === 'delete' ? '留言已删除' : '已封禁该用户', 'success');
       setFeedbackActionModal({ isOpen: false, feedbackId: '', action: 'delete', content: '', reason: '' });
       await fetchFeedback();
@@ -768,7 +1045,7 @@ const AdminDashboard: React.FC = () => {
                       setSearchQuery(e.target.value);
                     }
                   }}
-                  placeholder={isPostView ? '搜索帖子内容...' : isAuditView ? '搜索操作/目标/管理员...' : isFeedbackView ? '搜索内容或联系方式...' : '搜索 ID 或内容...'}
+                  placeholder={isPostView ? '搜索 ID/内容/IP/指纹...' : isAuditView ? '搜索操作/目标/管理员...' : isFeedbackView ? '搜索内容或联系方式/IP/指纹...' : '搜索 ID/内容/IP/指纹...'}
                   className="pl-9 pr-4 py-2 rounded-full border-2 border-ink bg-white text-sm focus:shadow-sketch-sm outline-none transition-all w-64 font-sans"
                 />
               </div>
@@ -952,6 +1229,7 @@ const AdminDashboard: React.FC = () => {
                           key={report.id}
                           report={report}
                           onAction={handleAction}
+                          onDetail={(item) => setReportDetail({ isOpen: true, report: item })}
                           showStatus={false}
                           selectable={false}
                         />
@@ -1091,15 +1369,30 @@ const AdminDashboard: React.FC = () => {
                               <span>点赞 {post.likes}</span>
                               <span>评论 {post.comments}</span>
                               <span>举报 {post.reports}</span>
+                              <span>标识 {formatIdentity(post.ip, post.fingerprint)}</span>
                             </div>
                           </div>
                           <div className="flex items-center gap-2 min-w-fit mt-2 md:mt-0 font-sans">
                             <SketchButton
                               variant="secondary"
                               className="h-10 px-3 text-xs flex items-center gap-1"
+                              onClick={() => openPostComments(post)}
+                            >
+                              <MessageSquare size={14} /> 评论
+                            </SketchButton>
+                            <SketchButton
+                              variant="secondary"
+                              className="h-10 px-3 text-xs flex items-center gap-1"
                               onClick={() => openEditModal(post)}
                             >
                               <Pencil size={14} /> 编辑
+                            </SketchButton>
+                            <SketchButton
+                              variant="primary"
+                              className="h-10 px-3 text-xs flex items-center gap-1 text-white"
+                              onClick={() => openPostBanModal(post)}
+                            >
+                              <Ban size={14} /> 封禁
                             </SketchButton>
                             {post.deleted ? (
                               <SketchButton
@@ -1345,8 +1638,7 @@ const AdminDashboard: React.FC = () => {
                               <span>邮箱：{message.email}</span>
                               {message.wechat && <span>微信：{message.wechat}</span>}
                               {message.qq && <span>QQ：{message.qq}</span>}
-                              {message.ip && <span>IP：{message.ip}</span>}
-                              {message.fingerprint && <span>指纹：{message.fingerprint}</span>}
+                              <span>标识：{formatIdentity(message.ip, message.fingerprint)}</span>
                             </div>
                           </div>
                           <div className="flex items-center gap-2 min-w-fit mt-2 md:mt-0 font-sans">
@@ -1406,68 +1698,67 @@ const AdminDashboard: React.FC = () => {
 
             {/* Bans View */}
             {currentView === 'bans' && (
-              <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="bg-white p-6 border-2 border-ink rounded-lg shadow-sketch-sm">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="font-display text-lg">IP 封禁</h3>
-                    <span className="text-xs text-pencil font-sans">{bannedIps.length} 条</span>
+              <section>
+                <div className="flex flex-col gap-3 mb-4">
+                  <div className="flex items-center justify-between text-xs text-pencil font-sans">
+                    <span>共 {mergedBans.length} 条</span>
+                    <span>{banLoading ? '加载中...' : '已更新'}</span>
                   </div>
-                  {banLoading ? (
-                    <div className="text-center py-8 text-pencil font-hand">加载中...</div>
-                  ) : bannedIps.length === 0 ? (
-                    <div className="text-center py-8 text-pencil font-hand">暂无封禁</div>
-                  ) : (
-                    <div className="flex flex-col gap-3">
-                      {bannedIps.map((item) => (
-                        <div key={item.ip} className="flex items-center justify-between gap-4 border-2 border-dashed border-gray-200 rounded-lg p-3">
-                          <div>
-                            <p className="text-xs text-pencil font-sans">IP</p>
-                            <p className="font-sans text-sm break-all">{item.ip}</p>
-                            <p className="text-xs text-pencil mt-1">{formatTimestamp(item.bannedAt)}</p>
-                          </div>
-                          <SketchButton
-                            variant="secondary"
-                            className="h-8 px-3 text-xs"
-                            onClick={() => handleUnban('ip', item.ip)}
-                          >
-                            解封
-                          </SketchButton>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  <div className="flex items-center gap-2">
+                    <input
+                      value={banSearch}
+                      onChange={(e) => setBanSearch(e.target.value)}
+                      placeholder="搜索 IP/指纹/理由/权限..."
+                      className="w-full h-9 border-2 border-gray-200 rounded-lg px-3 text-xs font-sans focus:border-ink outline-none"
+                    />
+                  </div>
                 </div>
 
-                <div className="bg-white p-6 border-2 border-ink rounded-lg shadow-sketch-sm">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="font-display text-lg">指纹封禁</h3>
-                    <span className="text-xs text-pencil font-sans">{bannedFingerprints.length} 条</span>
+                {banLoading ? (
+                  <div className="text-center py-16 bg-white border-2 border-ink rounded-lg">
+                    <span className="text-6xl mb-4 block">⏳</span>
+                    <h3 className="font-display text-2xl text-ink mb-2">正在加载封禁列表</h3>
+                    <p className="font-hand text-lg text-pencil">请稍等片刻</p>
                   </div>
-                  {banLoading ? (
-                    <div className="text-center py-8 text-pencil font-hand">加载中...</div>
-                  ) : bannedFingerprints.length === 0 ? (
-                    <div className="text-center py-8 text-pencil font-hand">暂无封禁</div>
-                  ) : (
-                    <div className="flex flex-col gap-3">
-                      {bannedFingerprints.map((item) => (
-                        <div key={item.fingerprint} className="flex items-center justify-between gap-4 border-2 border-dashed border-gray-200 rounded-lg p-3">
-                          <div>
-                            <p className="text-xs text-pencil font-sans">指纹</p>
-                            <p className="font-sans text-sm break-all">{item.fingerprint}</p>
-                            <p className="text-xs text-pencil mt-1">{formatTimestamp(item.bannedAt)}</p>
+                ) : mergedBans.length === 0 ? (
+                  <div className="text-center py-16 bg-white border-2 border-ink rounded-lg">
+                    <span className="text-6xl mb-4 block">🛡️</span>
+                    <h3 className="font-display text-2xl text-ink mb-2">暂无封禁</h3>
+                    <p className="font-hand text-lg text-pencil">试试调整搜索条件</p>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-4">
+                    {mergedBans.map((item) => (
+                      <div key={`${item.type}-${item.value}`} className="bg-white p-5 rounded-lg border-2 border-ink shadow-sketch-sm">
+                        <div className="flex flex-col md:flex-row gap-4 justify-between">
+                          <div className="flex-1">
+                            <div className="flex flex-wrap items-center gap-3 text-xs font-sans text-pencil mb-2">
+                              <Badge color="bg-gray-200">
+                                {item.type === 'ip' ? 'IP' : '指纹'}
+                              </Badge>
+                              <span className="text-xs font-bold text-ink break-all">{item.value}</span>
+                              <span>{formatTimestamp(item.bannedAt)}</span>
+                            </div>
+                            <div className="text-xs text-pencil font-sans space-y-1">
+                              <p>权限：{formatBanPermissions(item.permissions)}</p>
+                              <p>到期：{item.expiresAt ? formatTimestamp(item.expiresAt) : '永久'}</p>
+                              {item.reason && <p>理由：{item.reason}</p>}
+                            </div>
                           </div>
-                          <SketchButton
-                            variant="secondary"
-                            className="h-8 px-3 text-xs"
-                            onClick={() => handleUnban('fingerprint', item.fingerprint)}
-                          >
-                            解封
-                          </SketchButton>
+                          <div className="flex items-center gap-2">
+                            <SketchButton
+                              variant="secondary"
+                              className="h-8 px-3 text-xs"
+                              onClick={() => handleUnban(item.type, item.value)}
+                            >
+                              解封
+                            </SketchButton>
+                          </div>
                         </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </section>
             )}
 
@@ -1610,6 +1901,7 @@ const AdminDashboard: React.FC = () => {
                         key={report.id}
                         report={report}
                         onAction={handleAction}
+                        onDetail={(item) => setReportDetail({ isOpen: true, report: item })}
                         showStatus={currentView === 'processed'}
                         selectable={currentView === 'reports'}
                         selected={selectedReports.has(report.id)}
@@ -1678,6 +1970,7 @@ const AdminDashboard: React.FC = () => {
               placeholder="填写理由便于审计追溯"
             />
           </div>
+          {confirmModal.action === 'ban' && renderBanOptions()}
           <div className="flex gap-3 mt-2">
             <SketchButton
               variant="secondary"
@@ -1738,6 +2031,71 @@ const AdminDashboard: React.FC = () => {
       </Modal>
 
       <Modal
+        isOpen={postBanModal.isOpen}
+        onClose={() => setPostBanModal({ isOpen: false, postId: '', content: '', reason: '' })}
+        title="封禁用户"
+      >
+        <div className="flex flex-col gap-4">
+          <p className="font-hand text-lg text-ink">
+            确定要 <strong className="text-red-600">封禁该用户</strong> 吗？
+          </p>
+          <div className="p-3 bg-gray-50 border border-dashed border-ink rounded-lg">
+            <p className="text-sm text-pencil font-sans line-clamp-2">"{postBanModal.content}"</p>
+          </div>
+          <div>
+            <label className="text-xs text-pencil font-sans">处理理由（可选）</label>
+            <textarea
+              value={postBanModal.reason}
+              onChange={(e) => setPostBanModal((prev) => ({ ...prev, reason: e.target.value }))}
+              className="w-full mt-2 h-20 resize-none border-2 border-gray-200 rounded-lg p-2 text-sm font-sans focus:border-ink outline-none"
+              placeholder="填写理由便于审计追溯"
+            />
+          </div>
+          {renderBanOptions()}
+          <div className="flex gap-3 mt-2">
+            <SketchButton
+              variant="secondary"
+              className="flex-1"
+              onClick={() => setPostBanModal({ isOpen: false, postId: '', content: '', reason: '' })}
+            >
+              取消
+            </SketchButton>
+            <SketchButton
+              variant="danger"
+              className="flex-1"
+              onClick={confirmPostBan}
+            >
+              确认封禁
+            </SketchButton>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={postCommentsModal.isOpen}
+        onClose={() => {
+          setPostCommentsModal({ isOpen: false, postId: '', content: '' });
+          setPostComments([]);
+        }}
+        title="帖子评论"
+      >
+        <div className="flex flex-col gap-4">
+          <div className="p-3 bg-gray-50 border border-dashed border-ink rounded-lg">
+            <p className="text-sm text-pencil font-sans line-clamp-3">"{postCommentsModal.content}"</p>
+          </div>
+          {postCommentsLoading ? (
+            <div className="text-center py-8 text-pencil font-hand">加载中...</div>
+          ) : postComments.length === 0 ? (
+            <div className="text-center py-8 text-pencil font-hand">暂无评论</div>
+          ) : (
+            <div className="flex flex-col gap-3 max-h-[60vh] overflow-y-auto">
+              {buildAdminCommentTree(postComments).map((item) => renderAdminCommentItem(item))}
+            </div>
+          )}
+        </div>
+      </Modal>
+
+      <Modal
         isOpen={bulkPostModal.isOpen}
         onClose={() => setBulkPostModal({ isOpen: false, action: 'delete', reason: '' })}
         title="批量操作确认"
@@ -1756,6 +2114,7 @@ const AdminDashboard: React.FC = () => {
               placeholder="填写理由便于审计追溯"
             />
           </div>
+          {bulkPostModal.action === 'ban' && renderBanOptions()}
           <div className="flex gap-3 mt-2">
             <SketchButton
               variant="secondary"
@@ -1833,6 +2192,7 @@ const AdminDashboard: React.FC = () => {
               placeholder="填写理由便于审计追溯"
             />
           </div>
+          {feedbackActionModal.action === 'ban' && renderBanOptions()}
           <div className="flex gap-3 mt-2">
             <SketchButton
               variant="secondary"
@@ -1941,6 +2301,39 @@ const AdminDashboard: React.FC = () => {
           </div>
         </div>
       </Modal>
+
+      <Modal
+        isOpen={reportDetail.isOpen}
+        onClose={() => setReportDetail({ isOpen: false, report: null })}
+        title="举报详情"
+      >
+        <div className="flex flex-col gap-4">
+          <div className="text-xs text-pencil font-sans">
+            <p>举报 ID：{reportDetail.report?.id}</p>
+            <p>类型：{reportDetail.report?.targetType === 'comment' ? '评论举报' : '帖子举报'}</p>
+            <p>原因：{reportDetail.report?.reason}</p>
+            <p>标识：{formatIdentity(reportDetail.report?.targetIp, reportDetail.report?.targetFingerprint)}</p>
+          </div>
+          <div>
+            <p className="text-xs text-pencil font-sans mb-2">被举报帖子内容</p>
+            <div className="bg-gray-50 border-2 border-dashed border-gray-200 rounded-lg p-3 text-sm overflow-auto">
+              {reportDetail.report?.postContent
+                ? <MarkdownRenderer content={reportDetail.report.postContent} className="font-sans text-base text-ink" />
+                : <span className="text-pencil">（暂无内容）</span>}
+            </div>
+          </div>
+          {reportDetail.report?.targetType === 'comment' && (
+            <div>
+              <p className="text-xs text-pencil font-sans mb-2">被举报评论内容</p>
+              <div className="bg-gray-50 border-2 border-dashed border-gray-200 rounded-lg p-3 text-sm overflow-auto">
+                {reportDetail.report?.commentContent
+                  ? <MarkdownRenderer content={reportDetail.report.commentContent} className="font-sans text-base text-ink" />
+                  : <span className="text-pencil">（暂无内容）</span>}
+              </div>
+            </div>
+          )}
+        </div>
+      </Modal>
     </div>
   );
 };
@@ -1949,17 +2342,31 @@ const AdminDashboard: React.FC = () => {
 const ReportCard: React.FC<{
   report: Report;
   onAction: (id: string, action: 'ignore' | 'delete' | 'ban', content: string) => void;
+  onDetail?: (report: Report) => void;
   showStatus?: boolean;
   selectable?: boolean;
   selected?: boolean;
   onSelect?: () => void;
-}> = ({ report, onAction, showStatus = false, selectable = true, selected = false, onSelect }) => {
+}> = ({ report, onAction, onDetail, showStatus = false, selectable = true, selected = false, onSelect }) => {
   const getRiskBg = (level: string) => {
     switch (level) {
       case 'high': return 'bg-highlight';
       case 'medium': return 'bg-alert';
       default: return 'bg-gray-200';
     }
+  };
+  const formatIdentity = (ip?: string | null, fingerprint?: string | null) => {
+    if (!ip && !fingerprint) {
+      return '-';
+    }
+    const parts = [];
+    if (ip) {
+      parts.push(`IP: ${ip}`);
+    }
+    if (fingerprint) {
+      parts.push(`指纹: ${fingerprint}`);
+    }
+    return parts.join(' / ');
   };
 
   return (
@@ -1980,6 +2387,11 @@ const ReportCard: React.FC<{
             <span className={`text-ink text-xs flex items-center gap-1 border border-ink px-2 py-0.5 rounded font-bold font-sans ${getRiskBg(report.riskLevel)}`}>
               {report.reason}
             </span>
+            {report.targetType === 'comment' && (
+              <span className="text-xs flex items-center gap-1 border border-ink px-2 py-0.5 rounded font-bold font-sans bg-blue-50 text-blue-700">
+                评论举报
+              </span>
+            )}
             {showStatus && (
               <span className={`text-xs flex items-center gap-1 border border-ink px-2 py-0.5 rounded font-bold font-sans ${report.status === 'resolved' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
                 }`}>
@@ -1991,6 +2403,16 @@ const ReportCard: React.FC<{
           <p className="text-ink text-base leading-relaxed font-sans font-semibold">
             "{report.contentSnippet}"
           </p>
+          <div className="flex flex-wrap items-center gap-3 text-xs text-pencil font-sans mt-3">
+            <span>标识 {formatIdentity(report.targetIp, report.targetFingerprint)}</span>
+            <button
+              type="button"
+              onClick={() => onDetail?.(report)}
+              className="text-xs font-bold text-ink hover:underline"
+            >
+              查看详情
+            </button>
+          </div>
         </div>
 
         {!showStatus && (

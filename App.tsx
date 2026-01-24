@@ -44,6 +44,9 @@ const App: React.FC = () => {
   const [announcementContent, setAnnouncementContent] = useState('');
   const [announcementUpdatedAt, setAnnouncementUpdatedAt] = useState<number | null>(null);
   const [announcementUnread, setAnnouncementUnread] = useState(false);
+  const [accessBlocked, setAccessBlocked] = useState(false);
+  const [accessExpiresAt, setAccessExpiresAt] = useState<number | null>(null);
+  const [accessChecked, setAccessChecked] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
@@ -80,11 +83,32 @@ const App: React.FC = () => {
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    api.getAccessStatus()
+      .then((data) => {
+        if (data?.blocked || data?.viewBlocked) {
+          setAccessBlocked(true);
+          setAccessExpiresAt(typeof data?.expiresAt === 'number' ? data.expiresAt : null);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        setAccessChecked(true);
+      });
+  }, []);
+
   const formatAnnouncementTime = (value: number | null) => {
     if (!value) {
       return '';
     }
     return new Date(value).toLocaleString('zh-CN');
+  };
+
+  const formatAccessExpire = (value: number | null) => {
+    if (!value) {
+      return '永久限制';
+    }
+    return `限制至 ${new Date(value).toLocaleString('zh-CN')}`;
   };
 
   const openAnnouncement = () => {
@@ -269,6 +293,17 @@ const App: React.FC = () => {
       {label}
     </button>
   );
+
+  if (accessChecked && accessBlocked) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center px-6 text-center bg-paper">
+        <span className="text-6xl mb-4 block">⛔</span>
+        <h2 className="font-display text-3xl text-ink mb-2">你已被限制浏览</h2>
+        <p className="font-hand text-lg text-pencil mb-3">如有疑问请联系管理员</p>
+        <p className="text-xs text-pencil">{formatAccessExpire(accessExpiresAt)}</p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col font-sans selection:bg-highlight selection:text-black">

@@ -11,7 +11,7 @@ const toQuery = (params) => {
 
 let csrfToken = '';
 
-const isAdminPath = (path: string) => path.startsWith('/admin');
+const needsAdminCsrf = (path: string) => path.startsWith('/admin') || path.startsWith('/reports');
 
 const apiFetch = async (path, options = {}) => {
   const fingerprint = await getBrowserFingerprint().catch(() => '');
@@ -19,7 +19,7 @@ const apiFetch = async (path, options = {}) => {
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
-      ...(csrfToken && isAdminPath(path) ? { 'X-CSRF-Token': csrfToken } : {}),
+      ...(csrfToken && needsAdminCsrf(path) ? { 'X-CSRF-Token': csrfToken } : {}),
       ...(fingerprint ? { 'X-Client-Fingerprint': fingerprint } : {}),
       ...(options.headers || {}),
     },
@@ -64,6 +64,10 @@ export const api = {
     method: 'POST',
     body: JSON.stringify({ postId, reason }),
   }),
+  reportComment: (commentId, reason) => apiFetch('/reports', {
+    method: 'POST',
+    body: JSON.stringify({ commentId, reason }),
+  }),
   getNotifications: (params = {}) => apiFetch(`/notifications${toQuery(params)}`),
   readNotifications: () => apiFetch('/notifications/read', { method: 'POST' }),
   createFeedback: (content, email, wechat = '', qq = '', turnstileToken) => apiFetch('/feedback', {
@@ -71,9 +75,9 @@ export const api = {
     body: JSON.stringify({ content, email, wechat, qq, turnstileToken }),
   }),
   getReports: (status?: string, search?: string) => apiFetch(`/reports${toQuery({ status, search })}`),
-  handleReport: (reportId, action, reason = '') => apiFetch(`/reports/${reportId}/action`, {
+  handleReport: (reportId, action, reason = '', options = {}) => apiFetch(`/reports/${reportId}/action`, {
     method: 'POST',
-    body: JSON.stringify({ action, reason }),
+    body: JSON.stringify({ action, reason, ...options }),
   }),
   getAdminPosts: (params = {}) => apiFetch(`/admin/posts${toQuery(params)}`),
   createAdminPost: (content, tags = []) => apiFetch('/admin/posts', {
@@ -84,9 +88,14 @@ export const api = {
     method: 'POST',
     body: JSON.stringify({ content, reason }),
   }),
-  batchAdminPosts: (action, postIds, reason = '') => apiFetch('/admin/posts/batch', {
+  getAdminPostComments: (postId, page = 1, limit = 100) => apiFetch(`/admin/posts/${postId}/comments${toQuery({ page, limit })}`),
+  handleAdminComment: (commentId, action, reason = '', options = {}) => apiFetch(`/admin/comments/${commentId}/action`, {
     method: 'POST',
-    body: JSON.stringify({ action, postIds, reason }),
+    body: JSON.stringify({ action, reason, ...options }),
+  }),
+  batchAdminPosts: (action, postIds, reason = '', options = {}) => apiFetch('/admin/posts/batch', {
+    method: 'POST',
+    body: JSON.stringify({ action, postIds, reason, ...options }),
   }),
   handleAdminPost: (postId, action, reason = '') => apiFetch(`/admin/posts/${postId}/action`, {
     method: 'POST',
@@ -97,15 +106,16 @@ export const api = {
     body: JSON.stringify({ action, reportIds, reason }),
   }),
   getAdminFeedback: (params = {}) => apiFetch(`/admin/feedback${toQuery(params)}`),
-  handleAdminFeedback: (feedbackId, action, reason = '') => apiFetch(`/admin/feedback/${feedbackId}/action`, {
+  handleAdminFeedback: (feedbackId, action, reason = '', options = {}) => apiFetch(`/admin/feedback/${feedbackId}/action`, {
     method: 'POST',
-    body: JSON.stringify({ action, reason }),
+    body: JSON.stringify({ action, reason, ...options }),
   }),
   getAdminBans: () => apiFetch('/admin/bans'),
-  handleAdminBan: (action, type, value, reason = '') => apiFetch('/admin/bans/action', {
+  handleAdminBan: (action, type, value, reason = '', options = {}) => apiFetch('/admin/bans/action', {
     method: 'POST',
-    body: JSON.stringify({ action, type, value, reason }),
+    body: JSON.stringify({ action, type, value, reason, ...options }),
   }),
+  getAccessStatus: () => apiFetch('/access'),
   getAdminAuditLogs: (params = {}) => apiFetch(`/admin/audit-logs${toQuery(params)}`),
   getAnnouncement: () => apiFetch('/announcement'),
   getAdminAnnouncement: () => apiFetch('/admin/announcement'),

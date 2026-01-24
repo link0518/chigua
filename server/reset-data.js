@@ -4,6 +4,8 @@ const tables = [
   'reports',
   'report_sessions',
   'report_fingerprints',
+  'comment_report_sessions',
+  'comment_report_fingerprints',
   'comments',
   'post_reactions',
   'post_views',

@@ -62,12 +62,16 @@ CREATE TABLE IF NOT EXISTS comments (
   author TEXT NOT NULL DEFAULT '匿名',
   created_at INTEGER NOT NULL,
   deleted INTEGER NOT NULL DEFAULT 0,
+  deleted_at INTEGER,
+  ip TEXT,
   FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS reports (
   id TEXT PRIMARY KEY,
   post_id TEXT NOT NULL,
+  comment_id TEXT,
+  target_type TEXT NOT NULL DEFAULT 'post',
   reason TEXT NOT NULL,
   content_snippet TEXT NOT NULL,
   created_at INTEGER NOT NULL,
@@ -86,6 +90,13 @@ CREATE TABLE IF NOT EXISTS report_sessions (
   FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS comment_report_sessions (
+  comment_id TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (comment_id, session_id)
+);
+
 CREATE TABLE IF NOT EXISTS banned_sessions (
   session_id TEXT PRIMARY KEY,
   banned_at INTEGER NOT NULL
@@ -93,12 +104,18 @@ CREATE TABLE IF NOT EXISTS banned_sessions (
 
 CREATE TABLE IF NOT EXISTS banned_ips (
   ip TEXT PRIMARY KEY,
-  banned_at INTEGER NOT NULL
+  banned_at INTEGER NOT NULL,
+  expires_at INTEGER,
+  permissions TEXT,
+  reason TEXT
 );
 
 CREATE TABLE IF NOT EXISTS banned_fingerprints (
   fingerprint TEXT PRIMARY KEY,
-  banned_at INTEGER NOT NULL
+  banned_at INTEGER NOT NULL,
+  expires_at INTEGER,
+  permissions TEXT,
+  reason TEXT
 );
 
 CREATE TABLE IF NOT EXISTS report_fingerprints (
@@ -107,6 +124,13 @@ CREATE TABLE IF NOT EXISTS report_fingerprints (
   created_at INTEGER NOT NULL,
   PRIMARY KEY (post_id, fingerprint),
   FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS comment_report_fingerprints (
+  comment_id TEXT NOT NULL,
+  fingerprint TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (comment_id, fingerprint)
 );
 
 CREATE TABLE IF NOT EXISTS feedback_messages (
@@ -207,7 +231,18 @@ ensureColumn('posts', 'fingerprint', 'TEXT');
 ensureColumn('comments', 'fingerprint', 'TEXT');
 ensureColumn('comments', 'parent_id', 'TEXT');
 ensureColumn('comments', 'reply_to_id', 'TEXT');
+ensureColumn('comments', 'deleted', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('comments', 'deleted_at', 'INTEGER');
+ensureColumn('comments', 'ip', 'TEXT');
 ensureColumn('reports', 'fingerprint', 'TEXT');
+ensureColumn('reports', 'comment_id', 'TEXT');
+ensureColumn('reports', 'target_type', "TEXT NOT NULL DEFAULT 'post'");
+ensureColumn('banned_ips', 'expires_at', 'INTEGER');
+ensureColumn('banned_ips', 'permissions', 'TEXT');
+ensureColumn('banned_ips', 'reason', 'TEXT');
+ensureColumn('banned_fingerprints', 'expires_at', 'INTEGER');
+ensureColumn('banned_fingerprints', 'permissions', 'TEXT');
+ensureColumn('banned_fingerprints', 'reason', 'TEXT');
 ensureColumn('feedback_messages', 'fingerprint', 'TEXT');
 
 db.exec('CREATE INDEX IF NOT EXISTS idx_comments_parent_id ON comments(parent_id);');

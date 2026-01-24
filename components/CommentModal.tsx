@@ -6,6 +6,7 @@ import { Comment } from '../types';
 import { useApp } from '../store/AppContext';
 import MarkdownRenderer from './MarkdownRenderer';
 import Turnstile, { TurnstileHandle } from './Turnstile';
+import ReportModal from './ReportModal';
 
 interface CommentModalProps {
   isOpen: boolean;
@@ -36,6 +37,11 @@ const CommentModal: React.FC<CommentModalProps> = ({
   const [focusTargetId, setFocusTargetId] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
+  const [reportModal, setReportModal] = useState<{ isOpen: boolean; commentId: string; content: string }>({
+    isOpen: false,
+    commentId: '',
+    content: '',
+  });
   const listRef = useRef<HTMLDivElement | null>(null);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const turnstileRef = useRef<TurnstileHandle | null>(null);
@@ -48,6 +54,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
     setExpandedThreads(new Set());
     setLastAddedId(null);
     setFocusTargetId(null);
+    setReportModal({ isOpen: false, commentId: '', content: '' });
     setPage(0);
     setHasMore(true);
     setLoading(true);
@@ -385,9 +392,10 @@ const CommentModal: React.FC<CommentModalProps> = ({
                 const maxIndent = depth > 0 ? 14 : 0;
                 const currentIndex = siblingOrderMap.get(item.id) || 1;
                 const threadLabel = parentLabel ? `${parentLabel}.${currentIndex}` : `${currentIndex}`;
-                    const replyLabel = depth > 0
-                      ? (labelMap.get(item.replyToId || '') || parentLabel)
-                      : '';
+                const isDeleted = Boolean(item.deleted);
+                const replyLabel = depth > 0
+                  ? (labelMap.get(item.replyToId || '') || parentLabel)
+                  : '';
                 const replyOrderMap = replies.length ? buildOrderMap(orderedReplies) : null;
 
                 return (
@@ -396,24 +404,38 @@ const CommentModal: React.FC<CommentModalProps> = ({
                       <div className="flex items-center gap-2">
                         <span className="text-[12px] font-mono text-gray-500">{threadLabel}楼</span>
                         <span className="text-gray-800">匿名用户</span>
+                        {isDeleted && <span className="text-[11px] text-gray-400">已处理</span>}
                         {replyLabel && (
                           <span className="text-[11px] text-gray-500">回复 {replyLabel}楼</span>
                         )}
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-col items-end gap-1">
                         <span className="text-gray-400">{item.timestamp}</span>
-                        <button
-                          type="button"
-                          onClick={() => setReplyToId(item.id)}
-                          className="text-gray-500 hover:text-ink transition-colors opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
-                          aria-label="回复"
-                          title="回复"
-                        >
-                          回复
-                        </button>
+                        {!isDeleted && (
+                          <button
+                            type="button"
+                            onClick={() => setReplyToId(item.id)}
+                            className="text-gray-500 hover:text-ink transition-colors opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+                            aria-label="回复"
+                            title="回复"
+                          >
+                            回复
+                          </button>
+                        )}
+                        {!isDeleted && (
+                          <button
+                            type="button"
+                            onClick={() => setReportModal({ isOpen: true, commentId: item.id, content: item.content })}
+                            className="text-gray-400 hover:text-red-600 transition-colors text-[12px] opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+                            aria-label="举报"
+                            title="举报"
+                          >
+                            举报
+                          </button>
+                        )}
                       </div>
                     </div>
-                    <div className={depth === 0 ? 'text-[13px] text-ink mt-1' : 'text-[12px] text-ink/90 mt-1'}>
+                    <div className={depth === 0 ? `text-[13px] mt-1 ${isDeleted ? 'text-gray-400 italic' : 'text-ink'}` : `text-[12px] mt-1 ${isDeleted ? 'text-gray-400 italic' : 'text-ink/90'}`}>
                       <MarkdownRenderer content={item.content} className={depth === 0 ? 'leading-5' : 'leading-4'} />
                     </div>
                         {depth === 0 && visibleReplies.length > 0 && (
@@ -485,6 +507,15 @@ const CommentModal: React.FC<CommentModalProps> = ({
       </form>
 
       <Turnstile ref={turnstileRef} action="comment" enabled={isOpen} />
+
+      <ReportModal
+        isOpen={reportModal.isOpen}
+        onClose={() => setReportModal({ isOpen: false, commentId: '', content: '' })}
+        postId={postId}
+        commentId={reportModal.commentId}
+        targetType="comment"
+        contentPreview={reportModal.content.substring(0, 80)}
+      />
     </div>
   );
 };

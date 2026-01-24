@@ -377,20 +377,133 @@ const enforceRateLimit = (req, res, action, fingerprint) => {
   return true;
 };
 
-const isBanned = (ip, fingerprint) => {
-  if (ip) {
-    const byIp = db.prepare('SELECT 1 FROM banned_ips WHERE ip = ?').get(ip);
-    if (byIp) {
-      return true;
-    }
+const BAN_PERMISSIONS = ['post', 'comment', 'like', 'view', 'site'];
+
+const parsePermissions = (value) => {
+  if (!value) {
+    return null;
   }
-  if (fingerprint) {
-    const byFingerprint = db.prepare('SELECT 1 FROM banned_fingerprints WHERE fingerprint = ?').get(fingerprint);
-    if (byFingerprint) {
-      return true;
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) {
+      return parsed.filter((item) => typeof item === 'string' && item.trim());
     }
+  } catch {
+    return null;
   }
-  return false;
+  return null;
+};
+
+const normalizePermissions = (value) => {
+  const parsed = parsePermissions(value);
+  if (parsed && parsed.length) {
+    return Array.from(new Set(parsed));
+  }
+  return BAN_PERMISSIONS.slice();
+};
+
+const normalizeRequestedPermissions = (value) => {
+  if (!Array.isArray(value)) {
+    return null;
+  }
+  const cleaned = value
+    .map((item) => String(item || '').trim())
+    .filter((item) => BAN_PERMISSIONS.includes(item));
+  return cleaned.length ? Array.from(new Set(cleaned)) : null;
+};
+
+const pruneExpiredBans = (table) => {
+  const now = Date.now();
+  db.prepare(`DELETE FROM ${table} WHERE expires_at IS NOT NULL AND expires_at <= ?`).run(now);
+};
+
+const getActiveBanRow = (table, column, value) => {
+  if (!value) {
+    return null;
+  }
+  const row = db
+    .prepare(`SELECT ${column} AS value, banned_at, expires_at, permissions, reason FROM ${table} WHERE ${column} = ?`)
+    .get(value);
+  if (!row) {
+    return null;
+  }
+  if (row.expires_at && row.expires_at <= Date.now()) {
+    db.prepare(`DELETE FROM ${table} WHERE ${column} = ?`).run(value);
+    return null;
+  }
+  return {
+    ...row,
+    permissions: normalizePermissions(row.permissions),
+  };
+};
+
+const getActiveBans = (ip, fingerprint) => {
+  const entries = [];
+  const ipRow = getActiveBanRow('banned_ips', 'ip', ip);
+  if (ipRow) {
+    entries.push({ type: 'ip', ...ipRow });
+  }
+  const fingerprintRow = getActiveBanRow('banned_fingerprints', 'fingerprint', fingerprint);
+  if (fingerprintRow) {
+    entries.push({ type: 'fingerprint', ...fingerprintRow });
+  }
+  return entries;
+};
+
+const mergePermissions = (bans) => {
+  const merged = new Set();
+  bans.forEach((ban) => {
+    ban.permissions.forEach((permission) => merged.add(permission));
+  });
+  return Array.from(merged);
+};
+
+const isBannedFor = (ip, fingerprint, permission) => {
+  const bans = getActiveBans(ip, fingerprint);
+  if (!bans.length) {
+    return false;
+  }
+  return bans.some((ban) => ban.permissions.includes('site') || ban.permissions.includes(permission));
+};
+
+const checkBanFor = (req, res, permission, message, fingerprintOverride) => {
+  const clientIp = getClientIp(req);
+  const fingerprint = fingerprintOverride ?? getOptionalFingerprint(req);
+  if (isBannedFor(clientIp, fingerprint, permission)) {
+    res.status(403).json({ error: message });
+    return false;
+  }
+  return true;
+};
+
+const upsertBan = (table, column, value, options = {}) => {
+  if (!value) {
+    return;
+  }
+  const now = Date.now();
+  const permissions = normalizeRequestedPermissions(options.permissions) || BAN_PERMISSIONS;
+  const expiresAt = typeof options.expiresAt === 'number' && options.expiresAt > now ? options.expiresAt : null;
+  const reason = String(options.reason || '').trim() || null;
+  db.prepare(
+    `INSERT INTO ${table} (${column}, banned_at, expires_at, permissions, reason)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(${column}) DO UPDATE SET
+       banned_at = excluded.banned_at,
+       expires_at = excluded.expires_at,
+       permissions = excluded.permissions,
+       reason = excluded.reason`
+  ).run(value, now, expiresAt, JSON.stringify(permissions), reason);
+};
+
+const resolveBanOptions = (req) => {
+  const permissions = normalizeRequestedPermissions(req.body?.permissions);
+  const expiresAt = typeof req.body?.expiresAt === 'number' ? req.body.expiresAt : null;
+  const reason = String(req.body?.reason || '').trim();
+  return {
+    permissions: permissions || BAN_PERMISSIONS,
+    expiresAt,
+    reason,
+  };
 };
 
 const seedSamplePosts = () => {
@@ -514,7 +627,22 @@ const mapPostRow = (row, isHot) => ({
   viewerReaction: row.viewer_reaction || null,
 });
 
-const mapCommentRow = (row) => ({
+const mapCommentRow = (row) => {
+  const deleted = row.deleted === 1;
+  return {
+    id: row.id,
+    postId: row.post_id,
+    parentId: row.parent_id || null,
+    replyToId: row.reply_to_id || null,
+    content: deleted ? '该评论违规已处理' : row.content,
+    author: row.author || '匿名',
+    timestamp: formatRelativeTime(row.created_at),
+    createdAt: row.created_at,
+    deleted,
+  };
+};
+
+const mapAdminCommentRow = (row) => ({
   id: row.id,
   postId: row.post_id,
   parentId: row.parent_id || null,
@@ -523,6 +651,10 @@ const mapCommentRow = (row) => ({
   author: row.author || '匿名',
   timestamp: formatRelativeTime(row.created_at),
   createdAt: row.created_at,
+  deleted: row.deleted === 1,
+  deletedAt: row.deleted_at || null,
+  ip: row.ip || null,
+  fingerprint: row.fingerprint || null,
 });
 
 const getAnnouncement = () => {
@@ -575,6 +707,25 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
+app.get('/api/access', (req, res) => {
+  const clientIp = getClientIp(req);
+  const fingerprint = getOptionalFingerprint(req);
+  const bans = getActiveBans(clientIp, fingerprint);
+  const permissions = mergePermissions(bans);
+  const blocked = bans.some((ban) => ban.permissions.includes('site'));
+  const viewBlocked = bans.some((ban) => ban.permissions.includes('view'));
+  const hasPermanent = bans.some((ban) => !ban.expires_at);
+  const expiring = bans.map((ban) => ban.expires_at).filter((value) => typeof value === 'number');
+  const expiresAt = hasPermanent || expiring.length === 0 ? null : Math.min(...expiring);
+  return res.json({
+    banned: bans.length > 0,
+    blocked,
+    viewBlocked,
+    permissions,
+    expiresAt,
+  });
+});
+
 app.get('/api/announcement', (req, res) => {
   const row = getAnnouncement();
   if (!row) {
@@ -586,6 +737,12 @@ app.get('/api/announcement', (req, res) => {
 app.get('/api/notifications', (req, res) => {
   const fingerprint = requireFingerprint(req, res);
   if (!fingerprint) {
+    return;
+  }
+  if (!checkBanFor(req, res, 'like', '账号已被封禁，无法点赞', fingerprint)) {
+    return;
+  }
+  if (!checkBanFor(req, res, 'view', '你已被限制浏览', fingerprint)) {
     return;
   }
 
@@ -641,6 +798,12 @@ app.post('/api/notifications/read', (req, res) => {
   if (!fingerprint) {
     return;
   }
+  if (!checkBanFor(req, res, 'like', '账号已被封禁，无法点踩', fingerprint)) {
+    return;
+  }
+  if (!checkBanFor(req, res, 'view', '你已被限制浏览', fingerprint)) {
+    return;
+  }
   const now = Date.now();
   const result = db
     .prepare('UPDATE notifications SET read_at = ? WHERE recipient_fingerprint = ? AND read_at IS NULL')
@@ -676,8 +839,8 @@ app.post('/api/feedback', async (req, res) => {
   }
 
   const clientIp = getClientIp(req);
-  if (isBanned(clientIp, fingerprint)) {
-    return res.status(403).json({ error: '账号已被封禁，无法留言' });
+  if (!checkBanFor(req, res, 'site', '账号已被封禁，无法留言', fingerprint)) {
+    return;
   }
 
   const now = Date.now();
@@ -746,6 +909,9 @@ app.post('/api/feedback', async (req, res) => {
 });
 
 app.get('/api/posts/home', (req, res) => {
+  if (!checkBanFor(req, res, 'view', '你已被限制浏览')) {
+    return;
+  }
   const limit = Math.min(Number(req.query.limit || 10), 50);
   const offset = Math.max(Number(req.query.offset || 0), 0);
   const dateKey = formatDateKey();
@@ -782,6 +948,9 @@ app.get('/api/posts/home', (req, res) => {
 });
 
 app.get('/api/posts/feed', (req, res) => {
+  if (!checkBanFor(req, res, 'view', '你已被限制浏览')) {
+    return;
+  }
   const filter = String(req.query.filter || 'week');
   const search = String(req.query.search || '').trim();
   const dateKey = formatDateKey();
@@ -800,8 +969,9 @@ app.get('/api/posts/feed', (req, res) => {
   }
 
   if (search) {
-    conditions.push('posts.content LIKE ?');
-    params.push(`%${search}%`);
+    conditions.push('(posts.id LIKE ? OR posts.content LIKE ? OR posts.ip LIKE ? OR posts.fingerprint LIKE ?)');
+    const keyword = `%${search}%`;
+    params.push(keyword, keyword, keyword, keyword);
   }
 
   const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -850,8 +1020,8 @@ app.post('/api/posts', async (req, res) => {
   }
 
   const clientIp = getClientIp(req);
-  if (isBanned(clientIp, fingerprint)) {
-    return res.status(403).json({ error: '账号已被封禁，无法投稿' });
+  if (!checkBanFor(req, res, 'post', '账号已被封禁，无法投稿', fingerprint)) {
+    return;
   }
 
   const postVerification = await verifyTurnstile(req.body?.turnstileToken, req, 'post');
@@ -888,6 +1058,9 @@ app.post('/api/posts', async (req, res) => {
 });
 
 app.get('/api/posts/:id', (req, res) => {
+  if (!checkBanFor(req, res, 'view', '你已被限制浏览')) {
+    return;
+  }
   const postId = String(req.params.id || '').trim();
   if (!postId) {
     return res.status(400).json({ error: '帖子不存在' });
@@ -1012,6 +1185,9 @@ app.post('/api/posts/:id/dislike', (req, res) => {
 });
 
 app.post('/api/posts/:id/view', (req, res) => {
+  if (!checkBanFor(req, res, 'view', '你已被限制浏览')) {
+    return;
+  }
   const postId = req.params.id;
   const post = db.prepare('SELECT id, views_count FROM posts WHERE id = ? AND deleted = 0').get(postId);
   if (!post) {
@@ -1031,6 +1207,9 @@ app.post('/api/posts/:id/view', (req, res) => {
 });
 
 app.get('/api/posts/:id/comments', (req, res) => {
+  if (!checkBanFor(req, res, 'view', '你已被限制浏览')) {
+    return;
+  }
   const postId = req.params.id;
   const limit = Math.min(Number(req.query.limit || 10), 200);
   const offset = Math.max(Number(req.query.offset || 0), 0);
@@ -1041,13 +1220,13 @@ app.get('/api/posts/:id/comments', (req, res) => {
   }
 
   const totalRow = db
-    .prepare('SELECT COUNT(1) AS count FROM comments WHERE post_id = ? AND deleted = 0 AND parent_id IS NULL')
+    .prepare('SELECT COUNT(1) AS count FROM comments WHERE post_id = ? AND parent_id IS NULL')
     .get(postId);
   const total = totalRow?.count || 0;
 
   const rootRows = db
     .prepare(
-      `\n      SELECT *\n      FROM comments\n      WHERE post_id = ? AND deleted = 0 AND parent_id IS NULL\n      ORDER BY created_at ASC\n      LIMIT ? OFFSET ?\n      `
+      `\n      SELECT *\n      FROM comments\n      WHERE post_id = ? AND parent_id IS NULL\n      ORDER BY created_at ASC\n      LIMIT ? OFFSET ?\n      `
     )
     .all(postId, limit, offset);
 
@@ -1059,7 +1238,7 @@ app.get('/api/posts/:id/comments', (req, res) => {
   const placeholders = rootIds.map(() => '?').join(', ');
   const replyRows = db
     .prepare(
-      `\n      SELECT *\n      FROM comments\n      WHERE post_id = ? AND deleted = 0 AND parent_id IN (${placeholders})\n      ORDER BY created_at ASC\n      `
+      `\n      SELECT *\n      FROM comments\n      WHERE post_id = ? AND parent_id IN (${placeholders})\n      ORDER BY created_at ASC\n      `
     )
     .all(postId, ...rootIds);
 
@@ -1067,6 +1246,9 @@ app.get('/api/posts/:id/comments', (req, res) => {
 });
 
 app.get('/api/posts/:id/comment-thread', (req, res) => {
+  if (!checkBanFor(req, res, 'view', '你已被限制浏览')) {
+    return;
+  }
   const postId = req.params.id;
   const commentId = String(req.query.commentId || '').trim();
   if (!commentId) {
@@ -1074,7 +1256,7 @@ app.get('/api/posts/:id/comment-thread', (req, res) => {
   }
 
   const commentRow = db
-    .prepare('SELECT * FROM comments WHERE id = ? AND deleted = 0')
+    .prepare('SELECT * FROM comments WHERE id = ?')
     .get(commentId);
   if (!commentRow || commentRow.post_id !== postId) {
     return res.status(404).json({ error: '评论不存在' });
@@ -1082,7 +1264,7 @@ app.get('/api/posts/:id/comment-thread', (req, res) => {
 
   const rootId = commentRow.parent_id || commentRow.id;
   const rootRow = db
-    .prepare('SELECT * FROM comments WHERE id = ? AND deleted = 0')
+    .prepare('SELECT * FROM comments WHERE id = ?')
     .get(rootId);
   if (!rootRow || rootRow.post_id !== postId) {
     return res.status(404).json({ error: '评论不存在' });
@@ -1093,7 +1275,7 @@ app.get('/api/posts/:id/comment-thread', (req, res) => {
       `
       SELECT *
       FROM comments
-      WHERE post_id = ? AND deleted = 0 AND parent_id = ?
+      WHERE post_id = ? AND parent_id = ?
       ORDER BY created_at ASC
       `
     )
@@ -1135,8 +1317,8 @@ app.post('/api/posts/:id/comments', async (req, res) => {
   }
 
   const clientIp = getClientIp(req);
-  if (isBanned(clientIp, fingerprint)) {
-    return res.status(403).json({ error: '账号已被封禁，无法评论' });
+  if (!checkBanFor(req, res, 'comment', '账号已被封禁，无法评论', fingerprint)) {
+    return;
   }
 
   const post = db.prepare('SELECT id, fingerprint FROM posts WHERE id = ? AND deleted = 0').get(postId);
@@ -1169,8 +1351,8 @@ app.post('/api/posts/:id/comments', async (req, res) => {
   const finalReplyToId = replyToId || parentId || null;
 
   db.prepare(
-    `\n    INSERT INTO comments (id, post_id, parent_id, reply_to_id, content, author, created_at, fingerprint)\n    VALUES (?, ?, ?, ?, ?, ?, ?, ?)\n    `
-  ).run(commentId, postId, finalParentId, finalReplyToId, content, '匿名', now, fingerprint);
+    `\n    INSERT INTO comments (id, post_id, parent_id, reply_to_id, content, author, created_at, fingerprint, ip)\n    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)\n    `
+  ).run(commentId, postId, finalParentId, finalReplyToId, content, '匿名', now, fingerprint, clientIp || null);
 
   db.prepare('UPDATE posts SET comments_count = comments_count + 1 WHERE id = ?').run(postId);
 
@@ -1225,9 +1407,10 @@ const resolveRiskLevel = (reason) => {
 
 app.post('/api/reports', (req, res) => {
   const postId = String(req.body?.postId || '').trim();
+  const commentId = String(req.body?.commentId || '').trim();
   const reason = String(req.body?.reason || '').trim();
 
-  if (!postId || !reason) {
+  if (!reason || (!postId && !commentId)) {
     return res.status(400).json({ error: '参数不完整' });
   }
 
@@ -1240,49 +1423,88 @@ app.post('/api/reports', (req, res) => {
     return;
   }
 
-  const clientIp = getClientIp(req);
-  if (isBanned(clientIp, fingerprint)) {
-    return res.status(403).json({ error: '账号已被封禁，无法举报' });
+  if (!checkBanFor(req, res, 'view', '账号已被封禁，无法举报', fingerprint)) {
+    return;
   }
 
-  const post = db.prepare('SELECT content FROM posts WHERE id = ? AND deleted = 0').get(postId);
-  if (!post) {
-    return res.status(404).json({ error: '内容不存在' });
+  let targetType = 'post';
+  let targetPostId = postId;
+  let targetCommentId = '';
+  let snippet = '';
+
+  if (commentId) {
+    const commentRow = db
+      .prepare('SELECT id, post_id, content FROM comments WHERE id = ? AND deleted = 0')
+      .get(commentId);
+    if (!commentRow) {
+      return res.status(404).json({ error: '评论不存在' });
+    }
+    targetType = 'comment';
+    targetPostId = commentRow.post_id;
+    targetCommentId = commentRow.id;
+    snippet = String(commentRow.content || '').slice(0, 100);
+  } else {
+    const post = db.prepare('SELECT content FROM posts WHERE id = ? AND deleted = 0').get(postId);
+    if (!post) {
+      return res.status(404).json({ error: '内容不存在' });
+    }
+    snippet = String(post.content || '').slice(0, 100);
   }
 
-  const snippet = post.content.slice(0, 100);
   const reportId = crypto.randomUUID();
   const now = Date.now();
 
   const sessionId = req.sessionID || 'unknown';
-  if (sessionId) {
-    const existingSession = db
-      .prepare('SELECT 1 FROM report_sessions WHERE post_id = ? AND session_id = ?')
-      .get(postId, sessionId);
-    if (existingSession) {
+  if (targetType === 'comment') {
+    if (sessionId) {
+      const existingSession = db
+        .prepare('SELECT 1 FROM comment_report_sessions WHERE comment_id = ? AND session_id = ?')
+        .get(targetCommentId, sessionId);
+      if (existingSession) {
+        return res.status(409).json({ error: '你已举报过该内容' });
+      }
+    }
+    const existingFingerprint = db
+      .prepare('SELECT 1 FROM comment_report_fingerprints WHERE comment_id = ? AND fingerprint = ?')
+      .get(targetCommentId, fingerprint);
+    if (existingFingerprint) {
       return res.status(409).json({ error: '你已举报过该内容' });
     }
+    if (sessionId) {
+      db.prepare('INSERT OR IGNORE INTO comment_report_sessions (comment_id, session_id, created_at) VALUES (?, ?, ?)')
+        .run(targetCommentId, sessionId, now);
+    }
+    db.prepare('INSERT OR IGNORE INTO comment_report_fingerprints (comment_id, fingerprint, created_at) VALUES (?, ?, ?)')
+      .run(targetCommentId, fingerprint, now);
+  } else {
+    if (sessionId) {
+      const existingSession = db
+        .prepare('SELECT 1 FROM report_sessions WHERE post_id = ? AND session_id = ?')
+        .get(targetPostId, sessionId);
+      if (existingSession) {
+        return res.status(409).json({ error: '你已举报过该内容' });
+      }
+    }
+    const existingFingerprint = db
+      .prepare('SELECT 1 FROM report_fingerprints WHERE post_id = ? AND fingerprint = ?')
+      .get(targetPostId, fingerprint);
+    if (existingFingerprint) {
+      return res.status(409).json({ error: '你已举报过该内容' });
+    }
+    if (sessionId) {
+      db.prepare('INSERT OR IGNORE INTO report_sessions (post_id, session_id, created_at) VALUES (?, ?, ?)')
+        .run(targetPostId, sessionId, now);
+    }
+    db.prepare('INSERT OR IGNORE INTO report_fingerprints (post_id, fingerprint, created_at) VALUES (?, ?, ?)')
+      .run(targetPostId, fingerprint, now);
   }
-  const existingFingerprint = db
-    .prepare('SELECT 1 FROM report_fingerprints WHERE post_id = ? AND fingerprint = ?')
-    .get(postId, fingerprint);
-  if (existingFingerprint) {
-    return res.status(409).json({ error: '你已举报过该内容' });
-  }
-
-  if (sessionId) {
-    db.prepare('INSERT OR IGNORE INTO report_sessions (post_id, session_id, created_at) VALUES (?, ?, ?)')
-      .run(postId, sessionId, now);
-  }
-  db.prepare('INSERT OR IGNORE INTO report_fingerprints (post_id, fingerprint, created_at) VALUES (?, ?, ?)')
-    .run(postId, fingerprint, now);
 
   db.prepare(
     `
-      INSERT INTO reports (id, post_id, reason, content_snippet, created_at, status, risk_level, fingerprint)
-      VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)
+      INSERT INTO reports (id, post_id, comment_id, target_type, reason, content_snippet, created_at, status, risk_level, fingerprint)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
     `
-  ).run(reportId, postId, reason, snippet, now, resolveRiskLevel(reason), fingerprint);
+  ).run(reportId, targetPostId, targetCommentId || null, targetType, reason, snippet, now, resolveRiskLevel(reason), fingerprint);
 
   incrementDailyStat(formatDateKey(), 'reports', 1);
 
@@ -1302,8 +1524,11 @@ app.get('/api/reports', requireAdmin, (req, res) => {
   }
 
   if (search) {
-    conditions.push('(id LIKE ? OR content_snippet LIKE ? OR reason LIKE ?)');
-    params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    conditions.push(
+      '(reports.id LIKE ? OR reports.content_snippet LIKE ? OR reports.reason LIKE ? OR reports.post_id LIKE ? OR reports.comment_id LIKE ? OR posts.content LIKE ? OR comments.content LIKE ? OR posts.ip LIKE ? OR comments.ip LIKE ? OR posts.fingerprint LIKE ? OR comments.fingerprint LIKE ?)'
+    );
+    const keyword = `%${search}%`;
+    params.push(keyword, keyword, keyword, keyword, keyword, keyword, keyword, keyword, keyword, keyword, keyword);
   }
 
   const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -1311,23 +1536,43 @@ app.get('/api/reports', requireAdmin, (req, res) => {
   const rows = db
     .prepare(
       `
-      SELECT *
+      SELECT reports.*,
+        posts.content AS post_content,
+        posts.ip AS post_ip,
+        posts.fingerprint AS post_fingerprint,
+        comments.content AS comment_content,
+        comments.ip AS comment_ip,
+        comments.fingerprint AS comment_fingerprint
       FROM reports
+      LEFT JOIN posts ON posts.id = reports.post_id
+      LEFT JOIN comments ON comments.id = reports.comment_id
       ${whereClause}
-      ORDER BY created_at DESC
+      ORDER BY reports.created_at DESC
       `
     )
     .all(...params);
 
-  const reports = rows.map((row) => ({
-    id: row.id,
-    targetId: row.post_id,
-    reason: row.reason,
-    contentSnippet: row.content_snippet,
-    timestamp: formatRelativeTime(row.created_at),
-    status: row.status,
-    riskLevel: row.risk_level,
-  }));
+  const reports = rows.map((row) => {
+    const isComment = row.target_type === 'comment';
+    const postContent = row.post_content || '';
+    const commentContent = row.comment_content || '';
+    return {
+      id: row.id,
+      targetId: isComment ? row.comment_id : row.post_id,
+      targetType: row.target_type || 'post',
+      postId: row.post_id,
+      reason: row.reason,
+      contentSnippet: row.content_snippet,
+      postContent,
+      commentContent,
+      targetContent: isComment ? commentContent : postContent,
+      targetIp: isComment ? row.comment_ip || null : row.post_ip || null,
+      targetFingerprint: isComment ? row.comment_fingerprint || null : row.post_fingerprint || null,
+      timestamp: formatRelativeTime(row.created_at),
+      status: row.status,
+      riskLevel: row.risk_level,
+    };
+  });
 
   return res.json({ items: reports });
 });
@@ -1347,6 +1592,7 @@ app.post('/api/reports/:id/action', requireAdmin, requireAdminCsrf, (req, res) =
   }
 
   const now = Date.now();
+  const banOptions = action === 'ban' ? resolveBanOptions(req) : null;
   const nextStatus = action === 'ignore' ? 'ignored' : 'resolved';
 
   db.prepare(
@@ -1354,16 +1600,41 @@ app.post('/api/reports/:id/action', requireAdmin, requireAdminCsrf, (req, res) =
   ).run(nextStatus, action, now, reportId);
 
   if (action === 'delete' || action === 'ban') {
-    const post = db.prepare('SELECT ip, fingerprint FROM posts WHERE id = ?').get(report.post_id);
-    db.prepare('UPDATE posts SET deleted = 1, deleted_at = ? WHERE id = ?').run(now, report.post_id);
+    if (report.target_type === 'comment' && report.comment_id) {
+      const commentRow = db
+        .prepare('SELECT id, post_id, ip, fingerprint FROM comments WHERE id = ?')
+        .get(report.comment_id);
+      if (commentRow) {
+        const removedCount = commentRow.deleted === 1 ? 0 : 1;
+        if (removedCount > 0) {
+          db.prepare('UPDATE comments SET deleted = 1, deleted_at = ? WHERE id = ?')
+            .run(now, report.comment_id);
+          db.prepare(
+            'UPDATE posts SET comments_count = CASE WHEN comments_count - 1 < 0 THEN 0 ELSE comments_count - 1 END WHERE id = ?'
+          ).run(report.post_id);
+        }
+      }
 
-    if (action === 'ban' && post?.ip) {
-      db.prepare('INSERT OR IGNORE INTO banned_ips (ip, banned_at) VALUES (?, ?)')
-        .run(post.ip, now);
-    }
-    if (action === 'ban' && post?.fingerprint) {
-      db.prepare('INSERT OR IGNORE INTO banned_fingerprints (fingerprint, banned_at) VALUES (?, ?)')
-        .run(post.fingerprint, now);
+      if (action === 'ban' && banOptions) {
+        if (commentRow?.ip) {
+          upsertBan('banned_ips', 'ip', commentRow.ip, banOptions);
+        }
+        if (commentRow?.fingerprint) {
+          upsertBan('banned_fingerprints', 'fingerprint', commentRow.fingerprint, banOptions);
+        }
+      }
+    } else {
+      const post = db.prepare('SELECT ip, fingerprint FROM posts WHERE id = ?').get(report.post_id);
+      db.prepare('UPDATE posts SET deleted = 1, deleted_at = ? WHERE id = ?').run(now, report.post_id);
+
+      if (action === 'ban' && banOptions) {
+        if (post?.ip) {
+          upsertBan('banned_ips', 'ip', post.ip, banOptions);
+        }
+        if (post?.fingerprint) {
+          upsertBan('banned_fingerprints', 'fingerprint', post.fingerprint, banOptions);
+        }
+      }
     }
   }
 
@@ -1377,14 +1648,16 @@ app.post('/api/reports/:id/action', requireAdmin, requireAdminCsrf, (req, res) =
   });
 
   if (action === 'ban') {
-    const post = db.prepare('SELECT ip, fingerprint FROM posts WHERE id = ?').get(report.post_id);
+    const post = report.target_type === 'comment'
+      ? db.prepare('SELECT ip, fingerprint FROM comments WHERE id = ?').get(report.comment_id)
+      : db.prepare('SELECT ip, fingerprint FROM posts WHERE id = ?').get(report.post_id);
     if (post?.ip) {
       logAdminAction(req, {
         action: 'ban_ip',
         targetType: 'ip',
         targetId: post.ip,
         before: null,
-        after: { banned: true },
+        after: { banned: true, permissions: banOptions?.permissions || BAN_PERMISSIONS, expiresAt: banOptions?.expiresAt || null },
         reason,
       });
     }
@@ -1394,7 +1667,7 @@ app.post('/api/reports/:id/action', requireAdmin, requireAdminCsrf, (req, res) =
         targetType: 'fingerprint',
         targetId: post.fingerprint,
         before: null,
-        after: { banned: true },
+        after: { banned: true, permissions: banOptions?.permissions || BAN_PERMISSIONS, expiresAt: banOptions?.expiresAt || null },
         reason,
       });
     }
@@ -1464,8 +1737,8 @@ app.post('/api/admin/posts', requireAdmin, requireAdminCsrf, (req, res) => {
   }
 
   const clientIp = getClientIp(req);
-  if (isBanned(clientIp)) {
-    return res.status(403).json({ error: '账号已被封禁，无法投稿' });
+  if (!checkBanFor(req, res, 'post', '账号已被封禁，无法投稿')) {
+    return;
   }
 
   const now = Date.now();
@@ -1602,6 +1875,7 @@ app.post('/api/admin/posts/batch', requireAdmin, requireAdminCsrf, (req, res) =>
     .all(...ids);
 
   const now = Date.now();
+  const banOptions = action === 'ban' ? resolveBanOptions(req) : null;
 
   if (action === 'delete' || action === 'restore') {
     const deleted = action === 'delete' ? 1 : 0;
@@ -1628,26 +1902,24 @@ app.post('/api/admin/posts/batch', requireAdmin, requireAdminCsrf, (req, res) =>
 
   if (action === 'ban') {
     ips.forEach((ip) => {
-      db.prepare('INSERT OR IGNORE INTO banned_ips (ip, banned_at) VALUES (?, ?)')
-        .run(ip, now);
+      upsertBan('banned_ips', 'ip', ip, banOptions || {});
       logAdminAction(req, {
         action: 'ban_ip',
         targetType: 'ip',
         targetId: ip,
         before: null,
-        after: { banned: true },
+        after: { banned: true, permissions: banOptions?.permissions || BAN_PERMISSIONS, expiresAt: banOptions?.expiresAt || null },
         reason,
       });
     });
     fingerprints.forEach((fingerprint) => {
-      db.prepare('INSERT OR IGNORE INTO banned_fingerprints (fingerprint, banned_at) VALUES (?, ?)')
-        .run(fingerprint, now);
+      upsertBan('banned_fingerprints', 'fingerprint', fingerprint, banOptions || {});
       logAdminAction(req, {
         action: 'ban_fingerprint',
         targetType: 'fingerprint',
         targetId: fingerprint,
         before: null,
-        after: { banned: true },
+        after: { banned: true, permissions: banOptions?.permissions || BAN_PERMISSIONS, expiresAt: banOptions?.expiresAt || null },
         reason,
       });
     });
@@ -1761,6 +2033,7 @@ app.get('/api/admin/posts', requireAdmin, (req, res) => {
     hotScore: row.hot_score,
     sessionId: row.session_id || null,
     ip: row.ip || null,
+    fingerprint: row.fingerprint || null,
   }));
 
   return res.json({
@@ -1893,26 +2166,24 @@ app.post('/api/admin/feedback/:id/action', requireAdmin, requireAdminCsrf, (req,
   }
 
   if (ip) {
-    db.prepare('INSERT OR IGNORE INTO banned_ips (ip, banned_at) VALUES (?, ?)')
-      .run(ip, now);
+    upsertBan('banned_ips', 'ip', ip, banOptions || {});
     logAdminAction(req, {
       action: 'ban_ip',
       targetType: 'ip',
       targetId: ip,
       before: null,
-      after: { banned: true },
+      after: { banned: true, permissions: banOptions?.permissions || BAN_PERMISSIONS, expiresAt: banOptions?.expiresAt || null },
       reason,
     });
   }
   if (fingerprint) {
-    db.prepare('INSERT OR IGNORE INTO banned_fingerprints (fingerprint, banned_at) VALUES (?, ?)')
-      .run(fingerprint, now);
+    upsertBan('banned_fingerprints', 'fingerprint', fingerprint, banOptions || {});
     logAdminAction(req, {
       action: 'ban_fingerprint',
       targetType: 'fingerprint',
       targetId: fingerprint,
       before: null,
-      after: { banned: true },
+      after: { banned: true, permissions: banOptions?.permissions || BAN_PERMISSIONS, expiresAt: banOptions?.expiresAt || null },
       reason,
     });
   }
@@ -1933,20 +2204,28 @@ app.post('/api/admin/feedback/:id/action', requireAdmin, requireAdminCsrf, (req,
 });
 
 app.get('/api/admin/bans', requireAdmin, (req, res) => {
+  pruneExpiredBans('banned_ips');
+  pruneExpiredBans('banned_fingerprints');
   const ips = db
-    .prepare('SELECT ip, banned_at FROM banned_ips ORDER BY banned_at DESC')
+    .prepare('SELECT ip, banned_at, expires_at, permissions, reason FROM banned_ips ORDER BY banned_at DESC')
     .all()
     .map((row) => ({
       ip: row.ip,
       bannedAt: row.banned_at,
+      expiresAt: row.expires_at || null,
+      permissions: normalizePermissions(row.permissions),
+      reason: row.reason || null,
     }));
 
   const fingerprints = db
-    .prepare('SELECT fingerprint, banned_at FROM banned_fingerprints ORDER BY banned_at DESC')
+    .prepare('SELECT fingerprint, banned_at, expires_at, permissions, reason FROM banned_fingerprints ORDER BY banned_at DESC')
     .all()
     .map((row) => ({
       fingerprint: row.fingerprint,
       bannedAt: row.banned_at,
+      expiresAt: row.expires_at || null,
+      permissions: normalizePermissions(row.permissions),
+      reason: row.reason || null,
     }));
 
   return res.json({ ips, fingerprints });
@@ -1957,6 +2236,7 @@ app.post('/api/admin/bans/action', requireAdmin, requireAdminCsrf, (req, res) =>
   const type = String(req.body?.type || '').trim();
   const value = String(req.body?.value || '').trim();
   const reason = String(req.body?.reason || '').trim();
+  const banOptions = action === 'ban' ? resolveBanOptions(req) : null;
 
   if (!['ban', 'unban'].includes(action) || !['ip', 'fingerprint'].includes(type) || !value) {
     return res.status(400).json({ error: '无效操作' });
@@ -1965,14 +2245,13 @@ app.post('/api/admin/bans/action', requireAdmin, requireAdminCsrf, (req, res) =>
   const now = Date.now();
   if (type === 'ip') {
     if (action === 'ban') {
-      db.prepare('INSERT OR IGNORE INTO banned_ips (ip, banned_at) VALUES (?, ?)')
-        .run(value, now);
+      upsertBan('banned_ips', 'ip', value, banOptions || {});
       logAdminAction(req, {
         action: 'ban_ip',
         targetType: 'ip',
         targetId: value,
         before: null,
-        after: { banned: true },
+        after: { banned: true, permissions: banOptions?.permissions || BAN_PERMISSIONS, expiresAt: banOptions?.expiresAt || null },
         reason,
       });
     } else {
@@ -1988,14 +2267,13 @@ app.post('/api/admin/bans/action', requireAdmin, requireAdminCsrf, (req, res) =>
     }
   } else {
     if (action === 'ban') {
-      db.prepare('INSERT OR IGNORE INTO banned_fingerprints (fingerprint, banned_at) VALUES (?, ?)')
-        .run(value, now);
+      upsertBan('banned_fingerprints', 'fingerprint', value, banOptions || {});
       logAdminAction(req, {
         action: 'ban_fingerprint',
         targetType: 'fingerprint',
         targetId: value,
         before: null,
-        after: { banned: true },
+        after: { banned: true, permissions: banOptions?.permissions || BAN_PERMISSIONS, expiresAt: banOptions?.expiresAt || null },
         reason,
       });
     } else {
@@ -2109,6 +2387,113 @@ app.post('/api/admin/posts/:id/action', requireAdmin, requireAdminCsrf, (req, re
   });
 
   return res.json({ id: postId, deleted: action === 'delete' });
+});
+
+app.get('/api/admin/posts/:id/comments', requireAdmin, (req, res) => {
+  const postId = String(req.params.id || '').trim();
+  const page = Math.max(Number(req.query.page || 1), 1);
+  const limit = Math.min(Math.max(Number(req.query.limit || 50), 1), 200);
+  const offset = (page - 1) * limit;
+
+  if (!postId) {
+    return res.status(400).json({ error: '帖子不存在' });
+  }
+
+  const totalRow = db
+    .prepare('SELECT COUNT(1) AS count FROM comments WHERE post_id = ?')
+    .get(postId);
+
+  const rows = db
+    .prepare(
+      `
+      SELECT *
+      FROM comments
+      WHERE post_id = ?
+      ORDER BY created_at ASC
+      LIMIT ? OFFSET ?
+      `
+    )
+    .all(postId, limit, offset);
+
+  return res.json({
+    items: rows.map((row) => mapAdminCommentRow(row)),
+    total: totalRow?.count || 0,
+    page,
+    limit,
+  });
+});
+
+app.post('/api/admin/comments/:id/action', requireAdmin, requireAdminCsrf, (req, res) => {
+  const commentId = String(req.params.id || '').trim();
+  const action = String(req.body?.action || '').trim();
+  const reason = String(req.body?.reason || '').trim();
+
+  if (!commentId) {
+    return res.status(400).json({ error: '评论不存在' });
+  }
+
+  if (!['delete', 'ban'].includes(action)) {
+    return res.status(400).json({ error: '无效操作' });
+  }
+
+  const row = db.prepare('SELECT * FROM comments WHERE id = ?').get(commentId);
+  if (!row) {
+    return res.status(404).json({ error: '评论不存在' });
+  }
+
+  const now = Date.now();
+  const banOptions = action === 'ban' ? resolveBanOptions(req) : null;
+
+  const removedCount = row.deleted === 1 ? 0 : 1;
+
+  if (removedCount > 0) {
+    db.prepare('UPDATE comments SET deleted = 1, deleted_at = ? WHERE id = ?')
+      .run(now, commentId);
+    db.prepare(
+      'UPDATE posts SET comments_count = CASE WHEN comments_count - 1 < 0 THEN 0 ELSE comments_count - 1 END WHERE id = ?'
+    ).run(row.post_id);
+  }
+
+  logAdminAction(req, {
+    action: action === 'ban' ? 'comment_ban' : 'comment_delete',
+    targetType: 'comment',
+    targetId: commentId,
+    before: { deleted: row.deleted === 1 },
+    after: { deleted: true, removed: removedCount },
+    reason,
+  });
+
+  let ipBanned = false;
+  let fingerprintBanned = false;
+
+  if (action === 'ban' && banOptions) {
+    if (row.ip) {
+      upsertBan('banned_ips', 'ip', row.ip, banOptions || {});
+      ipBanned = true;
+      logAdminAction(req, {
+        action: 'ban_ip',
+        targetType: 'ip',
+        targetId: row.ip,
+        before: null,
+        after: { banned: true, permissions: banOptions?.permissions || BAN_PERMISSIONS, expiresAt: banOptions?.expiresAt || null },
+        reason,
+      });
+    }
+    if (row.fingerprint) {
+      upsertBan('banned_fingerprints', 'fingerprint', row.fingerprint, banOptions || {});
+      fingerprintBanned = true;
+      logAdminAction(req, {
+        action: 'ban_fingerprint',
+        targetType: 'fingerprint',
+        targetId: row.fingerprint,
+        before: null,
+        after: { banned: true, permissions: banOptions?.permissions || BAN_PERMISSIONS, expiresAt: banOptions?.expiresAt || null },
+        reason,
+      });
+    }
+  }
+
+  return res.json({ id: commentId, deleted: true, removed: removedCount, ipBanned, fingerprintBanned });
 });
 
 app.get('/api/admin/session', (req, res) => {
@@ -2226,8 +2611,13 @@ app.get('/api/admin/stats', requireAdmin, (req, res) => {
   });
 
   const totalPosts = db.prepare('SELECT COUNT(1) AS count FROM posts WHERE deleted = 0').get().count;
-  const bannedIps = db.prepare('SELECT COUNT(1) AS count FROM banned_ips').get().count;
-  const bannedFingerprints = db.prepare('SELECT COUNT(1) AS count FROM banned_fingerprints').get().count;
+  const now = Date.now();
+  const bannedIps = db
+    .prepare('SELECT COUNT(1) AS count FROM banned_ips WHERE expires_at IS NULL OR expires_at > ?')
+    .get(now).count;
+  const bannedFingerprints = db
+    .prepare('SELECT COUNT(1) AS count FROM banned_fingerprints WHERE expires_at IS NULL OR expires_at > ?')
+    .get(now).count;
   const bannedUsers = bannedIps + bannedFingerprints;
 
   return res.json({
