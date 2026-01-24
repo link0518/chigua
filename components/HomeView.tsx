@@ -348,12 +348,14 @@ const HomeView: React.FC = () => {
 
   return (
     <div className="flex-grow w-full max-w-2xl mx-auto px-4 py-8 flex flex-col justify-center min-h-[80vh] relative">
-      <img
-        src="/chxb.png"
-        alt="吉祥物"
-        className={`mascot-float fixed right-4 bottom-4 w-20 h-20 md:right-6 md:bottom-6 md:w-28 md:h-28 object-contain drop-shadow-md select-none z-10 cursor-pointer ${mascotPop ? 'mascot-pop' : ''}`}
-        onClick={handleMascotClick}
-      />
+      <div className="mascot-anchor">
+        <img
+          src="/chxb.png"
+          alt="吉祥物"
+          className={`mascot-float w-20 h-20 md:w-28 md:h-28 object-contain drop-shadow-md select-none cursor-pointer ${mascotPop ? 'mascot-pop' : ''}`}
+          onClick={handleMascotClick}
+        />
+      </div>
       {mascotBurstKey > 0 && (
         <div key={mascotBurstKey} className="mascot-burst">
           <span />

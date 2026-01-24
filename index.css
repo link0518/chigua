@@ -92,6 +92,18 @@ body {
   will-change: transform;
 }
 
+.mascot-anchor {
+  position: fixed;
+  right: calc(1rem + env(safe-area-inset-right));
+  bottom: calc(1rem + env(safe-area-inset-bottom));
+  z-index: 10;
+  transform: translateZ(0);
+}
+
+.mascot-anchor img {
+  display: block;
+}
+
 .mascot-pop {
   animation: mascot-float 4.2s ease-in-out infinite, mascot-pop 0.32s ease;
 }
@@ -188,6 +200,13 @@ body {
     bottom: 1rem;
     width: 90px;
     height: 90px;
+  }
+}
+
+@media (min-width: 768px) {
+  .mascot-anchor {
+    right: 1.5rem;
+    bottom: 1.5rem;
   }
 }
 
