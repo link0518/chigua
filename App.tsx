@@ -210,12 +210,15 @@ const App: React.FC = () => {
 
   const navigate = useCallback((view: ViewType) => {
     const targetPath = getPathForView(view);
+    if (view === ViewType.HOME && currentView === ViewType.HOME) {
+      window.dispatchEvent(new CustomEvent('home:refresh'));
+    }
     setCurrentView(view);
     setMobileMenuOpen(false);
     if (window.location.pathname !== targetPath) {
       window.history.pushState({}, '', targetPath);
     }
-  }, []);
+  }, [currentView]);
 
   useEffect(() => {
     if (currentView !== ViewType.HOME) {

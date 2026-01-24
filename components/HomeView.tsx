@@ -125,6 +125,28 @@ const HomeView: React.FC = () => {
   }, [upsertHomePost]);
 
   useEffect(() => {
+    const handleRefresh = () => {
+      if (loading) {
+        return;
+      }
+      showToast('刷新中…', 'info');
+      setLoading(true);
+      loadHomePosts(10)
+        .then(() => {
+          setCurrentIndex(0);
+        })
+        .catch(() => {})
+        .finally(() => {
+          setLoading(false);
+        });
+    };
+    window.addEventListener('home:refresh', handleRefresh as EventListener);
+    return () => {
+      window.removeEventListener('home:refresh', handleRefresh as EventListener);
+    };
+  }, [loadHomePosts, loading, showToast]);
+
+  useEffect(() => {
     if (state.homeTotal > 0) {
       setHasMore(posts.length < state.homeTotal);
     } else {
