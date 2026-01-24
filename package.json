@@ -9,6 +9,7 @@
     "dev:full": "concurrently -k \"npm run server\" \"npm run dev\"",
     "init-data": "node server/init-data.js",
     "reset-data": "node server/reset-data.js",
+    "seo:generate": "node server/seo-generate.js",
     "build": "vite build",
     "preview": "vite preview"
   },

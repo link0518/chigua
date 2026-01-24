@@ -5,6 +5,7 @@ import session from 'express-session';
 import BetterSqlite3Store from 'better-sqlite3-session-store';
 import fs from 'fs';
 import path from 'path';
+import { spawn } from 'child_process';
 import {
   db,
   formatDateKey,
@@ -63,7 +64,112 @@ if (!SESSION_SECRET) {
   console.warn('SESSION_SECRET 未配置，已生成临时密钥（后台将被禁用）');
 }
 
+const PUBLIC_DIR = path.resolve(process.cwd(), 'public');
+const SNAPSHOT_DIR = path.join(PUBLIC_DIR, 'post');
+const BOT_UA_REGEX = /(bot|crawler|spider|bingpreview|bingbot|baiduspider|yandex|duckduckbot|sogou|360spider|googlebot|slurp)/i;
+const SITE_URL = String(process.env.SITE_URL || 'https://933211.xyz').replace(/\/+$/, '');
+
 app.use(express.json({ limit: '2mb' }));
+
+const shouldServeSnapshot = (req) => {
+  if (!['GET', 'HEAD'].includes(req.method)) return false;
+  const userAgent = String(req.headers['user-agent'] || '').trim();
+  if (!userAgent || !BOT_UA_REGEX.test(userAgent)) return false;
+  const match = req.path.match(/^\/post\/([^/?#]+)\/?$/);
+  if (!match) return false;
+  const rawId = match[1];
+  if (!rawId || rawId.includes('..') || rawId.includes('/')) return false;
+  return rawId;
+};
+
+const generateSnapshotForPost = (post) => {
+  if (!post?.id) return;
+  const encodedId = encodeURIComponent(post.id);
+  const postDir = path.join(SNAPSHOT_DIR, encodedId);
+  fs.mkdirSync(postDir, { recursive: true });
+  const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+  const snippet = normalize(post.content || '').slice(0, 120);
+  const title = snippet ? `JX3瓜田｜剑网3吃瓜 - ${snippet}` : `JX3瓜田｜剑网3吃瓜 - ${post.id}`;
+  const description = snippet
+    ? `来自JX3瓜田的内容摘要：${snippet}`
+    : 'JX3瓜田聚合剑网3吃瓜与818内容，关注最新爆料与热门话题。';
+  const canonical = `${SITE_URL}/post/${encodedId}`;
+  const publishedAt = post.created_at ? new Date(post.created_at).toISOString() : '';
+  const escapeHtml = (value) => String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+  const html = `<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>${escapeHtml(title)}</title>
+    <meta name="description" content="${escapeHtml(description)}" />
+    <link rel="canonical" href="${canonical}" />
+    <meta name="robots" content="index,follow" />
+    <script type="application/ld+json">
+${JSON.stringify({
+  '@context': 'https://schema.org',
+  '@type': 'Article',
+  headline: title,
+  datePublished: publishedAt || undefined,
+  dateModified: publishedAt || undefined,
+  mainEntityOfPage: canonical,
+  author: { '@type': 'Person', name: '匿名' },
+  publisher: { '@type': 'Organization', name: 'JX3瓜田', url: SITE_URL },
+}, null, 2)}
+    </script>
+  </head>
+  <body>
+    <main>
+      <h1>${escapeHtml(title)}</h1>
+      <p>${escapeHtml(snippet || '')}</p>
+      <p><a href="${canonical}">查看原帖</a></p>
+    </main>
+  </body>
+</html>
+`;
+  fs.writeFileSync(path.join(postDir, 'index.html'), html, 'utf8');
+};
+
+const scheduleSitemapGenerate = () => {
+  const child = spawn('node', ['server/seo-generate.js'], {
+    cwd: process.cwd(),
+    env: { ...process.env, SITE_URL },
+    stdio: 'ignore',
+    detached: true,
+  });
+  child.unref();
+};
+
+app.use((req, res, next) => {
+  const postId = shouldServeSnapshot(req);
+  if (!postId) return next();
+  const snapshotPath = path.join(SNAPSHOT_DIR, postId, 'index.html');
+  if (!snapshotPath.startsWith(SNAPSHOT_DIR) || !fs.existsSync(snapshotPath)) {
+    return next();
+  }
+  return res.sendFile(snapshotPath);
+});
+
+app.get('/robots.txt', (req, res) => {
+  const filePath = path.join(PUBLIC_DIR, 'robots.txt');
+  if (!filePath.startsWith(PUBLIC_DIR) || !fs.existsSync(filePath)) {
+    return res.status(404).send('Not Found');
+  }
+  return res.sendFile(filePath);
+});
+
+app.get('/sitemap.xml', (req, res) => {
+  const filePath = path.join(PUBLIC_DIR, 'sitemap.xml');
+  if (!filePath.startsWith(PUBLIC_DIR) || !fs.existsSync(filePath)) {
+    return res.status(404).send('Not Found');
+  }
+  return res.sendFile(filePath);
+});
 
 const SqliteStore = BetterSqlite3Store(session);
 const sessionStore = new SqliteStore({
@@ -1104,6 +1210,9 @@ app.post('/api/posts', async (req, res) => {
       `
     )
     .get(fingerprint, postId);
+
+  generateSnapshotForPost({ id: postId, content, created_at: now });
+  scheduleSitemapGenerate();
 
   return res.status(201).json({ post: mapPostRow(row, false) });
 });
