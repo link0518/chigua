@@ -178,15 +178,38 @@ const FEEDBACK_LIMIT_MS = 60 * 60 * 1000;
 
 const rateBuckets = new Map();
 
+const normalizeIp = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const first = raw.split(',')[0].trim();
+  if (!first) return '';
+  if (first.startsWith('::ffff:')) {
+    return first.slice(7);
+  }
+  if (first.includes('.') && first.includes(':')) {
+    return first.replace(/:\d+$/, '');
+  }
+  return first;
+};
+
+const getHeaderIp = (headerValue) => {
+  if (typeof headerValue === 'string' && headerValue.trim()) {
+    return normalizeIp(headerValue);
+  }
+  if (Array.isArray(headerValue) && headerValue.length) {
+    return normalizeIp(headerValue[0]);
+  }
+  return '';
+};
+
 const getClientIp = (req) => {
-  const forwarded = req.headers['x-forwarded-for'];
-  if (typeof forwarded === 'string' && forwarded.trim()) {
-    return forwarded.split(',')[0].trim();
-  }
-  if (Array.isArray(forwarded) && forwarded.length) {
-    return forwarded[0].trim();
-  }
-  return req.socket?.remoteAddress || req.ip || 'unknown';
+  const cfIp = getHeaderIp(req.headers['cf-connecting-ip']);
+  if (cfIp) return cfIp;
+  const trueClientIp = getHeaderIp(req.headers['true-client-ip']);
+  if (trueClientIp) return trueClientIp;
+  const forwarded = getHeaderIp(req.headers['x-forwarded-for']);
+  if (forwarded) return forwarded;
+  return normalizeIp(req.socket?.remoteAddress) || normalizeIp(req.ip) || 'unknown';
 };
 
 const getFingerprintValue = (req) => {
