@@ -1,5 +1,6 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ViewType } from './types';
+import type { NotificationItem } from './types';
 import SubmissionView from './components/SubmissionView';
 import FeedView from './components/FeedView';
 const AdminGate = React.lazy(() => import('./components/AdminGate'));
@@ -43,6 +44,11 @@ const App: React.FC = () => {
   const [announcementContent, setAnnouncementContent] = useState('');
   const [announcementUpdatedAt, setAnnouncementUpdatedAt] = useState<number | null>(null);
   const [announcementUnread, setAnnouncementUnread] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [notificationsUnread, setNotificationsUnread] = useState(0);
+  const notificationRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const handlePopState = () => {
@@ -89,6 +95,70 @@ const App: React.FC = () => {
     }
   };
 
+  const formatNotificationTime = (value?: number | null) => {
+    if (!value) {
+      return '';
+    }
+    return new Date(value).toLocaleString('zh-CN');
+  };
+
+  const getNotificationLabel = (type: NotificationItem['type']) => {
+    switch (type) {
+      case 'post_comment':
+        return '你的帖子收到新评论';
+      case 'comment_reply':
+        return '你的评论收到新回复';
+      case 'post_like':
+        return '你的帖子收到新点赞';
+      default:
+        return '你有新提醒';
+    }
+  };
+
+  const getNotificationIcon = (type: NotificationItem['type']) => {
+    switch (type) {
+      case 'post_comment':
+        return 'chat_bubble';
+      case 'comment_reply':
+        return 'forum';
+      case 'post_like':
+        return 'thumb_up';
+      default:
+        return 'notifications';
+    }
+  };
+
+  const fetchNotifications = useCallback(async () => {
+    setNotificationsLoading(true);
+    try {
+      const data = await api.getNotifications({ status: 'all', limit: 20 });
+      setNotifications(data.items || []);
+      setNotificationsUnread(Number(data.unreadCount || 0));
+    } catch {
+      // 忽略加载失败，保持现有提示
+    } finally {
+      setNotificationsLoading(false);
+    }
+  }, []);
+
+  const openNotificationTarget = useCallback((item: NotificationItem) => {
+    if (item.postId) {
+      setCurrentView(ViewType.HOME);
+      setMobileMenuOpen(false);
+      setNotificationsOpen(false);
+      const commentParam = item.commentId ? `?comment=${encodeURIComponent(item.commentId)}` : '';
+      const targetPath = `/post/${encodeURIComponent(item.postId)}${commentParam}`;
+      if (window.location.pathname + window.location.search !== targetPath) {
+        window.history.pushState({}, '', targetPath);
+      }
+      window.dispatchEvent(new CustomEvent('notification:navigate', {
+        detail: { postId: item.postId, commentId: item.commentId || null },
+      }));
+      return;
+    }
+    setNotificationsOpen(false);
+  }, []);
+
   const navigate = useCallback((view: ViewType) => {
     const targetPath = getPathForView(view);
     setCurrentView(view);
@@ -97,6 +167,54 @@ const App: React.FC = () => {
       window.history.pushState({}, '', targetPath);
     }
   }, []);
+
+  useEffect(() => {
+    if (currentView !== ViewType.HOME) {
+      setNotificationsOpen(false);
+      return;
+    }
+    fetchNotifications();
+    const timer = setInterval(fetchNotifications, 30000);
+    return () => {
+      clearInterval(timer);
+    };
+  }, [currentView, fetchNotifications]);
+
+  useEffect(() => {
+    if (!notificationsOpen) {
+      return;
+    }
+    const run = async () => {
+      await fetchNotifications();
+      try {
+        const data = await api.readNotifications();
+        const readAt = typeof data?.readAt === 'number' ? data.readAt : Date.now();
+        setNotificationsUnread(0);
+        setNotifications((prev) => prev.map((item) => (item.readAt ? item : { ...item, readAt })));
+      } catch {
+        // 忽略标记失败
+      }
+    };
+    run();
+  }, [notificationsOpen, fetchNotifications]);
+
+  useEffect(() => {
+    if (!notificationsOpen) {
+      return;
+    }
+    const handleClick = (event: MouseEvent) => {
+      if (!notificationRef.current) {
+        return;
+      }
+      if (!notificationRef.current.contains(event.target as Node)) {
+        setNotificationsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => {
+      document.removeEventListener('mousedown', handleClick);
+    };
+  }, [notificationsOpen]);
 
   const renderView = () => {
     switch (currentView) {
@@ -192,6 +310,72 @@ const App: React.FC = () => {
                   <span className="md:hidden">投稿</span>
                 </span>
               </button>
+
+              {currentView === ViewType.HOME && (
+                <div className="relative" ref={notificationRef}>
+                  <button
+                    onClick={() => setNotificationsOpen((prev) => !prev)}
+                    className="flex items-center justify-center rounded-full px-3 py-2.5 border-2 border-ink bg-white hover:bg-highlight transition-all shadow-sketch active:shadow-sketch-active active:translate-x-[2px] active:translate-y-[2px]"
+                    aria-label="提醒"
+                    title="提醒"
+                  >
+                    <span className="relative flex items-center">
+                      <span className="material-symbols-outlined text-[20px]">notifications</span>
+                      {notificationsUnread > 0 && (
+                        <span className="absolute -top-2 -right-2 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
+                          {notificationsUnread > 99 ? '99+' : notificationsUnread}
+                        </span>
+                      )}
+                    </span>
+                  </button>
+                  {notificationsOpen && (
+                    <div className="absolute right-0 mt-3 w-80 max-w-[80vw] bg-white border-2 border-ink rounded-lg shadow-sketch-sm p-4 z-50">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="font-hand font-bold text-base">提醒</span>
+                        <span className="text-xs text-pencil font-sans">
+                          {notificationsUnread > 0 ? `未读 ${notificationsUnread}` : '全部已读'}
+                        </span>
+                      </div>
+                      {notificationsLoading ? (
+                        <div className="text-center py-6 text-pencil font-hand">加载中...</div>
+                      ) : notifications.length === 0 ? (
+                        <div className="text-center py-6 text-pencil font-hand">暂无提醒</div>
+                      ) : (
+                        <div className="flex flex-col gap-3 max-h-80 overflow-auto">
+                          {notifications.map((item) => (
+                            <button
+                              type="button"
+                              key={item.id}
+                              onClick={() => openNotificationTarget(item)}
+                              className={`text-left border-2 rounded-lg p-3 transition-colors ${item.readAt ? 'border-gray-200 bg-gray-50 hover:bg-white' : 'border-ink/70 bg-highlight/30 hover:bg-highlight/50'}`}
+                            >
+                              <div className="flex items-start gap-3">
+                                <span className="material-symbols-outlined text-[20px] text-pencil">
+                                  {getNotificationIcon(item.type)}
+                                </span>
+                                <div className="flex-1">
+                                  <div className="text-sm font-sans text-ink flex items-center gap-2">
+                                    <span className="font-bold">{getNotificationLabel(item.type)}</span>
+                                    {!item.readAt && <span className="h-2 w-2 rounded-full bg-red-500" />}
+                                  </div>
+                                  {item.preview && (
+                                    <div className="text-xs text-pencil font-sans mt-1 line-clamp-2">
+                                      “{item.preview}”
+                                    </div>
+                                  )}
+                                  <div className="text-[11px] text-gray-400 mt-2">
+                                    {formatNotificationTime(item.createdAt)}
+                                  </div>
+                                </div>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <button
                 onClick={openAnnouncement}

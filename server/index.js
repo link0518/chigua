@@ -219,6 +219,47 @@ const requireFingerprint = (req, res) => {
   return hashFingerprint(raw);
 };
 
+const getOptionalFingerprint = (req) => {
+  const raw = getFingerprintValue(req);
+  if (!raw) {
+    return '';
+  }
+  return hashFingerprint(raw);
+};
+
+const trimPreview = (value, maxLength = 120) => {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!text) {
+    return '';
+  }
+  return text.length > maxLength ? `${text.slice(0, maxLength)}…` : text;
+};
+
+const createNotification = ({ recipientFingerprint, type, postId, commentId, preview, actorFingerprint }) => {
+  if (!recipientFingerprint) {
+    return;
+  }
+  if (actorFingerprint && recipientFingerprint === actorFingerprint) {
+    return;
+  }
+  const now = Date.now();
+  db.prepare(
+    `
+      INSERT INTO notifications (id, recipient_fingerprint, type, post_id, comment_id, preview, actor_fingerprint, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `
+  ).run(
+    crypto.randomUUID(),
+    recipientFingerprint,
+    type,
+    postId || null,
+    commentId || null,
+    preview || null,
+    actorFingerprint || null,
+    now
+  );
+};
+
 const verifyTurnstile = async (token, req, expectedAction) => {
   if (String(process.env.TURNSTILE_BYPASS || '').trim() === '1') {
     return { ok: true, bypass: true };
@@ -542,6 +583,71 @@ app.get('/api/announcement', (req, res) => {
   return res.json({ content: row.content, updatedAt: row.updated_at });
 });
 
+app.get('/api/notifications', (req, res) => {
+  const fingerprint = requireFingerprint(req, res);
+  if (!fingerprint) {
+    return;
+  }
+
+  const status = String(req.query.status || 'all').trim();
+  const limit = Math.min(Math.max(Number(req.query.limit || 20), 1), 50);
+  const offset = Math.max(Number(req.query.offset || 0), 0);
+
+  const conditions = ['recipient_fingerprint = ?'];
+  const params = [fingerprint];
+
+  if (status === 'unread') {
+    conditions.push('read_at IS NULL');
+  } else if (status === 'read') {
+    conditions.push('read_at IS NOT NULL');
+  }
+
+  const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  const rows = db
+    .prepare(
+      `
+        SELECT id, type, post_id, comment_id, preview, created_at, read_at
+        FROM notifications
+        ${whereClause}
+        ORDER BY created_at DESC
+        LIMIT ? OFFSET ?
+      `
+    )
+    .all(...params, limit, offset);
+
+  const unreadCount = db
+    .prepare('SELECT COUNT(1) AS count FROM notifications WHERE recipient_fingerprint = ? AND read_at IS NULL')
+    .get(fingerprint)?.count ?? 0;
+
+  const total = db
+    .prepare('SELECT COUNT(1) AS count FROM notifications WHERE recipient_fingerprint = ?')
+    .get(fingerprint)?.count ?? 0;
+
+  const items = rows.map((row) => ({
+    id: row.id,
+    type: row.type,
+    postId: row.post_id || null,
+    commentId: row.comment_id || null,
+    preview: row.preview || '',
+    createdAt: row.created_at,
+    readAt: row.read_at || null,
+  }));
+
+  return res.json({ items, unreadCount, total });
+});
+
+app.post('/api/notifications/read', (req, res) => {
+  const fingerprint = requireFingerprint(req, res);
+  if (!fingerprint) {
+    return;
+  }
+  const now = Date.now();
+  const result = db
+    .prepare('UPDATE notifications SET read_at = ? WHERE recipient_fingerprint = ? AND read_at IS NULL')
+    .run(now, fingerprint);
+  return res.json({ updated: result.changes || 0, readAt: now });
+});
+
 app.post('/api/feedback', async (req, res) => {
   const content = String(req.body?.content || '').trim();
   const email = String(req.body?.email || '').trim();
@@ -644,6 +750,7 @@ app.get('/api/posts/home', (req, res) => {
   const offset = Math.max(Number(req.query.offset || 0), 0);
   const dateKey = formatDateKey();
   trackDailyVisit(dateKey, req.sessionID);
+  const viewerFingerprint = getOptionalFingerprint(req);
 
   const total = db
     .prepare(
@@ -668,7 +775,7 @@ app.get('/api/posts/home', (req, res) => {
         LIMIT ? OFFSET ?
         `
       )
-      .all(req.sessionID, limit, offset);
+      .all(viewerFingerprint, limit, offset);
 
   const posts = rows.map((row) => mapPostRow(row, row.hot_score >= 20));
   res.json({ items: posts, total });
@@ -679,9 +786,10 @@ app.get('/api/posts/feed', (req, res) => {
   const search = String(req.query.search || '').trim();
   const dateKey = formatDateKey();
   trackDailyVisit(dateKey, req.sessionID);
+  const viewerFingerprint = getOptionalFingerprint(req);
 
   const conditions = ['posts.deleted = 0'];
-  const params = [req.sessionID];
+  const params = [viewerFingerprint];
 
   if (filter === 'today') {
     conditions.push('posts.created_at >= ?');
@@ -773,8 +881,8 @@ app.post('/api/posts', async (req, res) => {
         AND pr.session_id = ?
       WHERE posts.id = ?
       `
-      )
-      .get(req.sessionID, postId);
+    )
+    .get(fingerprint, postId);
 
   return res.status(201).json({ post: mapPostRow(row, false) });
 });
@@ -784,6 +892,7 @@ app.get('/api/posts/:id', (req, res) => {
   if (!postId) {
     return res.status(400).json({ error: '帖子不存在' });
   }
+  const viewerFingerprint = getOptionalFingerprint(req);
 
   const row = db
     .prepare(
@@ -797,7 +906,7 @@ app.get('/api/posts/:id', (req, res) => {
         AND posts.deleted = 0
       `
     )
-    .get(req.sessionID, postId);
+    .get(viewerFingerprint, postId);
 
   if (!row) {
     return res.status(404).json({ error: '帖子不存在或已删除' });
@@ -806,10 +915,10 @@ app.get('/api/posts/:id', (req, res) => {
   return res.json({ post: mapPostRow(row, row.hot_score >= 20) });
 });
 
-const toggleReaction = db.transaction((postId, sessionId, reaction) => {
+const toggleReaction = db.transaction((postId, identityKey, reaction) => {
   const existing = db
     .prepare('SELECT reaction FROM post_reactions WHERE post_id = ? AND session_id = ?')
-    .get(postId, sessionId);
+    .get(postId, identityKey);
 
   let likesDelta = 0;
   let dislikesDelta = 0;
@@ -818,18 +927,18 @@ const toggleReaction = db.transaction((postId, sessionId, reaction) => {
   if (!existing) {
     db.prepare(
       'INSERT INTO post_reactions (post_id, session_id, reaction, created_at) VALUES (?, ?, ?, ?)'
-    ).run(postId, sessionId, reaction, Date.now());
+    ).run(postId, identityKey, reaction, Date.now());
     if (reaction === 'like') likesDelta += 1;
     if (reaction === 'dislike') dislikesDelta += 1;
     nextReaction = reaction;
   } else if (existing.reaction === reaction) {
-    db.prepare('DELETE FROM post_reactions WHERE post_id = ? AND session_id = ?').run(postId, sessionId);
+    db.prepare('DELETE FROM post_reactions WHERE post_id = ? AND session_id = ?').run(postId, identityKey);
     if (reaction === 'like') likesDelta -= 1;
     if (reaction === 'dislike') dislikesDelta -= 1;
     nextReaction = null;
   } else {
     db.prepare('UPDATE post_reactions SET reaction = ?, created_at = ? WHERE post_id = ? AND session_id = ?')
-      .run(reaction, Date.now(), postId, sessionId);
+      .run(reaction, Date.now(), postId, identityKey);
     if (reaction === 'like') {
       likesDelta += 1;
       dislikesDelta -= 1;
@@ -855,12 +964,26 @@ const toggleReaction = db.transaction((postId, sessionId, reaction) => {
 
 app.post('/api/posts/:id/like', (req, res) => {
   const postId = req.params.id;
-  const post = db.prepare('SELECT id FROM posts WHERE id = ? AND deleted = 0').get(postId);
+  const post = db.prepare('SELECT id, fingerprint, content FROM posts WHERE id = ? AND deleted = 0').get(postId);
   if (!post) {
     return res.status(404).json({ error: '内容不存在' });
   }
 
-  const result = toggleReaction(postId, req.sessionID, 'like');
+  const fingerprint = requireFingerprint(req, res);
+  if (!fingerprint) {
+    return;
+  }
+
+  const result = toggleReaction(postId, fingerprint, 'like');
+  if (result.reaction === 'like') {
+    createNotification({
+      recipientFingerprint: post.fingerprint,
+      type: 'post_like',
+      postId,
+      preview: trimPreview(post.content),
+      actorFingerprint: fingerprint,
+    });
+  }
   return res.json({
     likes: result.likes_count,
     dislikes: result.dislikes_count,
@@ -870,12 +993,17 @@ app.post('/api/posts/:id/like', (req, res) => {
 
 app.post('/api/posts/:id/dislike', (req, res) => {
   const postId = req.params.id;
-  const post = db.prepare('SELECT id FROM posts WHERE id = ? AND deleted = 0').get(postId);
+  const post = db.prepare('SELECT id, fingerprint FROM posts WHERE id = ? AND deleted = 0').get(postId);
   if (!post) {
     return res.status(404).json({ error: '内容不存在' });
   }
 
-  const result = toggleReaction(postId, req.sessionID, 'dislike');
+  const fingerprint = requireFingerprint(req, res);
+  if (!fingerprint) {
+    return;
+  }
+
+  const result = toggleReaction(postId, fingerprint, 'dislike');
   return res.json({
     likes: result.likes_count,
     dislikes: result.dislikes_count,
@@ -907,7 +1035,7 @@ app.get('/api/posts/:id/comments', (req, res) => {
   const limit = Math.min(Number(req.query.limit || 10), 200);
   const offset = Math.max(Number(req.query.offset || 0), 0);
 
-  const post = db.prepare('SELECT id FROM posts WHERE id = ? AND deleted = 0').get(postId);
+  const post = db.prepare('SELECT id, fingerprint FROM posts WHERE id = ? AND deleted = 0').get(postId);
   if (!post) {
     return res.status(404).json({ error: '内容不存在' });
   }
@@ -936,6 +1064,47 @@ app.get('/api/posts/:id/comments', (req, res) => {
     .all(postId, ...rootIds);
 
   return res.json({ items: buildCommentTree([...rootRows, ...replyRows]), total });
+});
+
+app.get('/api/posts/:id/comment-thread', (req, res) => {
+  const postId = req.params.id;
+  const commentId = String(req.query.commentId || '').trim();
+  if (!commentId) {
+    return res.status(400).json({ error: '缺少 commentId' });
+  }
+
+  const commentRow = db
+    .prepare('SELECT * FROM comments WHERE id = ? AND deleted = 0')
+    .get(commentId);
+  if (!commentRow || commentRow.post_id !== postId) {
+    return res.status(404).json({ error: '评论不存在' });
+  }
+
+  const rootId = commentRow.parent_id || commentRow.id;
+  const rootRow = db
+    .prepare('SELECT * FROM comments WHERE id = ? AND deleted = 0')
+    .get(rootId);
+  if (!rootRow || rootRow.post_id !== postId) {
+    return res.status(404).json({ error: '评论不存在' });
+  }
+
+  const replyRows = db
+    .prepare(
+      `
+      SELECT *
+      FROM comments
+      WHERE post_id = ? AND deleted = 0 AND parent_id = ?
+      ORDER BY created_at ASC
+      `
+    )
+    .all(postId, rootId);
+
+  const replies = replyRows
+    .filter((row) => row.id !== rootId)
+    .map((row) => mapCommentRow(row));
+
+  const thread = { ...mapCommentRow(rootRow), replies };
+  return res.json({ thread });
 });
 
 app.post('/api/posts/:id/comments', async (req, res) => {
@@ -970,7 +1139,7 @@ app.post('/api/posts/:id/comments', async (req, res) => {
     return res.status(403).json({ error: '账号已被封禁，无法评论' });
   }
 
-  const post = db.prepare('SELECT id FROM posts WHERE id = ? AND deleted = 0').get(postId);
+  const post = db.prepare('SELECT id, fingerprint FROM posts WHERE id = ? AND deleted = 0').get(postId);
   if (!post) {
     return res.status(404).json({ error: '内容不存在' });
   }
@@ -1004,6 +1173,34 @@ app.post('/api/posts/:id/comments', async (req, res) => {
   ).run(commentId, postId, finalParentId, finalReplyToId, content, '匿名', now, fingerprint);
 
   db.prepare('UPDATE posts SET comments_count = comments_count + 1 WHERE id = ?').run(postId);
+
+  const commentPreview = trimPreview(content);
+  let replyRecipient = '';
+  if (finalReplyToId) {
+    const replyTarget = db.prepare('SELECT fingerprint FROM comments WHERE id = ?').get(finalReplyToId);
+    replyRecipient = replyTarget?.fingerprint || '';
+    if (replyRecipient && replyRecipient !== fingerprint) {
+      createNotification({
+        recipientFingerprint: replyRecipient,
+        type: 'comment_reply',
+        postId,
+        commentId: commentId,
+        preview: commentPreview,
+        actorFingerprint: fingerprint,
+      });
+    }
+  }
+
+  if (post.fingerprint && post.fingerprint !== fingerprint && post.fingerprint !== replyRecipient) {
+    createNotification({
+      recipientFingerprint: post.fingerprint,
+      type: 'post_comment',
+      postId,
+      commentId: commentId,
+      preview: commentPreview,
+      actorFingerprint: fingerprint,
+    });
+  }
 
   return res.status(201).json({
     comment: mapCommentRow({
@@ -1273,6 +1470,7 @@ app.post('/api/admin/posts', requireAdmin, requireAdminCsrf, (req, res) => {
 
   const now = Date.now();
   const postId = crypto.randomUUID();
+  const viewerFingerprint = getOptionalFingerprint(req);
 
   db.prepare(
     `
@@ -1294,7 +1492,7 @@ app.post('/api/admin/posts', requireAdmin, requireAdminCsrf, (req, res) => {
       WHERE posts.id = ?
       `
     )
-    .get(req.sessionID, postId);
+    .get(viewerFingerprint, postId);
 
   logAdminAction(req, {
     action: 'post_create',

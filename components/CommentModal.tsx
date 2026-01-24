@@ -12,6 +12,7 @@ interface CommentModalProps {
   onClose: () => void;
   postId: string;
   contentPreview?: string;
+  focusCommentId?: string | null;
 }
 
 const MAX_LENGTH = 300;
@@ -21,6 +22,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
   onClose,
   postId,
   contentPreview,
+  focusCommentId,
 }) => {
   const { addComment, showToast } = useApp();
   const [comments, setComments] = useState<Comment[]>([]);
@@ -31,6 +33,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
   const [replyToId, setReplyToId] = useState<string | null>(null);
   const [expandedThreads, setExpandedThreads] = useState<Set<string>>(new Set());
   const [lastAddedId, setLastAddedId] = useState<string | null>(null);
+  const [focusTargetId, setFocusTargetId] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -44,6 +47,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
     setReplyToId(null);
     setExpandedThreads(new Set());
     setLastAddedId(null);
+    setFocusTargetId(null);
     setPage(0);
     setHasMore(true);
     setLoading(true);
@@ -85,6 +89,37 @@ const CommentModal: React.FC<CommentModalProps> = ({
         setLoading(false);
       });
   }, [isOpen, postId, showToast]);
+
+  useEffect(() => {
+    if (!isOpen || !postId || !focusCommentId) {
+      return;
+    }
+    const loadThread = async () => {
+      try {
+        const data = await api.getCommentThread(postId, focusCommentId);
+        const thread = data?.thread;
+        if (!thread?.id) {
+          return;
+        }
+        setComments((prev) => {
+          const exists = prev.find((item) => item.id === thread.id);
+          if (exists) {
+            return prev.map((item) => (item.id === thread.id ? { ...item, replies: thread.replies || [] } : item));
+          }
+          return [thread, ...prev];
+        });
+        setExpandedThreads((prev) => {
+          const next = new Set(prev);
+          next.add(thread.id);
+          return next;
+        });
+        setFocusTargetId(focusCommentId);
+      } catch {
+        // 忽略跳转失败
+      }
+    };
+    loadThread();
+  }, [isOpen, postId, focusCommentId]);
 
   const handleLoadMore = async () => {
     if (loadingMore || !hasMore) {
@@ -262,6 +297,19 @@ const CommentModal: React.FC<CommentModalProps> = ({
     }
     setLastAddedId(null);
   }, [lastAddedId, comments]);
+
+  useEffect(() => {
+    if (!focusTargetId || !listRef.current) {
+      return;
+    }
+    const target = listRef.current.querySelector(`[data-comment-id="${focusTargetId}"]`);
+    if (target) {
+      requestAnimationFrame(() => {
+        target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      });
+    }
+    setFocusTargetId(null);
+  }, [focusTargetId, comments]);
 
   if (!isOpen) {
     return null;

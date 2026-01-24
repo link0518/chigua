@@ -44,6 +44,16 @@ export interface Comment {
   replies?: Comment[];
 }
 
+export interface NotificationItem {
+  id: string;
+  type: 'post_comment' | 'post_like' | 'comment_reply';
+  postId?: string | null;
+  commentId?: string | null;
+  preview?: string | null;
+  createdAt: number;
+  readAt?: number | null;
+}
+
 export interface AdminPost {
   id: string;
   content: string;

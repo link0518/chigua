@@ -55,6 +55,7 @@ export const api = {
   dislikePost: (postId) => apiFetch(`/posts/${postId}/dislike`, { method: 'POST' }),
   viewPost: (postId) => apiFetch(`/posts/${postId}/view`, { method: 'POST' }),
   getComments: (postId, offset = 0, limit = 10) => apiFetch(`/posts/${postId}/comments${toQuery({ offset, limit })}`),
+  getCommentThread: (postId, commentId) => apiFetch(`/posts/${postId}/comment-thread${toQuery({ commentId })}`),
   addComment: (postId, content, turnstileToken, parentId, replyToId) => apiFetch(`/posts/${postId}/comments`, {
     method: 'POST',
     body: JSON.stringify({ content, turnstileToken, parentId, replyToId }),
@@ -63,6 +64,8 @@ export const api = {
     method: 'POST',
     body: JSON.stringify({ postId, reason }),
   }),
+  getNotifications: (params = {}) => apiFetch(`/notifications${toQuery(params)}`),
+  readNotifications: () => apiFetch('/notifications/read', { method: 'POST' }),
   createFeedback: (content, email, wechat = '', qq = '', turnstileToken) => apiFetch('/feedback', {
     method: 'POST',
     body: JSON.stringify({ content, email, wechat, qq, turnstileToken }),

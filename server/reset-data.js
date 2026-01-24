@@ -10,6 +10,7 @@ const tables = [
   'posts',
   'stats_daily',
   'daily_visits',
+  'notifications',
   'banned_sessions',
   'banned_ips',
   'banned_fingerprints',

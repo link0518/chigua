@@ -25,6 +25,7 @@ const HomeView: React.FC = () => {
   const [animate, setAnimate] = useState(false);
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [commentModalOpen, setCommentModalOpen] = useState(false);
+  const [focusCommentId, setFocusCommentId] = useState<string | null>(null);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [feedbackContent, setFeedbackContent] = useState('');
   const [feedbackEmail, setFeedbackEmail] = useState('');
@@ -48,6 +49,8 @@ const HomeView: React.FC = () => {
     let cancelled = false;
     const sharedPathMatch = window.location.pathname.match(/^\/post\/([^/]+)\/?$/);
     const sharedPostId = sharedPathMatch ? decodeURIComponent(sharedPathMatch[1]) : '';
+    const searchParams = new URLSearchParams(window.location.search);
+    const sharedCommentId = searchParams.get('comment');
 
     const load = async () => {
       setLoading(true);
@@ -63,6 +66,10 @@ const HomeView: React.FC = () => {
           if (!cancelled) {
             upsertHomePost(data.post, { prepend: true });
             setCurrentIndex(0);
+            if (sharedCommentId) {
+              setFocusCommentId(sharedCommentId);
+              setCommentModalOpen(true);
+            }
           }
         } catch (error) {
           const message = error instanceof Error ? error.message : '分享的帖子不存在或已删除';
@@ -88,8 +95,34 @@ const HomeView: React.FC = () => {
   }, [currentPost?.id, viewPost]);
 
   useEffect(() => {
+    if (focusCommentId) {
+      return;
+    }
     setCommentModalOpen(false);
-  }, [currentPost?.id]);
+  }, [currentPost?.id, focusCommentId]);
+
+  useEffect(() => {
+    const handleNavigate = (event: Event) => {
+      const detail = (event as CustomEvent<{ postId: string; commentId?: string | null }>).detail;
+      if (!detail?.postId) {
+        return;
+      }
+      api.getPostById(detail.postId)
+        .then((data) => {
+          upsertHomePost(data.post, { prepend: true });
+          setCurrentIndex(0);
+          if (detail.commentId) {
+            setFocusCommentId(detail.commentId);
+            setCommentModalOpen(true);
+          }
+        })
+        .catch(() => {});
+    };
+    window.addEventListener('notification:navigate', handleNavigate as EventListener);
+    return () => {
+      window.removeEventListener('notification:navigate', handleNavigate as EventListener);
+    };
+  }, [upsertHomePost]);
 
   useEffect(() => {
     if (state.homeTotal > 0) {
@@ -373,7 +406,10 @@ const HomeView: React.FC = () => {
             </div>
             <div className="flex items-center gap-6">
               <button
-                onClick={() => setCommentModalOpen((prev) => !prev)}
+                onClick={() => {
+                  setFocusCommentId(null);
+                  setCommentModalOpen((prev) => !prev);
+                }}
                 className={`flex items-center gap-1.5 group/btn transition-colors ${commentModalOpen ? 'text-blue-600' : 'hover:text-blue-600'}`}
               >
                 <span className="material-symbols-outlined text-[22px]">chat_bubble</span>
@@ -427,9 +463,13 @@ const HomeView: React.FC = () => {
 
       <CommentModal
         isOpen={commentModalOpen}
-        onClose={() => setCommentModalOpen(false)}
+        onClose={() => {
+          setCommentModalOpen(false);
+          setFocusCommentId(null);
+        }}
         postId={currentPost.id}
         contentPreview={currentPost.content}
+        focusCommentId={focusCommentId}
       />
 
       <Modal

@@ -121,6 +121,18 @@ CREATE TABLE IF NOT EXISTS feedback_messages (
   read_at INTEGER
 );
 
+CREATE TABLE IF NOT EXISTS notifications (
+  id TEXT PRIMARY KEY,
+  recipient_fingerprint TEXT NOT NULL,
+  type TEXT NOT NULL,
+  post_id TEXT,
+  comment_id TEXT,
+  preview TEXT,
+  actor_fingerprint TEXT,
+  created_at INTEGER NOT NULL,
+  read_at INTEGER
+);
+
 CREATE TABLE IF NOT EXISTS announcements (
   id TEXT PRIMARY KEY,
   content TEXT NOT NULL,
@@ -178,6 +190,8 @@ CREATE INDEX IF NOT EXISTS idx_post_edits_post_id ON post_edits(post_id);
 CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_created_at ON admin_audit_logs(created_at);
 CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_action ON admin_audit_logs(action);
 CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_target ON admin_audit_logs(target_type, target_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_recipient_created_at ON notifications(recipient_fingerprint, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notifications_recipient_read_at ON notifications(recipient_fingerprint, read_at);
 `);
 
 const ensureColumn = (table, column, definition) => {
