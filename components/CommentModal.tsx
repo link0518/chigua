@@ -409,19 +409,8 @@ const CommentModal: React.FC<CommentModalProps> = ({
                           <span className="text-[11px] text-gray-500">回复 {replyLabel}楼</span>
                         )}
                       </div>
-                      <div className="flex flex-col items-end gap-1">
+                      <div className="flex items-center gap-2">
                         <span className="text-gray-400">{item.timestamp}</span>
-                        {!isDeleted && (
-                          <button
-                            type="button"
-                            onClick={() => setReplyToId(item.id)}
-                            className="text-gray-500 hover:text-ink transition-colors opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
-                            aria-label="回复"
-                            title="回复"
-                          >
-                            回复
-                          </button>
-                        )}
                         {!isDeleted && (
                           <button
                             type="button"
@@ -431,6 +420,17 @@ const CommentModal: React.FC<CommentModalProps> = ({
                             title="举报"
                           >
                             举报
+                          </button>
+                        )}
+                        {!isDeleted && (
+                          <button
+                            type="button"
+                            onClick={() => setReplyToId(item.id)}
+                            className="text-gray-500 hover:text-ink transition-colors opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+                            aria-label="回复"
+                            title="回复"
+                          >
+                            回复
                           </button>
                         )}
                       </div>
