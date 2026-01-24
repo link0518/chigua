@@ -129,7 +129,6 @@ const HomeView: React.FC = () => {
       if (loading) {
         return;
       }
-      showToast('刷新中…', 'info');
       setLoading(true);
       loadHomePosts(10)
         .then(() => {

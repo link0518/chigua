@@ -321,14 +321,25 @@ const normalizeIp = (value) => {
   return first;
 };
 
+const isValidIpv4 = (value) => {
+  const parts = value.split('.');
+  if (parts.length !== 4) return false;
+  return parts.every((part) => {
+    if (!/^\d{1,3}$/.test(part)) return false;
+    const num = Number(part);
+    return num >= 0 && num <= 255;
+  });
+};
+
 const getHeaderIp = (headerValue) => {
-  if (typeof headerValue === 'string' && headerValue.trim()) {
-    return normalizeIp(headerValue);
-  }
-  if (Array.isArray(headerValue) && headerValue.length) {
-    return normalizeIp(headerValue[0]);
-  }
-  return '';
+  const raw = Array.isArray(headerValue) ? headerValue.join(',') : String(headerValue || '');
+  if (!raw.trim()) return '';
+  const candidates = raw
+    .split(',')
+    .map((item) => normalizeIp(item))
+    .filter(Boolean);
+  const ipv4 = candidates.find((ip) => isValidIpv4(ip));
+  return ipv4 || candidates[0] || '';
 };
 
 const getClientIp = (req) => {
