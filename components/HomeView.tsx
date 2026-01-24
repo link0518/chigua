@@ -215,22 +215,30 @@ const HomeView: React.FC = () => {
   }
 
   const handleNext = () => {
-    if (currentIndex >= posts.length - 1 && hasMore) {
-      setPendingAdvance(true);
-      loadMorePosts();
+    if (currentIndex >= posts.length - 1) {
+      if (hasMore) {
+        setPendingAdvance(true);
+        loadMorePosts();
+      } else {
+        showToast('这是最后一个瓜', 'info');
+      }
       return;
     }
     setAnimate(true);
     setTimeout(() => {
-      setCurrentIndex((prev) => (prev + 1) % posts.length);
+      setCurrentIndex((prev) => Math.min(prev + 1, posts.length - 1));
       setAnimate(false);
     }, 200);
   };
 
   const handlePrev = () => {
+    if (currentIndex <= 0) {
+      showToast('已是最新', 'info');
+      return;
+    }
     setAnimate(true);
     setTimeout(() => {
-      setCurrentIndex((prev) => (prev - 1 + posts.length) % posts.length);
+      setCurrentIndex((prev) => Math.max(prev - 1, 0));
       setAnimate(false);
     }, 200);
   };
