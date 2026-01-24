@@ -1985,8 +1985,9 @@ app.get('/api/admin/posts', requireAdmin, (req, res) => {
   }
 
   if (search) {
-    conditions.push('posts.content LIKE ?');
-    params.push(`%${search}%`);
+    conditions.push('(posts.id LIKE ? OR posts.content LIKE ? OR posts.ip LIKE ? OR posts.fingerprint LIKE ?)');
+    const likeValue = `%${search}%`;
+    params.push(likeValue, likeValue, likeValue, likeValue);
   }
 
   const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
