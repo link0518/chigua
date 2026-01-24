@@ -68,6 +68,10 @@ const PUBLIC_DIR = path.resolve(process.cwd(), 'public');
 const SNAPSHOT_DIR = path.join(PUBLIC_DIR, 'post');
 const BOT_UA_REGEX = /(bot|crawler|spider|bingpreview|bingbot|baiduspider|yandex|duckduckbot|sogou|360spider|googlebot|slurp)/i;
 const SITE_URL = String(process.env.SITE_URL || 'https://933211.xyz').replace(/\/+$/, '');
+const DIST_DIR = path.resolve(process.cwd(), 'dist');
+const SPA_INDEX = fs.existsSync(path.join(DIST_DIR, 'index.html'))
+  ? path.join(DIST_DIR, 'index.html')
+  : path.resolve(process.cwd(), 'index.html');
 
 app.use(express.json({ limit: '2mb' }));
 
@@ -2805,6 +2809,16 @@ app.get('/api/admin/stats', requireAdmin, (req, res) => {
 app.use((err, req, res, next) => {
   console.error(err);
   res.status(500).json({ error: '服务器错误' });
+});
+
+app.use((req, res, next) => {
+  if (!['GET', 'HEAD'].includes(req.method)) return next();
+  if (req.path.startsWith('/api')) return next();
+  if (req.path === '/robots.txt' || req.path === '/sitemap.xml') return next();
+  if (!fs.existsSync(SPA_INDEX)) {
+    return res.status(404).send('Not Found');
+  }
+  return res.sendFile(SPA_INDEX);
 });
 
 app.listen(PORT, () => {
