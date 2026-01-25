@@ -3137,6 +3137,7 @@ app.get('/api/admin/stats', requireAdmin, (req, res) => {
   });
 
   const totalPosts = db.prepare('SELECT COUNT(1) AS count FROM posts WHERE deleted = 0').get().count;
+  const totalVisits = db.prepare('SELECT COALESCE(SUM(visits), 0) AS count FROM stats_daily').get().count;
   const now = Date.now();
   const bannedIps = db
     .prepare('SELECT COUNT(1) AS count FROM banned_ips WHERE expires_at IS NULL OR expires_at > ?')
@@ -3152,6 +3153,7 @@ app.get('/api/admin/stats', requireAdmin, (req, res) => {
     weeklyVisits,
     weeklyPosts,
     totalPosts,
+    totalVisits,
     onlineCount: getOnlineCount(),
   });
 });

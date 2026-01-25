@@ -14,6 +14,7 @@ interface Stats {
   weeklyVisits: number[];
   weeklyPosts: number[];
   totalPosts: number;
+  totalVisits: number;
   onlineCount: number;
 }
 
@@ -80,6 +81,7 @@ const initialStats: Stats = {
   weeklyVisits: [0, 0, 0, 0, 0, 0, 0],
   weeklyPosts: [0, 0, 0, 0, 0, 0, 0],
   totalPosts: 0,
+  totalVisits: 0,
   onlineCount: 0,
 };
 
@@ -190,6 +192,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         weeklyVisits: data.weeklyVisits ?? prev.stats.weeklyVisits,
         weeklyPosts: data.weeklyPosts ?? prev.stats.weeklyPosts,
         totalPosts: data.totalPosts ?? prev.stats.totalPosts,
+        totalVisits: data.totalVisits ?? prev.stats.totalVisits,
         onlineCount: data.onlineCount ?? prev.stats.onlineCount,
       },
     }));

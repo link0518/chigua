@@ -1400,7 +1400,7 @@ const AdminDashboard: React.FC = () => {
                       </div>
                       <div className="text-right">
                         <p className="text-xs text-pencil font-sans">总访问量</p>
-                        <p className="font-display text-2xl">{totalWeeklyVisits}</p>
+                        <p className="font-display text-2xl">{state.stats.totalVisits}</p>
                       </div>
                     </div>
                     <div className="h-48 w-full">
