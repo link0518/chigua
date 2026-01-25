@@ -2622,18 +2622,19 @@ const AdminDashboard: React.FC = () => {
         isOpen={reportDetail.isOpen}
         onClose={() => setReportDetail({ isOpen: false, report: null })}
         title="举报详情"
+        panelClassName="max-w-2xl"
       >
         <div className="flex flex-col gap-4">
           <div className="text-xs text-pencil font-sans">
             <p>举报 ID：{reportDetail.report?.id}</p>
             <p>类型：{reportDetail.report?.targetType === 'comment' ? '评论举报' : '帖子举报'}</p>
             <p>原因：{reportDetail.report?.reason}</p>
-            <p>标识：{formatIdentity(reportDetail.report?.targetIp, reportDetail.report?.targetFingerprint)}</p>
+            <p className="break-words">标识：{formatIdentity(reportDetail.report?.targetIp, reportDetail.report?.targetFingerprint)}</p>
           </div>
           <div>
             <p className="text-xs text-pencil font-sans mb-2">举报者信息</p>
             <div className="bg-gray-50 border-2 border-dashed border-gray-200 rounded-lg p-3 text-xs text-pencil font-sans">
-              <p>举报者标识：{formatIdentity(reportDetail.report?.reporterIp, reportDetail.report?.reporterFingerprint)}</p>
+              <p className="break-words">举报者标识：{formatIdentity(reportDetail.report?.reporterIp, reportDetail.report?.reporterFingerprint)}</p>
               <p>举报时间：{reportDetail.report?.timestamp || '-'}</p>
               <p>举报次数：{reportDetail.report?.reporterCount ?? 0}</p>
             </div>

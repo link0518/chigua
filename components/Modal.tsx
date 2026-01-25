@@ -8,6 +8,7 @@ interface ModalProps {
   title?: string;
   children: React.ReactNode;
   showCloseButton?: boolean;
+  panelClassName?: string;
 }
 
 const Modal: React.FC<ModalProps> = ({
@@ -16,6 +17,7 @@ const Modal: React.FC<ModalProps> = ({
   title,
   children,
   showCloseButton = true,
+  panelClassName = '',
 }) => {
   const handleEscape = useCallback((e: KeyboardEvent) => {
     if (e.key === 'Escape') {
@@ -42,7 +44,7 @@ const Modal: React.FC<ModalProps> = ({
       onClick={onClose}
     >
       <div
-        className={`relative w-full max-w-md bg-white border-2 border-ink p-6 shadow-sketch-lg ${roughBorderClass} animate-in zoom-in-95 duration-200`}
+        className={`relative w-full max-w-md bg-white border-2 border-ink p-6 shadow-sketch-lg ${roughBorderClass} animate-in zoom-in-95 duration-200 ${panelClassName}`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Close Button */}

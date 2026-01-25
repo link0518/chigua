@@ -16,6 +16,7 @@ server/data
 *.db-journal
 AGENTS.md
 CLAUDE.md 
+CHANGELOG.md
 .claude
 # Editor directories and files
 .vscode/*

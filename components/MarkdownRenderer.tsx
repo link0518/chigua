@@ -279,10 +279,27 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, className 
     return purifier.sanitize(rawHtml);
   }, [content]);
 
+  const handleLinkClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (event.defaultPrevented || event.button !== 0) {
+      return;
+    }
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+      return;
+    }
+    const target = event.target as HTMLElement | null;
+    const anchor = target?.closest?.('a') as HTMLAnchorElement | null;
+    if (!anchor || !anchor.href) {
+      return;
+    }
+    event.preventDefault();
+    window.open(anchor.href, '_blank', 'noopener,noreferrer');
+  };
+
   return (
     <div
       className={`markdown-content leading-relaxed ${className}`}
       dangerouslySetInnerHTML={{ __html: rendered }}
+      onClick={handleLinkClick}
     />
   );
 };
