@@ -2,6 +2,7 @@ export enum ViewType {
   HOME = 'HOME',
   SUBMISSION = 'SUBMISSION',
   FEED = 'FEED',
+  SEARCH = 'SEARCH',
   ADMIN = 'ADMIN',
   NOT_FOUND = 'NOT_FOUND'
 }

@@ -3,6 +3,7 @@ import { ViewType } from './types';
 import type { NotificationItem } from './types';
 import SubmissionView from './components/SubmissionView';
 import FeedView from './components/FeedView';
+import SearchView from './components/SearchView';
 const AdminGate = React.lazy(() => import('./components/AdminGate'));
 import HomeView from './components/HomeView';
 import Toast from './components/Toast';
@@ -25,6 +26,9 @@ const resolveViewFromPath = (path: string) => {
   if (normalized === '/tiancai') {
     return ViewType.ADMIN;
   }
+  if (normalized === '/search') {
+    return ViewType.SEARCH;
+  }
   if (normalized === '/' || /^\/post\/[^/]+$/.test(normalized)) {
     return ViewType.HOME;
   }
@@ -34,6 +38,9 @@ const resolveViewFromPath = (path: string) => {
 const getPathForView = (view: ViewType) => {
   if (view === ViewType.ADMIN) {
     return '/tiancai';
+  }
+  if (view === ViewType.SEARCH) {
+    return '/search';
   }
   return '/';
 };
@@ -282,6 +289,8 @@ const App: React.FC = () => {
         return <SubmissionView />;
       case ViewType.FEED:
         return <FeedView />;
+      case ViewType.SEARCH:
+        return <SearchView />;
       case ViewType.ADMIN:
         return (
           <React.Suspense
@@ -377,6 +386,7 @@ const App: React.FC = () => {
               <nav className="hidden sm:flex gap-6">
                 <NavItem view={ViewType.HOME} label="最新" />
                 <NavItem view={ViewType.FEED} label="热门" />
+                <NavItem view={ViewType.SEARCH} label="搜索" />
               </nav>
 
               {/* Action Button */}
@@ -497,6 +507,13 @@ const App: React.FC = () => {
                 label="热门榜单"
                 onClick={() => {
                   navigate(ViewType.FEED);
+                  setMobileMenuOpen(false);
+                }}
+              />
+              <MobileNavItem
+                label="搜索"
+                onClick={() => {
+                  navigate(ViewType.SEARCH);
                   setMobileMenuOpen(false);
                 }}
               />

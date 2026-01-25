@@ -47,6 +47,7 @@ export const api = {
   getHomePosts: (limit, offset = 0) => apiFetch(`/posts/home${toQuery({ limit, offset })}`),
   getPostById: (postId) => apiFetch(`/posts/${postId}`),
   getFeedPosts: (filter, search) => apiFetch(`/posts/feed${toQuery({ filter, search })}`),
+  searchPosts: (q, page = 1, limit = 20) => apiFetch(`/posts/search${toQuery({ q, page, limit })}`),
   createPost: (content, tags = [], turnstileToken) => apiFetch('/posts', {
     method: 'POST',
     body: JSON.stringify({ content, tags, turnstileToken }),

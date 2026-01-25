@@ -1284,6 +1284,57 @@ app.get('/api/posts/feed', (req, res) => {
   res.json({ items: posts, total: posts.length });
 });
 
+app.get('/api/posts/search', (req, res) => {
+  if (!checkBanFor(req, res, 'view', '你已被限制浏览')) {
+    return;
+  }
+  const keywordRaw = String(req.query.q || '').trim();
+  const page = Math.max(Number(req.query.page || 1), 1);
+  const limit = Math.min(Math.max(Number(req.query.limit || 20), 1), 50);
+  const offset = (page - 1) * limit;
+  const dateKey = formatDateKey();
+  trackDailyVisit(dateKey, req.sessionID);
+  const viewerFingerprint = getOptionalFingerprint(req);
+
+  if (!keywordRaw) {
+    return res.json({ items: [], total: 0, page, limit });
+  }
+
+  // 仅做内容关键字搜索：把 LIKE 的通配符当作字面量，避免用户输入 %/_ 导致意外匹配。
+  const escapeLike = (value) => String(value).replace(/[\\%_]/g, (match) => `\\${match}`);
+  const keyword = `%${escapeLike(keywordRaw)}%`;
+
+  const total = db
+    .prepare(
+      `
+        SELECT COUNT(1) AS count
+        FROM posts
+        WHERE deleted = 0
+          AND content LIKE ? ESCAPE '\\'
+      `
+    )
+    .get(keyword)?.count ?? 0;
+
+  const rows = db
+    .prepare(
+      `
+        SELECT posts.*, ${hotScoreSql} AS hot_score, pr.reaction AS viewer_reaction
+        FROM posts
+        LEFT JOIN post_reactions pr
+          ON pr.post_id = posts.id
+          AND pr.session_id = ?
+        WHERE posts.deleted = 0
+          AND posts.content LIKE ? ESCAPE '\\'
+        ORDER BY posts.created_at DESC
+        LIMIT ? OFFSET ?
+      `
+    )
+    .all(viewerFingerprint, keyword, limit, offset);
+
+  const items = rows.map((row) => mapPostRow(row, row.hot_score >= 20));
+  return res.json({ items, total, page, limit });
+});
+
 app.post('/api/posts', async (req, res) => {
   const content = String(req.body?.content || '').trim();
   const tags = Array.isArray(req.body?.tags) ? req.body.tags : [];
