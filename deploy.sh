@@ -108,6 +108,9 @@ configure_caddy() {
   snippet=$(cat <<EOF
 ${DOMAIN} {
   reverse_proxy /api/* 127.0.0.1:4395
+  reverse_proxy /post/* 127.0.0.1:4395
+  reverse_proxy /robots.txt 127.0.0.1:4395
+  reverse_proxy /sitemap.xml 127.0.0.1:4395
   reverse_proxy 127.0.0.1:4396
 }
 EOF
