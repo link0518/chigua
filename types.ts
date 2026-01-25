@@ -34,6 +34,9 @@ export interface Report {
   targetContent?: string;
   targetIp?: string | null;
   targetFingerprint?: string | null;
+  reporterIp?: string | null;
+  reporterFingerprint?: string | null;
+  reporterCount?: number;
   timestamp: string;
   status: 'pending' | 'resolved' | 'ignored';
   riskLevel: 'low' | 'medium' | 'high';

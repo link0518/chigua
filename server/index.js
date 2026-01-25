@@ -1720,6 +1720,8 @@ app.post('/api/reports', (req, res) => {
     return;
   }
 
+  const reporterIp = getClientIp(req);
+
   let targetType = 'post';
   let targetPostId = postId;
   let targetCommentId = '';
@@ -1794,10 +1796,10 @@ app.post('/api/reports', (req, res) => {
 
   db.prepare(
     `
-      INSERT INTO reports (id, post_id, comment_id, target_type, reason, content_snippet, created_at, status, risk_level, fingerprint)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+      INSERT INTO reports (id, post_id, comment_id, target_type, reason, content_snippet, created_at, status, risk_level, fingerprint, reporter_ip)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
     `
-  ).run(reportId, targetPostId, targetCommentId || null, targetType, reason, snippet, now, resolveRiskLevel(reason), fingerprint);
+  ).run(reportId, targetPostId, targetCommentId || null, targetType, reason, snippet, now, resolveRiskLevel(reason), fingerprint, reporterIp);
 
   incrementDailyStat(formatDateKey(), 'reports', 1);
 
@@ -1835,10 +1837,16 @@ app.get('/api/reports', requireAdmin, (req, res) => {
         posts.fingerprint AS post_fingerprint,
         comments.content AS comment_content,
         comments.ip AS comment_ip,
-        comments.fingerprint AS comment_fingerprint
+        comments.fingerprint AS comment_fingerprint,
+        reporter_stats.reporter_count AS reporter_count
       FROM reports
       LEFT JOIN posts ON posts.id = reports.post_id
       LEFT JOIN comments ON comments.id = reports.comment_id
+      LEFT JOIN (
+        SELECT fingerprint, COUNT(1) AS reporter_count
+        FROM reports
+        GROUP BY fingerprint
+      ) reporter_stats ON reporter_stats.fingerprint = reports.fingerprint
       ${whereClause}
       ORDER BY reports.created_at DESC
       `
@@ -1861,6 +1869,9 @@ app.get('/api/reports', requireAdmin, (req, res) => {
       targetContent: isComment ? commentContent : postContent,
       targetIp: isComment ? row.comment_ip || null : row.post_ip || null,
       targetFingerprint: isComment ? row.comment_fingerprint || null : row.post_fingerprint || null,
+      reporterIp: row.reporter_ip || null,
+      reporterFingerprint: row.fingerprint || null,
+      reporterCount: row.reporter_count ? Number(row.reporter_count) : 0,
       timestamp: formatRelativeTime(row.created_at),
       status: row.status,
       riskLevel: row.risk_level,
@@ -2909,23 +2920,28 @@ app.get('/api/admin/vocabulary', requireAdmin, (req, res) => {
   const offset = (page - 1) * limit;
   const conditions = [];
   const params = [];
+  const normalizedSearch = search ? normalizeText(search) : '';
   if (search) {
     conditions.push('(word LIKE ? OR normalized LIKE ?)');
     const keyword = `%${search}%`;
     params.push(keyword, keyword);
   }
   const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  const orderBy = search
+    ? 'ORDER BY CASE WHEN word = ? OR normalized = ? THEN 0 ELSE 1 END, updated_at DESC'
+    : 'ORDER BY updated_at DESC';
+  const orderParams = search ? [search, normalizedSearch] : [];
   const rows = db
     .prepare(
       `
       SELECT id, word, normalized, enabled, created_at, updated_at
       FROM vocabulary_words
       ${whereClause}
-      ORDER BY updated_at DESC
+      ${orderBy}
       LIMIT ? OFFSET ?
       `
     )
-    .all(...params, limit, offset);
+    .all(...params, ...orderParams, limit, offset);
   const totalRow = db
     .prepare(`SELECT COUNT(1) AS count FROM vocabulary_words ${whereClause}`)
     .get(...params);

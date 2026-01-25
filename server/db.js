@@ -79,6 +79,8 @@ CREATE TABLE IF NOT EXISTS reports (
   risk_level TEXT NOT NULL DEFAULT 'low',
   action TEXT,
   resolved_at INTEGER,
+  fingerprint TEXT,
+  reporter_ip TEXT,
   FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
 );
 
@@ -252,6 +254,7 @@ ensureColumn('comments', 'deleted', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('comments', 'deleted_at', 'INTEGER');
 ensureColumn('comments', 'ip', 'TEXT');
 ensureColumn('reports', 'fingerprint', 'TEXT');
+ensureColumn('reports', 'reporter_ip', 'TEXT');
 ensureColumn('reports', 'comment_id', 'TEXT');
 ensureColumn('reports', 'target_type', "TEXT NOT NULL DEFAULT 'post'");
 ensureColumn('banned_ips', 'expires_at', 'INTEGER');

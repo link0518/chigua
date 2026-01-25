@@ -2631,6 +2631,14 @@ const AdminDashboard: React.FC = () => {
             <p>标识：{formatIdentity(reportDetail.report?.targetIp, reportDetail.report?.targetFingerprint)}</p>
           </div>
           <div>
+            <p className="text-xs text-pencil font-sans mb-2">举报者信息</p>
+            <div className="bg-gray-50 border-2 border-dashed border-gray-200 rounded-lg p-3 text-xs text-pencil font-sans">
+              <p>举报者标识：{formatIdentity(reportDetail.report?.reporterIp, reportDetail.report?.reporterFingerprint)}</p>
+              <p>举报时间：{reportDetail.report?.timestamp || '-'}</p>
+              <p>举报次数：{reportDetail.report?.reporterCount ?? 0}</p>
+            </div>
+          </div>
+          <div>
             <p className="text-xs text-pencil font-sans mb-2">被举报帖子内容</p>
             <div className="bg-gray-50 border-2 border-dashed border-gray-200 rounded-lg p-3 text-sm overflow-auto">
               {reportDetail.report?.postContent
@@ -2727,6 +2735,13 @@ const ReportCard: React.FC<{
               className="text-xs font-bold text-ink hover:underline"
             >
               查看详情
+            </button>
+            <button
+              type="button"
+              onClick={() => onDetail?.(report)}
+              className="text-xs font-bold text-ink hover:underline"
+            >
+              举报者信息
             </button>
           </div>
         </div>
