@@ -2078,6 +2078,7 @@ app.post('/api/admin/posts', requireAdmin, requireAdminCsrf, (req, res) => {
   const content = String(req.body?.content || '').trim();
   const tags = Array.isArray(req.body?.tags) ? req.body.tags : [];
   const reason = String(req.body?.reason || '').trim();
+  const includeDeveloper = Boolean(req.body?.includeDeveloper);
 
   if (!content) {
     return res.status(400).json({ error: '内容不能为空' });
@@ -2099,13 +2100,14 @@ app.post('/api/admin/posts', requireAdmin, requireAdminCsrf, (req, res) => {
   const now = Date.now();
   const postId = crypto.randomUUID();
   const viewerFingerprint = getOptionalFingerprint(req);
+  const author = includeDeveloper ? 'admin' : '匿名';
 
   db.prepare(
     `
-    INSERT INTO posts (id, content, author, tags, created_at, session_id, ip)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO posts (id, content, author, tags, created_at, session_id, ip, fingerprint)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `
-  ).run(postId, content, '匿名', JSON.stringify(tags), now, req.sessionID, clientIp);
+  ).run(postId, content, author, JSON.stringify(tags), now, req.sessionID, clientIp, viewerFingerprint || null);
 
   incrementDailyStat(formatDateKey(), 'posts', 1);
 

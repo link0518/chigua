@@ -35,6 +35,8 @@ const BAN_DURATION_OPTIONS = [
   { id: 'custom', label: '自定义日期', ms: null },
 ];
 
+const ADMIN_COMPOSE_INCLUDE_DEVELOPER_STORAGE_KEY = 'admin_compose_include_developer';
+
 const StatCard: React.FC<{ title: string; value: string; trend: string; trendUp: boolean; icon: React.ReactNode; color?: string; valueClassName?: string }> = ({ title, value, trend, trendUp, icon, color = 'bg-white', valueClassName = '' }) => (
   <div className={`${color} p-6 border-2 border-ink shadow-sketch relative overflow-hidden group hover:-translate-y-1 transition-transform duration-200 sticky-curl ${roughBorderClassSm}`}>
     <div className="absolute -right-4 -top-4 text-ink/10 rotate-12 group-hover:rotate-0 transition-transform scale-150 opacity-100">
@@ -66,6 +68,16 @@ const AdminDashboard: React.FC = () => {
   const [selectedReports, setSelectedReports] = useState<Set<string>>(new Set());
   const [composeText, setComposeText] = useState('');
   const [composePreview, setComposePreview] = useState(false);
+  const [composeIncludeDeveloper, setComposeIncludeDeveloper] = useState(() => {
+    if (typeof window === 'undefined') return true;
+    try {
+      const raw = window.localStorage.getItem(ADMIN_COMPOSE_INCLUDE_DEVELOPER_STORAGE_KEY);
+      if (raw === null) return true;
+      return raw === '1' || raw === 'true';
+    } catch {
+      return true;
+    }
+  });
   const [composeSubmitting, setComposeSubmitting] = useState(false);
   const [announcementText, setAnnouncementText] = useState('');
   const [announcementPreview, setAnnouncementPreview] = useState(false);
@@ -161,6 +173,18 @@ const AdminDashboard: React.FC = () => {
     loadReports().catch(() => { });
     loadStats().catch(() => { });
   }, [loadReports, loadStats]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(
+        ADMIN_COMPOSE_INCLUDE_DEVELOPER_STORAGE_KEY,
+        composeIncludeDeveloper ? '1' : '0'
+      );
+    } catch {
+      // ignore
+    }
+  }, [composeIncludeDeveloper]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -941,7 +965,7 @@ const AdminDashboard: React.FC = () => {
     }
     setComposeSubmitting(true);
     try {
-      await api.createAdminPost(trimmed, []);
+      await api.createAdminPost(trimmed, [], { includeDeveloper: composeIncludeDeveloper });
       showToast('投稿成功！', 'success');
       setComposeText('');
       setComposePreview(false);
@@ -1668,13 +1692,24 @@ const AdminDashboard: React.FC = () => {
                   </div>
 
                   <div className="flex flex-wrap items-center justify-between gap-4">
-                    <div className="flex items-center gap-3">
-                      <span className={`font-hand text-lg ${composeText.length > composeMaxLength ? 'text-red-500 font-bold' : composeText.length > composeMaxLength * 0.9 ? 'text-yellow-600' : 'text-pencil'}`}>
-                        {composeText.length} / {composeMaxLength}
-                      </span>
-                      {composeText.length > composeMaxLength && (
-                        <span className="text-red-500 text-sm font-hand">超出限制！</span>
-                      )}
+                    <div className="flex items-center gap-4 flex-wrap">
+                      <label className="flex items-center gap-2 text-sm font-sans text-pencil select-none">
+                        <input
+                          type="checkbox"
+                          className="w-4 h-4"
+                          checked={composeIncludeDeveloper}
+                          onChange={(e) => setComposeIncludeDeveloper(e.target.checked)}
+                        />
+                        <span>携带开发者信息（显示 admin 名片）</span>
+                      </label>
+                      <div className="flex items-center gap-3">
+                        <span className={`font-hand text-lg ${composeText.length > composeMaxLength ? 'text-red-500 font-bold' : composeText.length > composeMaxLength * 0.9 ? 'text-yellow-600' : 'text-pencil'}`}>
+                          {composeText.length} / {composeMaxLength}
+                        </span>
+                        {composeText.length > composeMaxLength && (
+                          <span className="text-red-500 text-sm font-hand">超出限制！</span>
+                        )}
+                      </div>
                     </div>
                     <SketchButton
                       type="submit"

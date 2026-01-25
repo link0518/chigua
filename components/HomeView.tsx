@@ -7,6 +7,7 @@ import { api } from '../api';
 import Modal from './Modal';
 import { SketchButton } from './SketchUI';
 import Turnstile, { TurnstileHandle } from './Turnstile';
+import DeveloperMiniCard from './DeveloperMiniCard';
 
 const HomeView: React.FC = () => {
   const {
@@ -429,15 +430,21 @@ const HomeView: React.FC = () => {
           {/* Header */}
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-3">
-              <div className="size-10 rounded-full border-2 border-black bg-gray-200 flex items-center justify-center shadow-sm">
-                <span className="material-symbols-outlined text-xl text-pencil">person_off</span>
-              </div>
-              <div className="flex flex-col">
-                <span className="font-hand font-bold text-xl text-pencil">匿名用户</span>
-                <span className="text-xs text-gray-400 font-mono flex items-center gap-1">
-                  {currentPost.timestamp}
-                </span>
-              </div>
+              {currentPost.author === 'admin' ? (
+                <DeveloperMiniCard timestamp={currentPost.timestamp} size="md" />
+              ) : (
+                <>
+                  <div className="size-10 rounded-full border-2 border-black bg-gray-200 flex items-center justify-center shadow-sm">
+                    <span className="material-symbols-outlined text-xl text-pencil">person_off</span>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="font-hand font-bold text-xl text-pencil">匿名用户</span>
+                    <span className="text-xs text-gray-400 font-mono flex items-center gap-1">
+                      {currentPost.timestamp}
+                    </span>
+                  </div>
+                </>
+              )}
             </div>
             {/* Tags */}
             <div className="flex gap-2">

@@ -6,6 +6,7 @@ import { useApp } from '../store/AppContext';
 import ReportModal from './ReportModal';
 import CommentModal from './CommentModal';
 import MarkdownRenderer from './MarkdownRenderer';
+import DeveloperMiniCard from './DeveloperMiniCard';
 
 type FilterType = 'week' | 'today' | 'all';
 const DISPLAY_LIMIT = 10;
@@ -23,6 +24,7 @@ const PostItem: React.FC<{
   isLiked: boolean;
   isDisliked: boolean;
 }> = ({ post, rank, onLike, onDislike, onComment, onCommentClose, commentOpen, onShare, onReport, isLiked, isDisliked }) => {
+  const isDeveloperPost = post.author === 'admin';
   return (
     <div className={`relative group ${rank ? 'mb-10' : 'mb-6'}`}>
       {/* Rank Badge */}
@@ -51,10 +53,16 @@ const PostItem: React.FC<{
 
         {/* Anonymous Info */}
         <div className="flex items-center gap-2 mb-4 text-sm text-pencil">
-          <span className="material-symbols-outlined text-base">person_off</span>
-          <span className="font-hand font-bold">匿名用户</span>
-          <span>•</span>
-          <span>{post.timestamp}</span>
+          {isDeveloperPost ? (
+            <DeveloperMiniCard size="sm" timestamp={post.timestamp} />
+          ) : (
+            <>
+              <span className="material-symbols-outlined text-base">person_off</span>
+              <span className="font-hand font-bold">匿名用户</span>
+              <span>•</span>
+              <span>{post.timestamp}</span>
+            </>
+          )}
         </div>
 
         {/* Footer Actions */}
