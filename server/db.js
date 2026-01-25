@@ -220,6 +220,19 @@ CREATE TABLE IF NOT EXISTS daily_visits (
   PRIMARY KEY (date, session_id)
 );
 
+CREATE TABLE IF NOT EXISTS fingerprint_login_days (
+  date TEXT NOT NULL,
+  fingerprint TEXT NOT NULL,
+  PRIMARY KEY (date, fingerprint)
+);
+
+CREATE TABLE IF NOT EXISTS easter_egg_seen (
+  fingerprint TEXT NOT NULL,
+  egg_key TEXT NOT NULL,
+  seen_at INTEGER NOT NULL,
+  PRIMARY KEY (fingerprint, egg_key)
+);
+
 CREATE INDEX IF NOT EXISTS idx_posts_created_at ON posts(created_at);
 CREATE INDEX IF NOT EXISTS idx_posts_deleted ON posts(deleted);
 CREATE INDEX IF NOT EXISTS idx_comments_post_id ON comments(post_id);
@@ -233,6 +246,7 @@ CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_action ON admin_audit_logs(actio
 CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_target ON admin_audit_logs(target_type, target_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_recipient_created_at ON notifications(recipient_fingerprint, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_notifications_recipient_read_at ON notifications(recipient_fingerprint, read_at);
+CREATE INDEX IF NOT EXISTS idx_fingerprint_login_days_fingerprint_date ON fingerprint_login_days(fingerprint, date DESC);
 CREATE INDEX IF NOT EXISTS idx_vocabulary_enabled ON vocabulary_words(enabled);
 CREATE INDEX IF NOT EXISTS idx_vocabulary_updated_at ON vocabulary_words(updated_at);
 `);

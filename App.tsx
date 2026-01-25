@@ -9,6 +9,7 @@ import HomeView from './components/HomeView';
 import Toast from './components/Toast';
 import Modal from './components/Modal';
 import MarkdownRenderer from './components/MarkdownRenderer';
+import StreakCelebration from './components/StreakCelebration';
 import { api } from './api';
 import { Menu, X } from 'lucide-react';
 import { useApp } from './store/AppContext';
@@ -45,6 +46,8 @@ const getPathForView = (view: ViewType) => {
   return '/';
 };
 
+const STREAK7_LOCAL_SEEN_KEY = 'easter:streak7:seen:v1';
+
 const App: React.FC = () => {
   const { loadSettings } = useApp();
   const [currentView, setCurrentView] = useState<ViewType>(() => resolveViewFromPath(window.location.pathname));
@@ -61,6 +64,9 @@ const App: React.FC = () => {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [notificationsUnread, setNotificationsUnread] = useState(0);
   const notificationRef = useRef<HTMLDivElement | null>(null);
+  const [streakCelebrationOpen, setStreakCelebrationOpen] = useState(false);
+  const [streakCelebrationDays, setStreakCelebrationDays] = useState(7);
+  const streakCelebrationMarkedRef = useRef(false);
 
   useEffect(() => {
     const handlePopState = () => {
@@ -246,6 +252,61 @@ const App: React.FC = () => {
   }, [currentView, fetchNotifications]);
 
   useEffect(() => {
+    if (currentView !== ViewType.HOME) {
+      return;
+    }
+    if (normalizePath(window.location.pathname) !== '/') {
+      return;
+    }
+    let cancelled = false;
+    const run = async () => {
+      try {
+        const localSeen = localStorage.getItem(STREAK7_LOCAL_SEEN_KEY) === '1';
+        if (localSeen) {
+          return;
+        }
+        const data = await api.getStreak7Status();
+        if (cancelled) return;
+        if (data?.unlocked && !data?.alreadyShown) {
+          streakCelebrationMarkedRef.current = false;
+          setStreakCelebrationDays(Number(data?.streakDays || 7));
+          setStreakCelebrationOpen(true);
+        }
+      } catch {
+        // 忽略彩蛋检查失败
+      }
+    };
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentView]);
+
+  const closeStreakCelebration = useCallback(() => {
+    setStreakCelebrationOpen(false);
+    if (streakCelebrationMarkedRef.current) {
+      return;
+    }
+    streakCelebrationMarkedRef.current = true;
+    try {
+      localStorage.setItem(STREAK7_LOCAL_SEEN_KEY, '1');
+    } catch {
+      // ignore
+    }
+    api.markStreak7Seen().catch(() => { });
+  }, []);
+
+  useEffect(() => {
+    if (currentView === ViewType.HOME) {
+      return;
+    }
+    if (!streakCelebrationOpen) {
+      return;
+    }
+    closeStreakCelebration();
+  }, [closeStreakCelebration, currentView, streakCelebrationOpen]);
+
+  useEffect(() => {
     if (!notificationsOpen) {
       return;
     }
@@ -361,6 +422,12 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen flex flex-col font-sans selection:bg-highlight selection:text-black">
+      <StreakCelebration
+        open={streakCelebrationOpen}
+        onClose={closeStreakCelebration}
+        title={`连续登录 ${streakCelebrationDays} 天！`}
+        subtitle="彩纸礼花送给你～"
+      />
       {/* Top Navigation */}
       {currentView !== ViewType.ADMIN && (
         <header className="sticky top-0 z-50 w-full border-b-2 border-black bg-[#f9f7f1] px-4 md:px-6 py-3 shadow-[0_4px_0_0_rgba(0,0,0,0.1)]">

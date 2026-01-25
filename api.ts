@@ -71,6 +71,8 @@ export const api = {
   }),
   getNotifications: (params = {}) => apiFetch(`/notifications${toQuery(params)}`),
   readNotifications: () => apiFetch('/notifications/read', { method: 'POST' }),
+  getStreak7Status: () => apiFetch('/easter-eggs/streak7'),
+  markStreak7Seen: () => apiFetch('/easter-eggs/streak7/seen', { method: 'POST' }),
   createFeedback: (content, email, wechat = '', qq = '', turnstileToken) => apiFetch('/feedback', {
     method: 'POST',
     body: JSON.stringify({ content, email, wechat, qq, turnstileToken }),

@@ -48,9 +48,12 @@ const SearchView: React.FC = () => {
       showToast('请输入关键字', 'warning');
       return;
     }
+    if (nextQuery === query && page === 1) {
+      runSearch(nextQuery, 1);
+      return;
+    }
     setQuery(nextQuery);
     setPage(1);
-    runSearch(nextQuery, 1);
   };
 
   useEffect(() => {
