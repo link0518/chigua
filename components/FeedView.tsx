@@ -115,7 +115,7 @@ const PostItem: React.FC<{
 
 const FeedView: React.FC = () => {
   const { state, loadFeedPosts, likePost, dislikePost, isLiked, isDisliked, showToast } = useApp();
-  const [filter, setFilter] = useState<FilterType>('week');
+  const [filter, setFilter] = useState<FilterType>('today');
   const [searchQuery, setSearchQuery] = useState('');
   const [reportModal, setReportModal] = useState<{ isOpen: boolean; postId: string; content: string }>({
     isOpen: false,
@@ -225,16 +225,16 @@ const FeedView: React.FC = () => {
         {/* Filter Tabs */}
         <div className="flex justify-center gap-6 mt-6 font-hand text-xl font-bold text-pencil">
           <button
-            onClick={() => { setFilter('week'); }}
-            className={`transition-all ${filter === 'week' ? 'text-ink underline decoration-wavy decoration-alert underline-offset-4' : 'hover:text-ink'}`}
-          >
-            本周
-          </button>
-          <button
             onClick={() => { setFilter('today'); }}
             className={`transition-all ${filter === 'today' ? 'text-ink underline decoration-wavy decoration-alert underline-offset-4' : 'hover:text-ink'}`}
           >
             今日
+          </button>
+          <button
+            onClick={() => { setFilter('week'); }}
+            className={`transition-all ${filter === 'week' ? 'text-ink underline decoration-wavy decoration-alert underline-offset-4' : 'hover:text-ink'}`}
+          >
+            本周
           </button>
           <button
             onClick={() => { setFilter('all'); }}
