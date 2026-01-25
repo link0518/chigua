@@ -45,6 +45,9 @@ const HomeView: React.FC = () => {
 
   const posts = getHomePosts();
   const currentPost = posts[currentIndex];
+  const isLatestPost = currentIndex === 0;
+  const currentHostname = window.location.hostname;
+  const shouldShowBanner = currentHostname === '933211.xyz';
 
   useEffect(() => {
     let cancelled = false;
@@ -350,6 +353,34 @@ const HomeView: React.FC = () => {
     }
   };
 
+  const bannerContent = (
+    <div className="relative overflow-hidden border-2 border-ink rounded-lg doodle-border !rounded-lg shadow-sketch bg-[linear-gradient(90deg,rgba(255,245,157,0.75),rgba(129,212,250,0.35),rgba(255,245,157,0.75))]">
+      <div className="absolute -top-6 -right-10 w-44 h-44 bg-white/25 rounded-full border border-ink/20 rotate-12" />
+      <div className="absolute -bottom-10 -left-8 w-48 h-48 bg-white/20 rounded-full border border-ink/20 -rotate-6" />
+
+      <div className="relative px-4 py-3 flex items-start gap-3">
+        <span className="material-symbols-outlined text-[22px] text-ink mt-0.5">bolt</span>
+        <div className="flex-1 min-w-0">
+          <div className="font-hand font-bold text-ink text-base leading-snug">
+            本站支持双域名，推荐用 <span className="font-mono">https://jx3gua.com/</span> 访问更快
+          </div>
+          <div className="mt-1 text-xs text-pencil font-sans">
+            如果当前访问较慢，可换域名打开（不影响内容与功能）
+          </div>
+        </div>
+        <a
+          href="https://jx3gua.com/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="shrink-0 inline-flex items-center gap-1 rounded-full border-2 border-ink bg-white px-3 py-1.5 font-hand font-bold text-sm text-ink shadow-sketch hover:bg-highlight transition-all"
+        >
+          去更快域名
+          <span className="material-symbols-outlined text-[18px]">arrow_outward</span>
+        </a>
+      </div>
+    </div>
+  );
+
   return (
     <div className="flex-grow w-full max-w-2xl mx-auto px-4 py-8 flex flex-col justify-center min-h-[80vh] relative">
       <div className="mascot-anchor">
@@ -372,33 +403,16 @@ const HomeView: React.FC = () => {
       )}
 
       {/* Banner */}
-      <div className="w-full mb-4">
-        <div className="relative overflow-hidden border-2 border-ink rounded-lg doodle-border !rounded-lg shadow-sketch bg-[linear-gradient(90deg,rgba(255,245,157,0.75),rgba(129,212,250,0.35),rgba(255,245,157,0.75))]">
-          <div className="absolute -top-6 -right-10 w-44 h-44 bg-white/25 rounded-full border border-ink/20 rotate-12" />
-          <div className="absolute -bottom-10 -left-8 w-48 h-48 bg-white/20 rounded-full border border-ink/20 -rotate-6" />
-
-          <div className="relative px-4 py-3 flex items-start gap-3">
-            <span className="material-symbols-outlined text-[22px] text-ink mt-0.5">bolt</span>
-            <div className="flex-1 min-w-0">
-              <div className="font-hand font-bold text-ink text-base leading-snug">
-                本站支持双域名，推荐用 <span className="font-mono">https://jx3gua.com/</span> 访问更快
-              </div>
-              <div className="mt-1 text-xs text-pencil font-sans">
-                如果当前访问较慢，可换域名打开（不影响内容与功能）
-              </div>
-            </div>
-            <a
-              href="https://jx3gua.com/"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="shrink-0 inline-flex items-center gap-1 rounded-full border-2 border-ink bg-white px-3 py-1.5 font-hand font-bold text-sm text-ink shadow-sketch hover:bg-highlight transition-all"
-            >
-              去更快域名
-              <span className="material-symbols-outlined text-[18px]">arrow_outward</span>
-            </a>
-          </div>
+      {shouldShowBanner && (
+        <div className="w-full mb-4 hidden sm:block">
+          {bannerContent}
         </div>
-      </div>
+      )}
+      {shouldShowBanner && isLatestPost && (
+        <div className="w-full mb-4 sm:hidden">
+          {bannerContent}
+        </div>
+      )}
 
       {/* Card Container */}
       <article className={`group relative w-full my-auto transition-all duration-200 ${animate ? 'opacity-0 translate-x-10' : 'opacity-100 translate-x-0'}`}>
