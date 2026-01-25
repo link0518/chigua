@@ -41,6 +41,7 @@ const HomeView: React.FC = () => {
   const [hasMore, setHasMore] = useState(true);
   const [pendingAdvance, setPendingAdvance] = useState(false);
   const prevPostCountRef = useRef(0);
+  const turnstileEnabled = state.settings.turnstileEnabled;
 
   const posts = getHomePosts();
   const currentPost = posts[currentIndex];
@@ -332,10 +333,13 @@ const HomeView: React.FC = () => {
     }
     setFeedbackSubmitting(true);
     try {
-      if (!feedbackTurnstileRef.current) {
-        throw new Error('安全验证加载中，请稍后再试');
+      let turnstileToken = '';
+      if (turnstileEnabled) {
+        if (!feedbackTurnstileRef.current) {
+          throw new Error('安全验证加载中，请稍后再试');
+        }
+        turnstileToken = await feedbackTurnstileRef.current.execute();
       }
-      const turnstileToken = await feedbackTurnstileRef.current.execute();
       await api.createFeedback(content, email, wechat, qq, turnstileToken);
       showToast('留言已发送！', 'success');
       closeFeedbackModal();
@@ -575,7 +579,7 @@ const HomeView: React.FC = () => {
           </div>
         </form>
 
-        <Turnstile ref={feedbackTurnstileRef} action="feedback" enabled={feedbackOpen} />
+        <Turnstile ref={feedbackTurnstileRef} action="feedback" enabled={feedbackOpen && turnstileEnabled} />
       </Modal>
     </div>
   );

@@ -117,6 +117,7 @@ export const api = {
   }),
   sendHeartbeat: () => apiFetch('/online/heartbeat', { method: 'POST' }),
   getAccessStatus: () => apiFetch('/access'),
+  getPublicSettings: () => apiFetch('/settings'),
   getAdminAuditLogs: (params = {}) => apiFetch(`/admin/audit-logs${toQuery(params)}`),
   getAnnouncement: () => apiFetch('/announcement'),
   getAdminAnnouncement: () => apiFetch('/admin/announcement'),
@@ -127,6 +128,27 @@ export const api = {
   clearAdminAnnouncement: () => apiFetch('/admin/announcement/clear', {
     method: 'POST',
   }),
+  getAdminSettings: () => apiFetch('/admin/settings'),
+  updateAdminSettings: (turnstileEnabled) => apiFetch('/admin/settings', {
+    method: 'POST',
+    body: JSON.stringify({ turnstileEnabled }),
+  }),
+  getAdminVocabulary: (params = {}) => apiFetch(`/admin/vocabulary${toQuery(params)}`),
+  addAdminVocabulary: (word) => apiFetch('/admin/vocabulary', {
+    method: 'POST',
+    body: JSON.stringify({ word }),
+  }),
+  toggleAdminVocabulary: (id, enabled) => apiFetch(`/admin/vocabulary/${id}/toggle`, {
+    method: 'POST',
+    body: JSON.stringify({ enabled }),
+  }),
+  deleteAdminVocabulary: (id) => apiFetch(`/admin/vocabulary/${id}/delete`, {
+    method: 'POST',
+  }),
+  importAdminVocabulary: () => apiFetch('/admin/vocabulary/import', {
+    method: 'POST',
+  }),
+  exportAdminVocabulary: () => apiFetch('/admin/vocabulary/export'),
   getAdminSession: () => apiFetch('/admin/session'),
   adminLogin: (username, password) => apiFetch('/admin/login', {
     method: 'POST',

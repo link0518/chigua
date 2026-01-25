@@ -3,7 +3,7 @@ import {
   BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, LabelList,
   LineChart, Line
 } from 'recharts';
-import { Flag, Gavel, BarChart2, Bell, Search, Trash2, Ban, Eye, EyeOff, LayoutDashboard, LogOut, CheckCircle, XCircle, FileText, PenSquare, Pencil, RotateCcw, Shield, ClipboardList, MessageSquare, Menu, X } from 'lucide-react';
+import { Flag, Gavel, BarChart2, Bell, Search, Trash2, Ban, Eye, EyeOff, LayoutDashboard, LogOut, CheckCircle, XCircle, FileText, PenSquare, Pencil, RotateCcw, Shield, ClipboardList, MessageSquare, Menu, X, Settings } from 'lucide-react';
 import { SketchButton, Badge, roughBorderClassSm } from './SketchUI';
 import { AdminAuditLog, AdminComment, AdminPost, FeedbackMessage, Report } from '../types';
 import { useApp } from '../store/AppContext';
@@ -11,7 +11,7 @@ import Modal from './Modal';
 import { api } from '../api';
 import MarkdownRenderer from './MarkdownRenderer';
 
-type AdminView = 'overview' | 'reports' | 'processed' | 'posts' | 'compose' | 'bans' | 'audit' | 'feedback' | 'announcement';
+type AdminView = 'overview' | 'reports' | 'processed' | 'posts' | 'compose' | 'bans' | 'audit' | 'feedback' | 'announcement' | 'settings';
 type PostStatusFilter = 'all' | 'active' | 'deleted';
 type PostSort = 'time' | 'hot' | 'reports';
 
@@ -19,6 +19,7 @@ const WEEK_DAYS = ['周一', '周二', '周三', '周四', '周五', '周六', '
 const POST_PAGE_SIZE = 10;
 const AUDIT_PAGE_SIZE = 12;
 const FEEDBACK_PAGE_SIZE = 8;
+const VOCABULARY_PAGE_SIZE = 20;
 const BAN_PERMISSION_LABELS: Record<string, string> = {
   post: '发帖',
   comment: '回帖',
@@ -50,7 +51,7 @@ const StatCard: React.FC<{ title: string; value: string; trend: string; trendUp:
 );
 
 const AdminDashboard: React.FC = () => {
-  const { state, handleReport, showToast, getPendingReports, loadReports, loadStats, logoutAdmin } = useApp();
+  const { state, handleReport, showToast, getPendingReports, loadReports, loadStats, loadSettings, logoutAdmin } = useApp();
   const [currentView, setCurrentView] = useState<AdminView>('overview');
   const [searchQuery, setSearchQuery] = useState('');
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -71,6 +72,16 @@ const AdminDashboard: React.FC = () => {
   const [announcementLoading, setAnnouncementLoading] = useState(false);
   const [announcementSubmitting, setAnnouncementSubmitting] = useState(false);
   const [announcementUpdatedAt, setAnnouncementUpdatedAt] = useState<number | null>(null);
+  const [settingsLoading, setSettingsLoading] = useState(false);
+  const [settingsSubmitting, setSettingsSubmitting] = useState(false);
+  const [turnstileEnabled, setTurnstileEnabled] = useState(true);
+  const [vocabularyLoading, setVocabularyLoading] = useState(false);
+  const [vocabularySubmitting, setVocabularySubmitting] = useState(false);
+  const [vocabularyItems, setVocabularyItems] = useState<Array<{ id: number; word: string; enabled: boolean; updatedAt: number }>>([]);
+  const [vocabularySearch, setVocabularySearch] = useState('');
+  const [vocabularyPage, setVocabularyPage] = useState(1);
+  const [vocabularyTotal, setVocabularyTotal] = useState(0);
+  const [vocabularyNewWord, setVocabularyNewWord] = useState('');
   const [editModal, setEditModal] = useState<{
     isOpen: boolean;
     postId: string;
@@ -171,6 +182,7 @@ const AdminDashboard: React.FC = () => {
       value: state.stats.weeklyPosts[i] || 0
     })), [state.stats.weeklyPosts]);
   const totalWeeklyVisits = useMemo(() => visitData.reduce((sum, item) => sum + item.value, 0), [visitData]);
+  const totalVocabularyPages = Math.max(Math.ceil(vocabularyTotal / VOCABULARY_PAGE_SIZE), 1);
 
   const pendingReports = getPendingReports();
   const processedReports = state.reports.filter(r => r.status !== 'pending');
@@ -216,6 +228,7 @@ const AdminDashboard: React.FC = () => {
       return fields.some((field) => field.toLowerCase().includes(query));
     });
   }, [bannedFingerprints, bannedIps, banSearch]);
+
 
   const fetchAdminPosts = useCallback(async () => {
     setPostLoading(true);
@@ -331,6 +344,39 @@ const AdminDashboard: React.FC = () => {
     }
   }, [showToast]);
 
+  const fetchSettings = useCallback(async () => {
+    setSettingsLoading(true);
+    try {
+      const data = await api.getAdminSettings();
+      setTurnstileEnabled(Boolean(data?.turnstileEnabled));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '设置加载失败';
+      showToast(message, 'error');
+    } finally {
+      setSettingsLoading(false);
+    }
+  }, [showToast]);
+
+  const fetchVocabulary = useCallback(async (options?: { page?: number; search?: string }) => {
+    setVocabularyLoading(true);
+    try {
+      const pageValue = options?.page ?? vocabularyPage;
+      const searchValue = options?.search ?? vocabularySearch;
+      const data = await api.getAdminVocabulary({
+        search: searchValue,
+        page: pageValue,
+        limit: VOCABULARY_PAGE_SIZE,
+      });
+      setVocabularyItems(Array.isArray(data?.items) ? data.items : []);
+      setVocabularyTotal(Number(data?.total || 0));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '违禁词加载失败';
+      showToast(message, 'error');
+    } finally {
+      setVocabularyLoading(false);
+    }
+  }, [showToast, vocabularyPage, vocabularySearch]);
+
   useEffect(() => {
     if (currentView !== 'posts') {
       return;
@@ -381,6 +427,24 @@ const AdminDashboard: React.FC = () => {
     }, 300);
     return () => clearTimeout(timer);
   }, [currentView, fetchAnnouncement]);
+
+  useEffect(() => {
+    if (currentView !== 'settings') {
+      return;
+    }
+    const timer = setTimeout(() => {
+      fetchSettings().catch(() => { });
+      fetchVocabulary().catch(() => { });
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [currentView, fetchSettings, fetchVocabulary]);
+
+  useEffect(() => {
+    if (currentView !== 'settings') {
+      return;
+    }
+    fetchVocabulary().catch(() => { });
+  }, [currentView, fetchVocabulary, vocabularyPage, vocabularySearch]);
 
   useEffect(() => {
     setSelectedPosts(new Set());
@@ -929,6 +993,112 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
+  const handleSettingsSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setSettingsSubmitting(true);
+    try {
+      const data = await api.updateAdminSettings(turnstileEnabled);
+      setTurnstileEnabled(Boolean(data?.turnstileEnabled));
+      loadSettings().catch(() => {});
+      showToast('设置已更新', 'success');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '设置保存失败';
+      showToast(message, 'error');
+    } finally {
+      setSettingsSubmitting(false);
+    }
+  };
+
+  const handleVocabularyAdd = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const word = vocabularyNewWord.trim();
+    if (!word) {
+      showToast('请输入违禁词', 'warning');
+      return;
+    }
+    setVocabularySubmitting(true);
+    try {
+      await api.addAdminVocabulary(word);
+      setVocabularyNewWord('');
+      setVocabularyPage(1);
+      await fetchVocabulary({ page: 1 });
+      showToast('已添加违禁词', 'success');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '违禁词添加失败';
+      showToast(message, 'error');
+    } finally {
+      setVocabularySubmitting(false);
+    }
+  };
+
+  const handleVocabularyToggle = async (id: number, enabled: boolean) => {
+    setVocabularySubmitting(true);
+    try {
+      await api.toggleAdminVocabulary(id, enabled);
+      await fetchVocabulary();
+      showToast(enabled ? '已启用' : '已停用', 'success');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '更新失败';
+      showToast(message, 'error');
+    } finally {
+      setVocabularySubmitting(false);
+    }
+  };
+
+  const handleVocabularyDelete = async (id: number) => {
+    if (!window.confirm('确认删除该词？')) {
+      return;
+    }
+    setVocabularySubmitting(true);
+    try {
+      await api.deleteAdminVocabulary(id);
+      await fetchVocabulary();
+      showToast('已删除', 'success');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '删除失败';
+      showToast(message, 'error');
+    } finally {
+      setVocabularySubmitting(false);
+    }
+  };
+
+  const handleVocabularyImport = async () => {
+    setVocabularySubmitting(true);
+    try {
+      const data = await api.importAdminVocabulary();
+      await fetchVocabulary();
+      showToast(`已导入 ${Number(data?.added || 0)} / ${Number(data?.total || 0)} 条`, 'success');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '导入失败';
+      showToast(message, 'error');
+    } finally {
+      setVocabularySubmitting(false);
+    }
+  };
+
+  const handleVocabularyExport = async () => {
+    setVocabularySubmitting(true);
+    try {
+      const data = await api.exportAdminVocabulary();
+      const content = String(data?.content || '');
+      if (!content) {
+        showToast('暂无可导出词', 'warning');
+        return;
+      }
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(content);
+        showToast('已复制到剪贴板', 'success');
+      } else {
+        showToast('浏览器不支持剪贴板', 'warning');
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '导出失败';
+      showToast(message, 'error');
+    } finally {
+      setVocabularySubmitting(false);
+    }
+  };
+
   const formatAnnouncementTime = (value: number | null) => {
     if (!value) {
       return '';
@@ -981,17 +1151,18 @@ const AdminDashboard: React.FC = () => {
             </div>
           </div>
 
-          <nav className="flex flex-col gap-3 font-sans font-bold text-sm">
-            <NavItem view="overview" icon={<LayoutDashboard size={18} />} label="概览" />
-            <NavItem view="posts" icon={<FileText size={18} />} label="帖子管理" />
-            <NavItem view="compose" icon={<PenSquare size={18} />} label="后台投稿" />
-            <NavItem view="announcement" icon={<Bell size={18} />} label="公告发布" />
-            <NavItem view="feedback" icon={<MessageSquare size={18} />} label="留言管理" badge={feedbackUnreadCount} />
-            <NavItem view="reports" icon={<Flag size={18} />} label="待处理举报" badge={pendingReports.length} />
-            <NavItem view="processed" icon={<Gavel size={18} />} label="已处理" />
-            <NavItem view="bans" icon={<Shield size={18} />} label="封禁管理" />
-            <NavItem view="audit" icon={<ClipboardList size={18} />} label="操作审计" />
-          </nav>
+            <nav className="flex flex-col gap-3 font-sans font-bold text-sm">
+              <NavItem view="overview" icon={<LayoutDashboard size={18} />} label="概览" />
+              <NavItem view="posts" icon={<FileText size={18} />} label="帖子管理" />
+              <NavItem view="compose" icon={<PenSquare size={18} />} label="后台投稿" />
+              <NavItem view="announcement" icon={<Bell size={18} />} label="公告发布" />
+              <NavItem view="settings" icon={<Settings size={18} />} label="系统设置" />
+              <NavItem view="feedback" icon={<MessageSquare size={18} />} label="留言管理" badge={feedbackUnreadCount} />
+              <NavItem view="reports" icon={<Flag size={18} />} label="待处理举报" badge={pendingReports.length} />
+              <NavItem view="processed" icon={<Gavel size={18} />} label="已处理" />
+              <NavItem view="bans" icon={<Shield size={18} />} label="封禁管理" />
+              <NavItem view="audit" icon={<ClipboardList size={18} />} label="操作审计" />
+            </nav>
         </div>
         <div className="mt-auto p-6 border-t-2 border-ink/10">
           <button
@@ -1020,14 +1191,15 @@ const AdminDashboard: React.FC = () => {
             </button>
             <h2 className="text-xl sm:text-2xl font-display flex items-center gap-2 flex-wrap">
               {currentView === 'overview' && <><LayoutDashboard /> 概览</>}
-              {currentView === 'posts' && <><FileText /> 帖子管理</>}
-              {currentView === 'compose' && <><PenSquare /> 后台投稿</>}
-              {currentView === 'announcement' && <><Bell /> 公告发布</>}
-              {currentView === 'feedback' && <><MessageSquare /> 留言管理</>}
-              {currentView === 'reports' && <><Flag /> 待处理举报</>}
-              {currentView === 'processed' && <><Gavel /> 已处理</>}
-              {currentView === 'bans' && <><Shield /> 封禁管理</>}
-              {currentView === 'audit' && <><ClipboardList /> 操作审计</>}
+                {currentView === 'posts' && <><FileText /> 帖子管理</>}
+                {currentView === 'compose' && <><PenSquare /> 后台投稿</>}
+                {currentView === 'announcement' && <><Bell /> 公告发布</>}
+                {currentView === 'settings' && <><Settings /> 系统设置</>}
+                {currentView === 'feedback' && <><MessageSquare /> 留言管理</>}
+                {currentView === 'reports' && <><Flag /> 待处理举报</>}
+                {currentView === 'processed' && <><Gavel /> 已处理</>}
+                {currentView === 'bans' && <><Shield /> 封禁管理</>}
+                {currentView === 'audit' && <><ClipboardList /> 操作审计</>}
             </h2>
           </div>
           <div className="flex flex-wrap sm:flex-nowrap items-center gap-3 w-full sm:w-auto">
@@ -1093,17 +1265,18 @@ const AdminDashboard: React.FC = () => {
                   <X size={16} />
                 </button>
               </div>
-              <nav className="flex flex-col gap-3 font-sans font-bold text-sm">
-                <NavItem view="overview" icon={<LayoutDashboard size={18} />} label="概览" onSelect={() => setMobileNavOpen(false)} />
-                <NavItem view="posts" icon={<FileText size={18} />} label="帖子管理" onSelect={() => setMobileNavOpen(false)} />
-                <NavItem view="compose" icon={<PenSquare size={18} />} label="后台投稿" onSelect={() => setMobileNavOpen(false)} />
-                <NavItem view="announcement" icon={<Bell size={18} />} label="公告发布" onSelect={() => setMobileNavOpen(false)} />
-                <NavItem view="feedback" icon={<MessageSquare size={18} />} label="留言管理" badge={feedbackUnreadCount} onSelect={() => setMobileNavOpen(false)} />
-                <NavItem view="reports" icon={<Flag size={18} />} label="待处理举报" badge={pendingReports.length} onSelect={() => setMobileNavOpen(false)} />
-                <NavItem view="processed" icon={<Gavel size={18} />} label="已处理" onSelect={() => setMobileNavOpen(false)} />
-                <NavItem view="bans" icon={<Shield size={18} />} label="封禁管理" onSelect={() => setMobileNavOpen(false)} />
-                <NavItem view="audit" icon={<ClipboardList size={18} />} label="操作审计" onSelect={() => setMobileNavOpen(false)} />
-              </nav>
+                <nav className="flex flex-col gap-3 font-sans font-bold text-sm">
+                  <NavItem view="overview" icon={<LayoutDashboard size={18} />} label="概览" onSelect={() => setMobileNavOpen(false)} />
+                  <NavItem view="posts" icon={<FileText size={18} />} label="帖子管理" onSelect={() => setMobileNavOpen(false)} />
+                  <NavItem view="compose" icon={<PenSquare size={18} />} label="后台投稿" onSelect={() => setMobileNavOpen(false)} />
+                  <NavItem view="announcement" icon={<Bell size={18} />} label="公告发布" onSelect={() => setMobileNavOpen(false)} />
+                  <NavItem view="settings" icon={<Settings size={18} />} label="系统设置" onSelect={() => setMobileNavOpen(false)} />
+                  <NavItem view="feedback" icon={<MessageSquare size={18} />} label="留言管理" badge={feedbackUnreadCount} onSelect={() => setMobileNavOpen(false)} />
+                  <NavItem view="reports" icon={<Flag size={18} />} label="待处理举报" badge={pendingReports.length} onSelect={() => setMobileNavOpen(false)} />
+                  <NavItem view="processed" icon={<Gavel size={18} />} label="已处理" onSelect={() => setMobileNavOpen(false)} />
+                  <NavItem view="bans" icon={<Shield size={18} />} label="封禁管理" onSelect={() => setMobileNavOpen(false)} />
+                  <NavItem view="audit" icon={<ClipboardList size={18} />} label="操作审计" onSelect={() => setMobileNavOpen(false)} />
+                </nav>
               <div className="mt-auto pt-6 border-t-2 border-ink/10">
                 <button
                   onClick={() => {
@@ -1589,6 +1762,170 @@ const AdminDashboard: React.FC = () => {
                     </div>
                   </div>
                 </form>
+              </section>
+            )}
+
+            {/* Settings View */}
+            {currentView === 'settings' && (
+              <section className="space-y-6">
+                <form
+                  onSubmit={handleSettingsSubmit}
+                  className="bg-white p-6 border-2 border-ink rounded-lg shadow-sketch-sm"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+                    <div>
+                      <h3 className="font-display text-xl">Cloudflare 验证码</h3>
+                      <p className="text-xs text-pencil font-sans">保存后立即生效，无需重启服务</p>
+                    </div>
+                  </div>
+                  <label className="flex items-center gap-3 text-sm font-sans">
+                    <input
+                      type="checkbox"
+                      className="w-4 h-4"
+                      checked={turnstileEnabled}
+                      onChange={(e) => setTurnstileEnabled(e.target.checked)}
+                      disabled={settingsLoading || settingsSubmitting}
+                    />
+                    <span>启用 Turnstile 验证</span>
+                  </label>
+                  <div className="flex justify-end mt-4">
+                    <SketchButton
+                      type="submit"
+                      className="h-10 px-6 text-sm"
+                      disabled={settingsSubmitting || settingsLoading}
+                    >
+                      {settingsSubmitting ? '保存中...' : '保存设置'}
+                    </SketchButton>
+                  </div>
+                </form>
+
+                <div className="bg-white p-6 border-2 border-ink rounded-lg shadow-sketch-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+                    <div>
+                      <h3 className="font-display text-xl">违禁词库</h3>
+                      <p className="text-xs text-pencil font-sans">保存后立即生效，无需重启服务</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <SketchButton
+                        type="button"
+                        variant="secondary"
+                        className="h-9 px-4 text-sm"
+                        onClick={handleVocabularyImport}
+                        disabled={vocabularySubmitting || vocabularyLoading}
+                      >
+                        从TXT导入
+                      </SketchButton>
+                      <SketchButton
+                        type="button"
+                        variant="secondary"
+                        className="h-9 px-4 text-sm"
+                        onClick={handleVocabularyExport}
+                        disabled={vocabularySubmitting || vocabularyLoading}
+                      >
+                        导出到剪贴板
+                      </SketchButton>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-3 mb-4">
+                    <input
+                      value={vocabularySearch}
+                      onChange={(e) => {
+                        setVocabularySearch(e.target.value);
+                        setVocabularyPage(1);
+                      }}
+                      placeholder="搜索违禁词..."
+                      className="flex-1 min-w-[180px] bg-transparent border-2 border-gray-200 rounded-lg outline-none font-sans text-sm text-ink placeholder:text-pencil/40 px-3 py-2 focus:border-ink transition-colors"
+                      disabled={vocabularyLoading || vocabularySubmitting}
+                    />
+                    <form onSubmit={handleVocabularyAdd} className="flex items-center gap-2">
+                      <input
+                        value={vocabularyNewWord}
+                        onChange={(e) => setVocabularyNewWord(e.target.value)}
+                        placeholder="新增违禁词"
+                        className="min-w-[160px] bg-transparent border-2 border-gray-200 rounded-lg outline-none font-sans text-sm text-ink placeholder:text-pencil/40 px-3 py-2 focus:border-ink transition-colors"
+                        disabled={vocabularyLoading || vocabularySubmitting}
+                      />
+                      <SketchButton
+                        type="submit"
+                        className="h-9 px-4 text-sm"
+                        disabled={vocabularySubmitting || vocabularyLoading}
+                      >
+                        添加
+                      </SketchButton>
+                    </form>
+                  </div>
+
+                  <div className="flex items-center justify-between text-xs text-pencil font-sans mb-3">
+                    <span>共 {vocabularyTotal} 条</span>
+                    <span>第 {vocabularyPage} / {totalVocabularyPages} 页</span>
+                  </div>
+
+                  {vocabularyLoading ? (
+                    <div className="text-center py-10 bg-gray-50 border-2 border-dashed border-gray-200 rounded-lg text-pencil font-hand">
+                      正在加载违禁词...
+                    </div>
+                  ) : vocabularyItems.length === 0 ? (
+                    <div className="text-center py-10 bg-gray-50 border-2 border-dashed border-gray-200 rounded-lg text-pencil font-hand">
+                      暂无匹配的违禁词
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-3">
+                      {vocabularyItems.map((item) => (
+                        <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 border-2 border-ink/10 rounded-lg px-4 py-3">
+                          <div className="flex items-center gap-3">
+                            <span className="font-sans text-ink text-sm font-semibold">{item.word}</span>
+                            <Badge color={item.enabled ? 'bg-highlight' : 'bg-gray-200'}>
+                              {item.enabled ? '启用' : '停用'}
+                            </Badge>
+                            <span className="text-xs text-pencil font-sans">更新：{formatAnnouncementTime(item.updatedAt)}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <SketchButton
+                              type="button"
+                              variant="secondary"
+                              className="h-8 px-3 text-xs"
+                              onClick={() => handleVocabularyToggle(item.id, !item.enabled)}
+                              disabled={vocabularySubmitting}
+                            >
+                              {item.enabled ? '停用' : '启用'}
+                            </SketchButton>
+                            <SketchButton
+                              type="button"
+                              variant="danger"
+                              className="h-8 px-3 text-xs"
+                              onClick={() => handleVocabularyDelete(item.id)}
+                              disabled={vocabularySubmitting}
+                            >
+                              删除
+                            </SketchButton>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between mt-4 text-xs text-pencil font-sans">
+                    <SketchButton
+                      type="button"
+                      variant="secondary"
+                      className="h-8 px-3 text-xs"
+                      disabled={vocabularyPage <= 1 || vocabularyLoading}
+                      onClick={() => setVocabularyPage((prev) => Math.max(prev - 1, 1))}
+                    >
+                      上一页
+                    </SketchButton>
+                    <SketchButton
+                      type="button"
+                      variant="secondary"
+                      className="h-8 px-3 text-xs"
+                      disabled={vocabularyPage >= totalVocabularyPages || vocabularyLoading}
+                      onClick={() => setVocabularyPage((prev) => Math.min(prev + 1, totalVocabularyPages))}
+                    >
+                      下一页
+                    </SketchButton>
+                  </div>
+                </div>
               </section>
             )}
 

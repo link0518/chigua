@@ -10,6 +10,7 @@ import Modal from './components/Modal';
 import MarkdownRenderer from './components/MarkdownRenderer';
 import { api } from './api';
 import { Menu, X } from 'lucide-react';
+import { useApp } from './store/AppContext';
 
 const normalizePath = (path: string) => {
   if (!path || path === '/') {
@@ -38,6 +39,7 @@ const getPathForView = (view: ViewType) => {
 };
 
 const App: React.FC = () => {
+  const { loadSettings } = useApp();
   const [currentView, setCurrentView] = useState<ViewType>(() => resolveViewFromPath(window.location.pathname));
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [announcementOpen, setAnnouncementOpen] = useState(false);
@@ -96,6 +98,10 @@ const App: React.FC = () => {
         setAccessChecked(true);
       });
   }, []);
+
+  useEffect(() => {
+    loadSettings().catch(() => {});
+  }, [loadSettings]);
 
   useEffect(() => {
     let active = true;

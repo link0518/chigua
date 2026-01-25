@@ -25,7 +25,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
   contentPreview,
   focusCommentId,
 }) => {
-  const { addComment, showToast } = useApp();
+  const { addComment, showToast, state } = useApp();
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -46,6 +46,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const turnstileRef = useRef<TurnstileHandle | null>(null);
   const pageSize = 10;
+  const turnstileEnabled = state.settings.turnstileEnabled;
 
   useEffect(() => {
     if (!isOpen || !postId) return;
@@ -244,10 +245,13 @@ const CommentModal: React.FC<CommentModalProps> = ({
 
     setSubmitting(true);
     try {
-      if (!turnstileRef.current) {
-        throw new Error('安全验证加载中，请稍后再试');
+      let turnstileToken = '';
+      if (turnstileEnabled) {
+        if (!turnstileRef.current) {
+          throw new Error('安全验证加载中，请稍后再试');
+        }
+        turnstileToken = await turnstileRef.current.execute();
       }
-      const turnstileToken = await turnstileRef.current.execute();
       const comment = await addComment(postId, trimmed, turnstileToken, replyToId, replyToId);
       let effectiveParentId = comment.parentId || null;
       if (replyToId) {
@@ -506,7 +510,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
         </div>
       </form>
 
-      <Turnstile ref={turnstileRef} action="comment" enabled={isOpen} />
+      <Turnstile ref={turnstileRef} action="comment" enabled={isOpen && turnstileEnabled} />
 
       <ReportModal
         isOpen={reportModal.isOpen}

@@ -163,6 +163,21 @@ CREATE TABLE IF NOT EXISTS announcements (
   updated_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS app_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS vocabulary_words (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  word TEXT NOT NULL,
+  normalized TEXT NOT NULL UNIQUE,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS post_edits (
   id TEXT PRIMARY KEY,
   post_id TEXT NOT NULL,
@@ -216,6 +231,8 @@ CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_action ON admin_audit_logs(actio
 CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_target ON admin_audit_logs(target_type, target_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_recipient_created_at ON notifications(recipient_fingerprint, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_notifications_recipient_read_at ON notifications(recipient_fingerprint, read_at);
+CREATE INDEX IF NOT EXISTS idx_vocabulary_enabled ON vocabulary_words(enabled);
+CREATE INDEX IF NOT EXISTS idx_vocabulary_updated_at ON vocabulary_words(updated_at);
 `);
 
 const ensureColumn = (table, column, definition) => {

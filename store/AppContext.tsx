@@ -25,6 +25,10 @@ interface AdminSession {
   disabled?: boolean;
 }
 
+interface AppSettings {
+  turnstileEnabled: boolean;
+}
+
 interface AppState {
   homePosts: Post[];
   homeTotal: number;
@@ -36,6 +40,7 @@ interface AppState {
   likedPosts: Set<string>;
   dislikedPosts: Set<string>;
   adminSession: AdminSession;
+  settings: AppSettings;
 }
 
 interface AppContextType {
@@ -59,6 +64,7 @@ interface AppContextType {
   loadFeedPosts: (filter?: 'week' | 'today' | 'all', search?: string) => Promise<void>;
   loadReports: () => Promise<void>;
   loadStats: () => Promise<void>;
+  loadSettings: () => Promise<void>;
   viewPost: (postId: string) => Promise<void>;
   loadAdminSession: () => Promise<void>;
   loginAdmin: (username: string, password: string) => Promise<void>;
@@ -89,6 +95,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     likedPosts: new Set(),
     dislikedPosts: new Set(),
     adminSession: { loggedIn: false, checked: false, disabled: false, csrfToken: null },
+    settings: { turnstileEnabled: true },
   });
 
   const showToast = useCallback((message: string, type: Toast['type'] = 'info') => {
@@ -184,6 +191,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         weeklyPosts: data.weeklyPosts ?? prev.stats.weeklyPosts,
         totalPosts: data.totalPosts ?? prev.stats.totalPosts,
         onlineCount: data.onlineCount ?? prev.stats.onlineCount,
+      },
+    }));
+  }, []);
+
+  const loadSettings = useCallback(async () => {
+    const data = await api.getPublicSettings();
+    setState((prev) => ({
+      ...prev,
+      settings: {
+        turnstileEnabled: typeof data?.turnstileEnabled === 'boolean'
+          ? data.turnstileEnabled
+          : prev.settings.turnstileEnabled,
       },
     }));
   }, []);
@@ -417,6 +436,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       loadFeedPosts,
       loadReports,
       loadStats,
+      loadSettings,
       viewPost,
       loadAdminSession,
       loginAdmin,
@@ -444,6 +464,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       loadFeedPosts,
       loadReports,
       loadStats,
+      loadSettings,
       viewPost,
       loadAdminSession,
       loginAdmin,

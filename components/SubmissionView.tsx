@@ -6,15 +6,19 @@ import MarkdownRenderer from './MarkdownRenderer';
 import Turnstile, { TurnstileHandle } from './Turnstile';
 
 const SubmissionView: React.FC = () => {
-  const { addPost, showToast } = useApp();
+  const { addPost, showToast, state } = useApp();
   const [text, setText] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const turnstileRef = useRef<TurnstileHandle | null>(null);
   const maxLength = 2000;
+  const turnstileEnabled = state.settings.turnstileEnabled;
 
   const requestTurnstileToken = async () => {
+    if (!turnstileEnabled) {
+      return '';
+    }
     if (!turnstileRef.current) {
       throw new Error('安全验证加载中，请稍后再试');
     }
@@ -181,7 +185,7 @@ const SubmissionView: React.FC = () => {
             </div>
           </form>
 
-          <Turnstile ref={turnstileRef} action="post" />
+          <Turnstile ref={turnstileRef} action="post" enabled={turnstileEnabled} />
         </SketchCard>
 
         {/* Markdown Help */}

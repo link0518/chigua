@@ -64,6 +64,40 @@ if (!SESSION_SECRET) {
   console.warn('SESSION_SECRET 未配置，已生成临时密钥（后台将被禁用）');
 }
 
+const SETTINGS_KEY_TURNSTILE_ENABLED = 'turnstile_enabled';
+
+const getSetting = (key) => {
+  const row = db.prepare('SELECT value FROM app_settings WHERE key = ?').get(key);
+  return row?.value ?? null;
+};
+
+const upsertSetting = (key, value) => {
+  const now = Date.now();
+  db.prepare(
+    `
+    INSERT INTO app_settings (key, value, updated_at)
+    VALUES (?, ?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+    `
+  ).run(key, value, now);
+};
+
+const resolveTurnstileEnabled = () => {
+  const stored = getSetting(SETTINGS_KEY_TURNSTILE_ENABLED);
+  if (stored === null || stored === undefined) {
+    const fallback = Boolean(TURNSTILE_SECRET_KEY);
+    upsertSetting(SETTINGS_KEY_TURNSTILE_ENABLED, fallback ? '1' : '0');
+    return fallback;
+  }
+  return String(stored).trim() === '1';
+};
+
+let turnstileEnabled = resolveTurnstileEnabled();
+const setTurnstileEnabled = (enabled) => {
+  turnstileEnabled = Boolean(enabled);
+  upsertSetting(SETTINGS_KEY_TURNSTILE_ENABLED, turnstileEnabled ? '1' : '0');
+};
+
 const PUBLIC_DIR = path.resolve(process.cwd(), 'public');
 const DIST_DIR = path.resolve(process.cwd(), 'dist');
 const SNAPSHOT_DIR = path.join(DIST_DIR, 'post');
@@ -247,42 +281,99 @@ const normalizeText = (text) => {
     .toLowerCase();
 };
 
+const buildVocabularyFromFiles = () => {
+  if (!fs.existsSync(vocabularyDir)) {
+    return [];
+  }
+  const entries = fs.readdirSync(vocabularyDir, { withFileTypes: true });
+  const words = [];
+  entries.forEach((entry) => {
+    if (!entry.isFile() || !entry.name.endsWith('.txt')) {
+      return;
+    }
+    const filePath = path.join(vocabularyDir, entry.name);
+    const content = fs.readFileSync(filePath, 'utf8').replace(/^\uFEFF/, '');
+    content
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith('#'))
+      .forEach((line) => {
+        const normalized = normalizeText(line);
+        if (normalized) {
+          words.push({ word: line, normalized });
+        }
+      });
+  });
+  return words;
+};
+
+const reloadVocabulary = () => {
+  const now = Date.now();
+  try {
+    const rows = db.prepare('SELECT normalized FROM vocabulary_words WHERE enabled = 1').all();
+    cachedVocabulary = rows.map((row) => row.normalized).filter(Boolean);
+  } catch (error) {
+    console.error('Vocabulary load failed:', error);
+    cachedVocabulary = [];
+  }
+  lastVocabularyReload = now;
+  return cachedVocabulary;
+};
+
 const loadVocabulary = () => {
   const now = Date.now();
   if (now - lastVocabularyReload < VOCABULARY_TTL_MS && cachedVocabulary.length) {
     return cachedVocabulary;
   }
+  return reloadVocabulary();
+};
 
-  try {
-    const entries = fs.readdirSync(vocabularyDir, { withFileTypes: true });
-    const words = [];
-    entries.forEach((entry) => {
-      if (!entry.isFile() || !entry.name.endsWith('.txt')) {
-        return;
-      }
-      const filePath = path.join(vocabularyDir, entry.name);
-      const content = fs.readFileSync(filePath, 'utf8').replace(/^\uFEFF/, '');
-      content
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter((line) => line && !line.startsWith('#'))
-        .forEach((line) => {
-          const normalized = normalizeText(line);
-          if (normalized) {
-            words.push(normalized);
-          }
-        });
-    });
-
-    cachedVocabulary = Array.from(new Set(words));
-    lastVocabularyReload = now;
-    return cachedVocabulary;
-  } catch (error) {
-    console.error('Vocabulary load failed:', error);
-    cachedVocabulary = [];
-    lastVocabularyReload = now;
-    return cachedVocabulary;
+const seedVocabularyFromFiles = () => {
+  const existing = db.prepare('SELECT COUNT(1) AS count FROM vocabulary_words').get();
+  if (existing?.count > 0) {
+    return 0;
   }
+  const items = buildVocabularyFromFiles();
+  if (!items.length) {
+    return 0;
+  }
+  const now = Date.now();
+  const insert = db.prepare(
+    'INSERT OR IGNORE INTO vocabulary_words (word, normalized, enabled, created_at, updated_at) VALUES (?, ?, 1, ?, ?)'
+  );
+  let added = 0;
+  const tx = db.transaction((entries) => {
+    entries.forEach((entry) => {
+      const result = insert.run(entry.word, entry.normalized, now, now);
+      added += result.changes || 0;
+    });
+  });
+  tx(items);
+  reloadVocabulary();
+  return added;
+};
+
+seedVocabularyFromFiles();
+
+const importVocabularyFromFiles = () => {
+  const items = buildVocabularyFromFiles();
+  if (!items.length) {
+    return { added: 0, total: 0 };
+  }
+  const now = Date.now();
+  const insert = db.prepare(
+    'INSERT OR IGNORE INTO vocabulary_words (word, normalized, enabled, created_at, updated_at) VALUES (?, ?, 1, ?, ?)'
+  );
+  let added = 0;
+  const tx = db.transaction((entries) => {
+    entries.forEach((entry) => {
+      const result = insert.run(entry.word, entry.normalized, now, now);
+      added += result.changes || 0;
+    });
+  });
+  tx(items);
+  reloadVocabulary();
+  return { added, total: items.length };
 };
 
 const containsSensitiveWord = (text) => {
@@ -448,6 +539,9 @@ const createNotification = ({ recipientFingerprint, type, postId, commentId, pre
 const verifyTurnstile = async (token, req, expectedAction) => {
   if (String(process.env.TURNSTILE_BYPASS || '').trim() === '1') {
     return { ok: true, bypass: true };
+  }
+  if (!turnstileEnabled) {
+    return { ok: true, disabled: true };
   }
   if (!TURNSTILE_SECRET_KEY) {
     return { ok: false, status: 500, error: '安全验证未配置' };
@@ -908,6 +1002,12 @@ app.get('/api/access', (req, res) => {
     viewBlocked,
     permissions,
     expiresAt,
+  });
+});
+
+app.get('/api/settings', (req, res) => {
+  return res.json({
+    turnstileEnabled,
   });
 });
 
@@ -2777,6 +2877,169 @@ app.post('/api/admin/announcement/clear', requireAdmin, requireAdminCsrf, (req, 
     reason: null,
   });
   return res.json({ content: '', updatedAt: null });
+});
+
+app.get('/api/admin/settings', requireAdmin, (req, res) => {
+  return res.json({
+    turnstileEnabled,
+  });
+});
+
+app.post('/api/admin/settings', requireAdmin, requireAdminCsrf, (req, res) => {
+  const raw = req.body?.turnstileEnabled;
+  if (typeof raw !== 'boolean') {
+    return res.status(400).json({ error: '参数格式错误' });
+  }
+  const before = turnstileEnabled;
+  setTurnstileEnabled(raw);
+  logAdminAction(req, {
+    action: 'settings_update',
+    targetType: 'settings',
+    targetId: SETTINGS_KEY_TURNSTILE_ENABLED,
+    before: { turnstileEnabled: before },
+    after: { turnstileEnabled },
+  });
+  return res.json({ turnstileEnabled });
+});
+
+app.get('/api/admin/vocabulary', requireAdmin, (req, res) => {
+  const search = String(req.query.search || '').trim();
+  const page = Math.max(Number(req.query.page || 1), 1);
+  const limit = Math.min(Math.max(Number(req.query.limit || 20), 1), 200);
+  const offset = (page - 1) * limit;
+  const conditions = [];
+  const params = [];
+  if (search) {
+    conditions.push('(word LIKE ? OR normalized LIKE ?)');
+    const keyword = `%${search}%`;
+    params.push(keyword, keyword);
+  }
+  const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  const rows = db
+    .prepare(
+      `
+      SELECT id, word, normalized, enabled, created_at, updated_at
+      FROM vocabulary_words
+      ${whereClause}
+      ORDER BY updated_at DESC
+      LIMIT ? OFFSET ?
+      `
+    )
+    .all(...params, limit, offset);
+  const totalRow = db
+    .prepare(`SELECT COUNT(1) AS count FROM vocabulary_words ${whereClause}`)
+    .get(...params);
+  return res.json({
+    items: rows.map((row) => ({
+      id: row.id,
+      word: row.word,
+      normalized: row.normalized,
+      enabled: Boolean(row.enabled),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    })),
+    total: totalRow?.count || 0,
+    page,
+    limit,
+  });
+});
+
+app.post('/api/admin/vocabulary', requireAdmin, requireAdminCsrf, (req, res) => {
+  const word = String(req.body?.word || '').trim();
+  if (!word) {
+    return res.status(400).json({ error: '词不能为空' });
+  }
+  const normalized = normalizeText(word);
+  if (!normalized) {
+    return res.status(400).json({ error: '词格式不正确' });
+  }
+  const now = Date.now();
+  const existing = db.prepare('SELECT id, enabled, word FROM vocabulary_words WHERE normalized = ?').get(normalized);
+  let id = existing?.id || null;
+  let before = null;
+  if (existing) {
+    before = { word: existing.word, enabled: Boolean(existing.enabled) };
+    db.prepare('UPDATE vocabulary_words SET word = ?, enabled = 1, updated_at = ? WHERE id = ?')
+      .run(word, now, existing.id);
+    id = existing.id;
+  } else {
+    const result = db
+      .prepare('INSERT INTO vocabulary_words (word, normalized, enabled, created_at, updated_at) VALUES (?, ?, 1, ?, ?)')
+      .run(word, normalized, now, now);
+    id = Number(result.lastInsertRowid);
+  }
+  reloadVocabulary();
+  logAdminAction(req, {
+    action: existing ? 'vocabulary_update' : 'vocabulary_add',
+    targetType: 'vocabulary',
+    targetId: String(id),
+    before,
+    after: { word, enabled: true },
+  });
+  return res.json({ id, word, normalized, enabled: true, updatedAt: now });
+});
+
+app.post('/api/admin/vocabulary/:id/toggle', requireAdmin, requireAdminCsrf, (req, res) => {
+  const id = Number(req.params.id || 0);
+  if (!id) {
+    return res.status(400).json({ error: '参数错误' });
+  }
+  const enabled = Boolean(req.body?.enabled);
+  const row = db.prepare('SELECT id, word, enabled FROM vocabulary_words WHERE id = ?').get(id);
+  if (!row) {
+    return res.status(404).json({ error: '词不存在' });
+  }
+  const now = Date.now();
+  db.prepare('UPDATE vocabulary_words SET enabled = ?, updated_at = ? WHERE id = ?')
+    .run(enabled ? 1 : 0, now, id);
+  reloadVocabulary();
+  logAdminAction(req, {
+    action: 'vocabulary_toggle',
+    targetType: 'vocabulary',
+    targetId: String(id),
+    before: { word: row.word, enabled: Boolean(row.enabled) },
+    after: { word: row.word, enabled },
+  });
+  return res.json({ id, enabled });
+});
+
+app.post('/api/admin/vocabulary/:id/delete', requireAdmin, requireAdminCsrf, (req, res) => {
+  const id = Number(req.params.id || 0);
+  if (!id) {
+    return res.status(400).json({ error: '参数错误' });
+  }
+  const row = db.prepare('SELECT id, word, enabled FROM vocabulary_words WHERE id = ?').get(id);
+  if (!row) {
+    return res.status(404).json({ error: '词不存在' });
+  }
+  db.prepare('DELETE FROM vocabulary_words WHERE id = ?').run(id);
+  reloadVocabulary();
+  logAdminAction(req, {
+    action: 'vocabulary_delete',
+    targetType: 'vocabulary',
+    targetId: String(id),
+    before: { word: row.word, enabled: Boolean(row.enabled) },
+    after: null,
+  });
+  return res.json({ id });
+});
+
+app.post('/api/admin/vocabulary/import', requireAdmin, requireAdminCsrf, (req, res) => {
+  const result = importVocabularyFromFiles();
+  logAdminAction(req, {
+    action: 'vocabulary_import',
+    targetType: 'vocabulary',
+    targetId: 'files',
+    before: null,
+    after: { added: result.added, total: result.total },
+  });
+  return res.json(result);
+});
+
+app.get('/api/admin/vocabulary/export', requireAdmin, (req, res) => {
+  const rows = db.prepare('SELECT word FROM vocabulary_words WHERE enabled = 1 ORDER BY word ASC').all();
+  const content = rows.map((row) => row.word).join('\n');
+  return res.json({ content });
 });
 
 app.get('/api/admin/stats', requireAdmin, (req, res) => {
