@@ -84,13 +84,16 @@ renderer.del = function (token) {
 
 renderer.image = function (token) {
   const href = token.href || '';
-  if (!isAllowedImageUrl(href)) {
+  const normalizedHref = normalizeImageUrl(href);
+  if (!normalizedHref || !isAllowedImageUrl(normalizedHref)) {
     return '';
   }
-  const safeHref = escapeHtml(href);
+  const safeHref = escapeHtml(normalizedHref);
   const altText = escapeHtml(token.text || '');
   const titleAttr = token.title ? ` title="${escapeHtml(token.title)}"` : '';
-  return `<img src="${safeHref}" alt="${altText}"${titleAttr} class="max-w-full rounded-md border border-gray-200" loading="lazy" />`;
+  return `<a href="${safeHref}" target="_blank" rel="noopener noreferrer" class="markdown-image-link inline-block">
+    <img src="${safeHref}" alt="${altText}"${titleAttr} class="markdown-image max-w-full rounded-md border border-gray-200 cursor-zoom-in" loading="lazy" />
+  </a>`;
 };
 
 marked.setOptions({
@@ -125,6 +128,25 @@ const IMAGE_HOSTS = new Set(['img.zsix.de', 'ibed.933211.xyz']);
 let cachedPurifier: ReturnType<typeof createDOMPurify> | null = null;
 let purifierReady = false;
 
+const normalizeImageUrl = (value: string) => {
+  const trimmed = String(value || '').trim();
+  if (!trimmed) {
+    return '';
+  }
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+  try {
+    const url = new URL(`https://${trimmed}`);
+    if (!IMAGE_HOSTS.has(url.hostname)) {
+      return '';
+    }
+    return url.toString();
+  } catch {
+    return '';
+  }
+};
+
 const isAllowedImageSrc = (value: string) => {
   try {
     const url = new URL(value);
@@ -140,7 +162,11 @@ const isAllowedImageSrc = (value: string) => {
 const isAllowedImageUrl = (value: string) => {
   if (!value) return false;
   try {
-    const url = new URL(value.trim());
+    const normalized = normalizeImageUrl(value);
+    if (!normalized) {
+      return false;
+    }
+    const url = new URL(normalized);
     if (url.protocol !== 'https:' && url.protocol !== 'http:') {
       return false;
     }
@@ -158,13 +184,27 @@ const transformInlineTokens = (tokens: any[], inBlockquote: boolean): any[] => {
     if (!token) {
       return token;
     }
-    if (!inBlockquote && token.type === 'link' && isAllowedImageUrl(token.href || '')) {
-      return {
-        type: 'image',
-        href: token.href,
-        title: token.title || null,
-        text: token.text || '',
-      };
+    if (!inBlockquote && token.type === 'link') {
+      const normalizedHref = normalizeImageUrl(token.href || '');
+      if (normalizedHref && isAllowedImageUrl(normalizedHref)) {
+        return {
+          type: 'image',
+          href: normalizedHref,
+          title: token.title || null,
+          text: token.text || '',
+        };
+      }
+    }
+    if (!inBlockquote && token.type === 'text') {
+      const normalizedText = normalizeImageUrl(token.text || '');
+      if (normalizedText && isAllowedImageUrl(normalizedText)) {
+        return {
+          type: 'image',
+          href: normalizedText,
+          title: null,
+          text: '',
+        };
+      }
     }
     if (token.tokens && Array.isArray(token.tokens)) {
       token.tokens = transformInlineTokens(token.tokens, inBlockquote);

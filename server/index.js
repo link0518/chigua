@@ -383,7 +383,17 @@ const importVocabularyFromFiles = () => {
 };
 
 const containsSensitiveWord = (text) => {
-  const normalizedText = normalizeText(text);
+  const stripUrlsForSensitiveCheck = (value) => {
+    const input = String(value || '');
+    if (!input) return '';
+
+    // 避免图床/链接域名触发误判（例如域名包含被词库命中的子串）。
+    return input
+      .replace(/\bhttps?:\/\/[^\s)]+/gi, '')
+      .replace(/\b(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/[^\s]*)?/gi, '');
+  };
+
+  const normalizedText = normalizeText(stripUrlsForSensitiveCheck(text));
   if (!normalizedText) {
     return false;
   }

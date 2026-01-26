@@ -364,7 +364,10 @@ const CommentModal: React.FC<CommentModalProps> = ({
 
       {contentPreview && (
         <div className="p-3 bg-gray-50 border border-dashed border-ink rounded-lg mb-3 max-h-28 overflow-hidden">
-          <MarkdownRenderer content={contentPreview} className="markdown-preview text-sm text-pencil" />
+          <MarkdownRenderer
+            content={contentPreview}
+            className="markdown-preview text-sm text-pencil [&_.markdown-image-link]:block [&_.markdown-image]:max-h-32 md:[&_.markdown-image]:max-h-44 [&_.markdown-image]:object-contain [&_.markdown-image]:mx-auto [&_.markdown-image]:w-auto [&_.markdown-image]:!max-w-52 md:[&_.markdown-image]:!max-w-64"
+          />
         </div>
       )}
 
@@ -440,26 +443,29 @@ const CommentModal: React.FC<CommentModalProps> = ({
                       </div>
                     </div>
                     <div className={depth === 0 ? `text-[13px] mt-1 ${isDeleted ? 'text-gray-400 italic' : 'text-ink'}` : `text-[12px] mt-1 ${isDeleted ? 'text-gray-400 italic' : 'text-ink/90'}`}>
-                      <MarkdownRenderer content={item.content} className={depth === 0 ? 'leading-5' : 'leading-4'} />
+                      <MarkdownRenderer
+                        content={item.content}
+                        className={`${depth === 0 ? 'leading-5' : 'leading-4'} [&_.markdown-image-link]:block [&_.markdown-image]:max-h-32 md:[&_.markdown-image]:max-h-44 [&_.markdown-image]:object-contain [&_.markdown-image]:mx-auto [&_.markdown-image]:w-auto [&_.markdown-image]:!max-w-52 md:[&_.markdown-image]:!max-w-64`}
+                      />
                     </div>
-                        {depth === 0 && visibleReplies.length > 0 && (
-                          <div className="mt-2 rounded-md bg-gray-50 border border-gray-200 p-2 flex flex-col gap-2">
-                            {visibleReplies.map((reply) => (
-                              renderComment(reply, depth + 1, threadLabel, replyOrderMap || new Map())
-                            ))}
-                          </div>
-                        )}
-                        {depth === 0 && replies.length > 0 && (
-                          <div className={`mt-2 text-[12px] text-gray-500 ${isExpanded ? 'flex justify-end' : ''}`}>
-                            <button
-                              type="button"
-                              onClick={() => toggleThread(item.id)}
-                              className="hover:text-ink transition-colors"
-                            >
-                              {isExpanded ? '收起回复' : `查看 ${replies.length} 条回复`}
-                            </button>
-                          </div>
-                        )}
+                    {depth === 0 && visibleReplies.length > 0 && (
+                      <div className="mt-2 rounded-md bg-gray-50 border border-gray-200 p-2 flex flex-col gap-2">
+                        {visibleReplies.map((reply) => (
+                          renderComment(reply, depth + 1, threadLabel, replyOrderMap || new Map())
+                        ))}
+                      </div>
+                    )}
+                    {depth === 0 && replies.length > 0 && (
+                      <div className={`mt-2 text-[12px] text-gray-500 ${isExpanded ? 'flex justify-end' : ''}`}>
+                        <button
+                          type="button"
+                          onClick={() => toggleThread(item.id)}
+                          className="hover:text-ink transition-colors"
+                        >
+                          {isExpanded ? '收起回复' : `查看 ${replies.length} 条回复`}
+                        </button>
+                      </div>
+                    )}
                     <div className="border-b border-gray-100 mt-3" />
                   </div>
                 );
