@@ -214,11 +214,15 @@ app.get('/post/:id', (req, res, next) => {
 });
 
 app.get('/robots.txt', (req, res) => {
-  const filePath = path.join(PUBLIC_DIR, 'robots.txt');
-  if (!filePath.startsWith(PUBLIC_DIR) || !fs.existsSync(filePath)) {
-    return res.status(404).send('Not Found');
-  }
-  return res.sendFile(filePath);
+  const content = [
+    'User-agent: *',
+    'Allow: /',
+    '',
+    'Sitemap: https://jx3gua.com/sitemap.xml',
+    'Sitemap: https://933211.xyz/sitemap.xml',
+    '',
+  ].join('\n');
+  return res.type('text/plain').send(content);
 });
 
 app.get('/sitemap.xml', (req, res) => {

@@ -1,4 +1,5 @@
 User-agent: *
 Allow: /
 
+Sitemap: https://jx3gua.com/sitemap.xml
 Sitemap: https://933211.xyz/sitemap.xml
