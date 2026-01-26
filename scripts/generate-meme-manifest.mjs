@@ -2,9 +2,7 @@ import fs from 'fs';
 import path from 'path';
 
 const ROOT = process.cwd();
-const PACK_NAME = 'Default';
-const PACK_DIR = path.join(ROOT, 'public', 'meme', PACK_NAME);
-const MANIFEST_PATH = path.join(PACK_DIR, 'manifest.json');
+const MEME_ROOT = path.join(ROOT, 'public', 'meme');
 const TS_MANIFEST_PATH = path.join(ROOT, 'components', 'memeManifest.ts');
 
 const ALLOWED_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.avif', '.bmp', '.svg']);
@@ -29,51 +27,92 @@ const escapeTsString = (value) => {
     .replace(/\$\{/g, '\\${');
 };
 
-const readExisting = () => {
+const readFileSafe = (filePath) => {
   try {
-    return fs.readFileSync(MANIFEST_PATH, 'utf8');
+    return fs.readFileSync(filePath, 'utf8');
   } catch {
     return '';
   }
 };
 
-const readExistingTs = () => {
-  try {
-    return fs.readFileSync(TS_MANIFEST_PATH, 'utf8');
-  } catch {
-    return '';
+const writeIfChanged = (filePath, nextContent) => {
+  const prevContent = readFileSafe(filePath);
+  if (prevContent === nextContent) {
+    return false;
   }
+  fs.writeFileSync(filePath, nextContent, 'utf8');
+  return true;
 };
 
-const main = () => {
-  if (!fs.existsSync(PACK_DIR)) {
-    console.error(`[meme] 目录不存在：${PACK_DIR}`);
-    process.exitCode = 1;
-    return;
-  }
+const DEFAULT_PACK_DIR = 'Default';
 
+const listPackDirs = () => {
+  if (!fs.existsSync(MEME_ROOT)) {
+    return [];
+  }
+  const names = fs
+    .readdirSync(MEME_ROOT, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
+    .map((entry) => entry.name);
+
+  const others = names
+    .filter((name) => name !== DEFAULT_PACK_DIR)
+    .sort((a, b) => a.localeCompare(b, 'zh-CN', { numeric: true }));
+
+  return names.includes(DEFAULT_PACK_DIR) ? [DEFAULT_PACK_DIR, ...others] : others;
+};
+
+const listPackItems = (packDir) => {
   const files = fs
-    .readdirSync(PACK_DIR, { withFileTypes: true })
+    .readdirSync(packDir, { withFileTypes: true })
     .filter((entry) => entry.isFile())
     .map((entry) => entry.name)
     .filter(isImageFile)
     .sort((a, b) => a.localeCompare(b, 'zh-CN', { numeric: true }));
 
-  const manifest = {
-    pack: PACK_NAME,
-    generatedAt: new Date().toISOString(),
-    items: files.map((file) => ({
-      file,
-      label: buildLabel(file),
-    })),
-  };
+  const items = files.map((file) => ({
+    file,
+    label: buildLabel(file),
+  }));
 
-  const nextContent = `${JSON.stringify(manifest, null, 2)}\n`;
-  const prevContent = readExisting();
-  if (prevContent === nextContent) {
-    // 仍尝试生成 TS 映射（可能首次引入）
+  let latestMtimeMs = 0;
+  for (const file of files) {
+    try {
+      const stat = fs.statSync(path.join(packDir, file));
+      latestMtimeMs = Math.max(latestMtimeMs, Number(stat.mtimeMs || 0));
+    } catch {
+      // ignore
+    }
   }
-  fs.writeFileSync(MANIFEST_PATH, nextContent, 'utf8');
+
+  return {
+    items,
+    generatedAt: latestMtimeMs > 0 ? new Date(latestMtimeMs).toISOString() : new Date(0).toISOString(),
+  };
+};
+
+const main = () => {
+  const packNames = listPackDirs();
+  if (packNames.length === 0) {
+    console.error(`[meme] 未发现表情包目录：${MEME_ROOT}`);
+    process.exitCode = 1;
+    return;
+  }
+
+  const packs = packNames.map((name) => {
+    const packDir = path.join(MEME_ROOT, name);
+    const { items, generatedAt } = listPackItems(packDir);
+    const manifest = {
+      pack: name,
+      generatedAt,
+      items,
+    };
+    const manifestPath = path.join(packDir, 'manifest.json');
+    writeIfChanged(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+    return { name, items };
+  });
+
+  const defaultPack = packNames.includes('Default') ? 'Default' : packNames[0];
 
   const tsLines = [];
   tsLines.push('export type MemeItem = {');
@@ -81,25 +120,33 @@ const main = () => {
   tsLines.push('  label: string;');
   tsLines.push('};');
   tsLines.push('');
-  tsLines.push('export const MEME_PACK = `Default` as const;');
-  tsLines.push('export const MEME_BASE_PATH = `/meme/Default` as const;');
+  tsLines.push('export type MemePack = {');
+  tsLines.push('  name: string;');
+  tsLines.push('  items: MemeItem[];');
+  tsLines.push('};');
   tsLines.push('');
-  tsLines.push('export const MEME_ITEMS: MemeItem[] = [');
-  manifest.items.forEach((item) => {
-    tsLines.push(`  { file: \`${escapeTsString(item.file)}\`, label: \`${escapeTsString(item.label)}\` },`);
+  tsLines.push(`export const DEFAULT_MEME_PACK = \`${escapeTsString(defaultPack)}\` as const;`);
+  tsLines.push('');
+  tsLines.push('export const MEME_PACKS: MemePack[] = [');
+  packs.forEach((pack) => {
+    tsLines.push(`  { name: \`${escapeTsString(pack.name)}\`, items: [`);
+    pack.items.forEach((item) => {
+      tsLines.push(`    { file: \`${escapeTsString(item.file)}\`, label: \`${escapeTsString(item.label)}\` },`);
+    });
+    tsLines.push('  ] },');
   });
   tsLines.push('];');
   tsLines.push('');
-  tsLines.push('export const MEME_LABEL_TO_FILE = new Map<string, string>(');
-  tsLines.push('  MEME_ITEMS.map((item) => [item.label, item.file])');
+  tsLines.push('export const MEME_PACK_TO_ITEMS = new Map<string, MemeItem[]>(');
+  tsLines.push('  MEME_PACKS.map((pack) => [pack.name, pack.items])');
+  tsLines.push(');');
+  tsLines.push('');
+  tsLines.push('export const MEME_KEY_TO_FILE = new Map<string, string>(');
+  tsLines.push('  MEME_PACKS.flatMap((pack) => pack.items.map((item) => [`${pack.name}/${item.label}`, item.file]))');
   tsLines.push(');');
   tsLines.push('');
 
-  const nextTs = `${tsLines.join('\n')}\n`;
-  const prevTs = readExistingTs();
-  if (prevTs !== nextTs) {
-    fs.writeFileSync(TS_MANIFEST_PATH, nextTs, 'utf8');
-  }
+  writeIfChanged(TS_MANIFEST_PATH, `${tsLines.join('\n')}\n`);
 };
 
 main();

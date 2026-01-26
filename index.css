@@ -152,13 +152,21 @@ body {
 .mascot-burst span:nth-child(5) { top: 80px; left: 20px; animation-delay: 0.12s; }
 .mascot-burst span:nth-child(6) { top: 35px; left: 10px; animation-delay: 0.15s; }
 
-.markdown-preview img {
+.markdown-preview img:not(.meme-image) {
   display: block;
   max-height: 96px;
   width: auto;
   border-radius: 8px;
   border: 1px solid #e5e7eb;
   object-fit: cover;
+}
+
+.markdown-preview img.meme-image {
+  display: inline-block;
+  max-height: none;
+  border-radius: 0;
+  border: none;
+  object-fit: contain;
 }
 
 .markdown-preview p {

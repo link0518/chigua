@@ -14,6 +14,7 @@ const SubmissionView: React.FC = () => {
   const [showPreview, setShowPreview] = useState(false);
   const [memeOpen, setMemeOpen] = useState(false);
   const turnstileRef = useRef<TurnstileHandle | null>(null);
+  const memeButtonRef = useRef<HTMLButtonElement | null>(null);
   const { textareaRef, insertMeme } = useMemeInsert(text, setText);
   const maxLength = 2000;
   const turnstileEnabled = state.settings.turnstileEnabled;
@@ -138,6 +139,7 @@ const SubmissionView: React.FC = () => {
 
               <div className="relative ml-2">
                 <button
+                  ref={memeButtonRef}
                   type="button"
                   onClick={() => setMemeOpen((prev) => !prev)}
                   className="flex items-center gap-1 px-3 py-1 text-sm font-hand font-bold text-pencil hover:text-ink border-2 border-gray-200 hover:border-ink rounded-full transition-all"
@@ -150,8 +152,9 @@ const SubmissionView: React.FC = () => {
                   open={memeOpen}
                   onClose={() => setMemeOpen(false)}
                   placement="down"
-                  onSelect={(label) => {
-                    insertMeme(label);
+                  anchorRef={memeButtonRef}
+                  onSelect={(packName, label) => {
+                    insertMeme(packName, label);
                     setMemeOpen(false);
                   }}
                 />

@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import createDOMPurify from 'dompurify';
 import { marked } from 'marked';
 
-import { MEME_BASE_PATH, MEME_LABEL_TO_FILE } from './memeManifest';
+import { DEFAULT_MEME_PACK, MEME_KEY_TO_FILE } from './memeManifest';
 
 interface MarkdownRendererProps {
   content: string;
@@ -137,9 +137,9 @@ const isAllowedMemePath = (value: string) => {
   const raw = String(value || '').trim();
   if (!raw) return false;
 
-  const normalized = raw.startsWith(MEME_BASE_PATH)
+  const normalized = raw.startsWith('/meme/')
     ? raw
-    : raw.startsWith(MEME_BASE_PATH.slice(1))
+    : raw.startsWith('meme/')
       ? `/${raw}`
       : '';
 
@@ -151,6 +151,10 @@ const isAllowedMemePath = (value: string) => {
   }
 
   const pathname = normalized.split('?')[0]?.split('#')[0] || '';
+  // 至少包含 /meme/<pack>/<file>
+  if (!/^\/meme\/[^/]+\/[^/]+/i.test(pathname)) {
+    return false;
+  }
   return /\.(png|jpe?g|gif|webp|avif|bmp|svg)$/i.test(pathname);
 };
 
@@ -348,13 +352,31 @@ const expandMemeShortcodes = (content: string) => {
   const input = String(content || '');
   if (!input) return '';
 
-  // 支持短码：[:微笑:] -> ![](/meme/Default/0_1__微笑.gif)
-  return input.replace(/\[:([^\]\n]{1,40}):\]/g, (match, labelRaw) => {
-    const label = String(labelRaw || '').trim();
-    if (!label) return match;
-    const file = MEME_LABEL_TO_FILE.get(label);
-    if (!file) return match;
-    const url = `${MEME_BASE_PATH}/${encodePathSegment(file)}`;
+  // 支持短码：
+  // - 默认包：[:微笑:]
+  // - 指定包：[:萌鸡/b害羞:]
+  return input.replace(/\[:([^\]\n]{1,80}):\]/g, (match, innerRaw) => {
+    const inner = String(innerRaw || '').trim();
+    if (!inner) return match;
+
+    let packName: string = DEFAULT_MEME_PACK;
+    let label = inner;
+    if (inner.includes('/')) {
+      const parts = inner.split('/');
+      packName = String(parts.shift() || '').trim();
+      label = parts.join('/').trim();
+      if (!packName || !label) {
+        return match;
+      }
+    }
+
+    const key = `${packName}/${label}`;
+    const file = MEME_KEY_TO_FILE.get(key);
+    if (!file) {
+      return match;
+    }
+
+    const url = `/meme/${encodePathSegment(packName)}/${encodePathSegment(file)}`;
     return `![](${url})`;
   });
 };

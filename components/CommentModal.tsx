@@ -47,6 +47,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
   const listRef = useRef<HTMLDivElement | null>(null);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const turnstileRef = useRef<TurnstileHandle | null>(null);
+  const memeButtonRef = useRef<HTMLButtonElement | null>(null);
   const pageSize = 10;
   const turnstileEnabled = state.settings.turnstileEnabled;
   const { textareaRef, insertMeme } = useMemeInsert(text, setText);
@@ -507,6 +508,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
           />
           <div className="relative">
             <button
+              ref={memeButtonRef}
               type="button"
               onClick={() => setMemeOpen((prev) => !prev)}
               className="px-3 h-16 flex items-center justify-center border-2 border-ink rounded-lg bg-white hover:bg-highlight transition-colors shadow-sketch"
@@ -518,8 +520,9 @@ const CommentModal: React.FC<CommentModalProps> = ({
             <MemePicker
               open={memeOpen}
               onClose={() => setMemeOpen(false)}
-              onSelect={(label) => {
-                insertMeme(label);
+              anchorRef={memeButtonRef}
+              onSelect={(packName, label) => {
+                insertMeme(packName, label);
                 setMemeOpen(false);
               }}
             />
