@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ThumbsUp, ThumbsDown, MessageSquare, MoreHorizontal, Flag, Search, Share2 } from 'lucide-react';
+import { ThumbsUp, ThumbsDown, MessageSquare, MoreHorizontal, Flag, Share2, UserX } from 'lucide-react';
 import { Post } from '../types';
 import { Badge, roughBorderClassSm } from './SketchUI';
 import { useApp } from '../store/AppContext';
@@ -57,7 +57,7 @@ const PostItem: React.FC<{
             <DeveloperMiniCard size="sm" timestamp={post.timestamp} />
           ) : (
             <>
-              <span className="material-symbols-outlined text-base">person_off</span>
+              <UserX className="w-4 h-4" />
               <span className="font-hand font-bold">匿名用户</span>
               <span>•</span>
               <span>{post.timestamp}</span>
@@ -124,7 +124,6 @@ const PostItem: React.FC<{
 const FeedView: React.FC = () => {
   const { state, loadFeedPosts, likePost, dislikePost, isLiked, isDisliked, showToast } = useApp();
   const [filter, setFilter] = useState<FilterType>('today');
-  const [searchQuery, setSearchQuery] = useState('');
   const [reportModal, setReportModal] = useState<{ isOpen: boolean; postId: string; content: string }>({
     isOpen: false,
     postId: '',
@@ -137,12 +136,9 @@ const FeedView: React.FC = () => {
   });
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      loadFeedPosts(filter, searchQuery).catch(() => {});
-    }, 300);
+    loadFeedPosts(filter).catch(() => {});
     setCommentModal({ isOpen: false, postId: '', content: '' });
-    return () => clearTimeout(timer);
-  }, [filter, searchQuery, loadFeedPosts]);
+  }, [filter, loadFeedPosts]);
 
   const posts = useMemo(() => {
     const allPosts = state.feedPosts;
@@ -216,20 +212,6 @@ const FeedView: React.FC = () => {
           <div className="absolute -bottom-2 left-0 w-full h-3 bg-alert/50 -z-10 -rotate-1 skew-x-12"></div>
         </h2>
 
-        {/* Search */}
-        <div className="mt-6 flex justify-center">
-          <div className="relative w-full max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-pencil w-4 h-4" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="搜索内容关键字..."
-              className="w-full pl-9 pr-4 py-2 rounded-full border-2 border-ink bg-white text-sm focus:shadow-sketch-sm outline-none transition-all font-sans"
-            />
-          </div>
-        </div>
-
         {/* Filter Tabs */}
         <div className="flex justify-center gap-6 mt-6 font-hand text-xl font-bold text-pencil">
           <button
@@ -242,7 +224,7 @@ const FeedView: React.FC = () => {
             onClick={() => { setFilter('week'); }}
             className={`transition-all ${filter === 'week' ? 'text-ink underline decoration-wavy decoration-alert underline-offset-4' : 'hover:text-ink'}`}
           >
-            本周
+            近7天
           </button>
           <button
             onClick={() => { setFilter('all'); }}

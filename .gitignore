@@ -10,6 +10,8 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+.lighthouseci
+.lh-tmp*
 *.local
 server/data
 *.db

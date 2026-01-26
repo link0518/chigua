@@ -1,4 +1,16 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ArrowLeft,
+  ArrowRight,
+  ArrowUpRight,
+  Flag,
+  MessageCircle,
+  Share2,
+  ThumbsDown,
+  ThumbsUp,
+  UserX,
+  Zap,
+} from 'lucide-react';
 import { useApp } from '../store/AppContext';
 import ReportModal from './ReportModal';
 import CommentModal from './CommentModal';
@@ -37,6 +49,7 @@ const HomeView: React.FC = () => {
   const [mascotClicks, setMascotClicks] = useState(0);
   const [mascotPop, setMascotPop] = useState(false);
   const [mascotBurstKey, setMascotBurstKey] = useState(0);
+  const [showMascot, setShowMascot] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
@@ -45,10 +58,20 @@ const HomeView: React.FC = () => {
   const turnstileEnabled = state.settings.turnstileEnabled;
 
   const posts = getHomePosts();
-  const currentPost = posts[currentIndex];
-  const isLatestPost = currentIndex === 0;
+  const boundedIndex = posts.length ? Math.min(currentIndex, posts.length - 1) : 0;
+  const currentPost = posts[boundedIndex];
+  const isLatestPost = boundedIndex === 0;
   const currentHostname = window.location.hostname;
   const shouldShowBanner = currentHostname === '933211.xyz';
+
+  useEffect(() => {
+    if (!posts.length) {
+      return;
+    }
+    if (currentIndex !== boundedIndex) {
+      setCurrentIndex(boundedIndex);
+    }
+  }, [boundedIndex, currentIndex, posts.length]);
 
   useEffect(() => {
     let cancelled = false;
@@ -100,6 +123,13 @@ const HomeView: React.FC = () => {
   }, [currentPost?.id, viewPost]);
 
   useEffect(() => {
+    const timer = window.setTimeout(() => setShowMascot(true), 1000);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, []);
+
+  useEffect(() => {
     if (focusCommentId) {
       return;
     }
@@ -148,7 +178,7 @@ const HomeView: React.FC = () => {
     return () => {
       window.removeEventListener('home:refresh', handleRefresh as EventListener);
     };
-  }, [loadHomePosts, loading, showToast]);
+  }, [loadHomePosts, loading]);
 
   useEffect(() => {
     if (state.homeTotal > 0) {
@@ -216,7 +246,8 @@ const HomeView: React.FC = () => {
     }
   };
 
-  if (loading) {
+  // 仅在首次进入且还没有帖子可渲染时显示预加载，避免刷新/点最新时闪动导致位置跳变
+  if (loading && posts.length === 0) {
     return (
       <div className="flex-grow w-full max-w-2xl mx-auto px-4 py-8 flex flex-col justify-center items-center min-h-[80vh]">
         <div className="text-center">
@@ -241,7 +272,7 @@ const HomeView: React.FC = () => {
   }
 
   const handleNext = () => {
-    if (currentIndex >= posts.length - 1) {
+    if (boundedIndex >= posts.length - 1) {
       if (hasMore) {
         setPendingAdvance(true);
         loadMorePosts();
@@ -258,7 +289,7 @@ const HomeView: React.FC = () => {
   };
 
   const handlePrev = () => {
-    if (currentIndex <= 0) {
+    if (boundedIndex <= 0) {
       showToast('已是最新', 'info');
       return;
     }
@@ -360,7 +391,7 @@ const HomeView: React.FC = () => {
       <div className="absolute -bottom-10 -left-8 w-48 h-48 bg-white/20 rounded-full border border-ink/20 -rotate-6" />
 
       <div className="relative px-4 py-3 flex items-start gap-3">
-        <span className="material-symbols-outlined text-[22px] text-ink mt-0.5">bolt</span>
+        <Zap className="w-[22px] h-[22px] text-ink mt-0.5" />
         <div className="flex-1 min-w-0">
           <div className="font-hand font-bold text-ink text-base leading-snug">
             本站支持双域名，推荐用 <span className="font-mono">https://jx3gua.com/</span> 访问更快
@@ -376,7 +407,7 @@ const HomeView: React.FC = () => {
           className="shrink-0 inline-flex items-center gap-1 rounded-full border-2 border-ink bg-white px-3 py-1.5 font-hand font-bold text-sm text-ink shadow-sketch hover:bg-highlight transition-all"
         >
           去更快域名
-          <span className="material-symbols-outlined text-[18px]">arrow_outward</span>
+          <ArrowUpRight className="w-[18px] h-[18px]" />
         </a>
       </div>
     </div>
@@ -384,23 +415,43 @@ const HomeView: React.FC = () => {
 
   return (
     <div className="flex-grow w-full max-w-2xl mx-auto px-4 py-8 flex flex-col justify-center min-h-[80vh] relative">
-      <div className="mascot-anchor">
-        <img
-          src="/chxb.png"
-          alt="吉祥物"
-          className={`mascot-float w-20 h-20 md:w-28 md:h-28 object-contain drop-shadow-md select-none cursor-pointer ${mascotPop ? 'mascot-pop' : ''}`}
-          onClick={handleMascotClick}
-        />
-      </div>
-      {mascotBurstKey > 0 && (
-        <div key={mascotBurstKey} className="mascot-burst">
-          <span />
-          <span />
-          <span />
-          <span />
-          <span />
-          <span />
-        </div>
+      {showMascot && (
+        <>
+          <div
+            className="mascot-anchor"
+            style={{
+              position: 'fixed',
+              right: 'calc(1rem + env(safe-area-inset-right))',
+              bottom: 'calc(1rem + env(safe-area-inset-bottom))',
+              zIndex: 10,
+              transform: 'translateZ(0)',
+            }}
+          >
+             <img
+               src="/chxb.png"
+               width={80}
+               height={80}
+               loading="lazy"
+               decoding="async"
+               fetchPriority="low"
+               alt=""
+               aria-label="吉祥物"
+               title="吉祥物"
+               className={`mascot-float w-20 h-20 md:w-28 md:h-28 object-contain drop-shadow-md select-none cursor-pointer ${mascotPop ? 'mascot-pop' : ''}`}
+               onClick={handleMascotClick}
+             />
+          </div>
+          {mascotBurstKey > 0 && (
+            <div key={mascotBurstKey} className="mascot-burst">
+              <span />
+              <span />
+              <span />
+              <span />
+              <span />
+              <span />
+            </div>
+          )}
+        </>
       )}
 
       {/* Banner */}
@@ -435,7 +486,7 @@ const HomeView: React.FC = () => {
               ) : (
                 <>
                   <div className="size-10 rounded-full border-2 border-black bg-gray-200 flex items-center justify-center shadow-sm">
-                    <span className="material-symbols-outlined text-xl text-pencil">person_off</span>
+                    <UserX className="w-5 h-5 text-pencil" />
                   </div>
                   <div className="flex flex-col">
                     <span className="font-hand font-bold text-xl text-pencil">匿名用户</span>
@@ -475,18 +526,20 @@ const HomeView: React.FC = () => {
                 onClick={handleLike}
                 className={`flex items-center gap-1.5 group/btn transition-colors ${isLiked(currentPost.id) ? 'text-blue-600' : 'hover:text-ink'}`}
               >
-                <span className={`material-symbols-outlined text-[22px] group-hover/btn:scale-110 transition-transform ${isLiked(currentPost.id) ? 'font-bold' : ''}`}>
-                  thumb_up
-                </span>
+                <ThumbsUp
+                  className="w-[22px] h-[22px] group-hover/btn:scale-110 transition-transform"
+                  fill={isLiked(currentPost.id) ? 'currentColor' : 'none'}
+                />
                 <span className="font-hand font-bold text-base">{currentPost.likes}</span>
               </button>
               <button
                 onClick={handleDislike}
                 className={`flex items-center gap-1.5 group/btn transition-colors ${isDisliked(currentPost.id) ? 'text-red-600' : 'hover:text-ink'}`}
               >
-                <span className={`material-symbols-outlined text-[22px] group-hover/btn:translate-y-1 transition-transform ${isDisliked(currentPost.id) ? 'font-bold' : ''}`}>
-                  thumb_down
-                </span>
+                <ThumbsDown
+                  className="w-[22px] h-[22px] group-hover/btn:translate-y-1 transition-transform"
+                  fill={isDisliked(currentPost.id) ? 'currentColor' : 'none'}
+                />
               </button>
             </div>
             <div className="flex items-center gap-6">
@@ -497,21 +550,21 @@ const HomeView: React.FC = () => {
                 }}
                 className={`flex items-center gap-1.5 group/btn transition-colors ${commentModalOpen ? 'text-blue-600' : 'hover:text-blue-600'}`}
               >
-                <span className="material-symbols-outlined text-[22px]">chat_bubble</span>
+                <MessageCircle className="w-[22px] h-[22px]" />
                 <span className="font-hand font-bold text-base">{currentPost.comments}</span>
               </button>
               <button
                 onClick={copyShareLink}
                 className="flex items-center gap-1.5 group/btn transition-colors hover:text-blue-600"
               >
-                <span className="material-symbols-outlined text-[22px]">share</span>
+                <Share2 className="w-[22px] h-[22px]" />
                 <span className="font-hand font-bold text-base">分享</span>
               </button>
               <button
                 onClick={() => setReportModalOpen(true)}
                 className="flex items-center gap-1 group/btn text-gray-400 hover:text-red-600 transition-colors pl-2 border-l-2 border-gray-200 border-dotted"
               >
-                <span className="material-symbols-outlined text-[20px]">flag</span>
+                <Flag className="w-5 h-5" />
                 <span className="font-hand font-bold text-sm pt-0.5">举报</span>
               </button>
             </div>
@@ -526,7 +579,7 @@ const HomeView: React.FC = () => {
           onClick={handlePrev}
           className="group relative flex items-center justify-center gap-2 px-4 py-3 bg-white border-[3px] border-black rounded-full shadow-sketch-lg hover:shadow-sketch-hover hover:-translate-y-1 hover:bg-highlight transition-all duration-200 active:shadow-sketch-active active:translate-y-[4px] transform rotate-1 md:px-10 md:py-4 md:gap-3"
         >
-          <span className="material-symbols-outlined text-2xl group-hover:rotate-12 transition-transform md:text-3xl">arrow_back</span>
+          <ArrowLeft className="w-[24px] h-[24px] md:w-[30px] md:h-[30px] group-hover:rotate-12 transition-transform" />
           <span className="font-hand font-bold text-base tracking-widest pt-1 group-hover:animate-wiggle hidden md:inline md:text-2xl">上一个瓜</span>
         </button>
         <button
@@ -534,7 +587,7 @@ const HomeView: React.FC = () => {
           className="group relative flex flex-1 items-center justify-center gap-3 px-6 py-4 bg-white border-[3px] border-black rounded-full shadow-sketch-lg hover:shadow-sketch-hover hover:-translate-y-1 hover:bg-highlight transition-all duration-200 active:shadow-sketch-active active:translate-y-[4px] transform -rotate-1 md:flex-none md:px-10 md:py-4"
         >
           <span className="font-hand font-bold text-2xl tracking-widest pt-1 group-hover:animate-wiggle">下一个瓜</span>
-          <span className="material-symbols-outlined text-3xl group-hover:rotate-12 transition-transform">arrow_forward</span>
+          <ArrowRight className="w-[30px] h-[30px] group-hover:rotate-12 transition-transform" />
         </button>
       </div>
 

@@ -1,6 +1,6 @@
 ﻿import { getBrowserFingerprint } from './fingerprint';
 
-const toQuery = (params) => {
+const toQuery = (params: Record<string, unknown>) => {
   const entries = Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== '');
   if (entries.length === 0) return '';
   const query = entries
@@ -13,15 +13,68 @@ let csrfToken = '';
 
 const needsAdminCsrf = (path: string) => path.startsWith('/admin') || path.startsWith('/reports');
 
-const apiFetch = async (path, options = {}) => {
-  const fingerprint = await getBrowserFingerprint().catch(() => '');
+const shouldAttachFingerprint = (path: string, options: RequestInit) => {
+  const cleanPath = String(path || '').split('?')[0];
+
+  if (cleanPath === '/online/heartbeat') {
+    return false;
+  }
+
+  if (cleanPath === '/access') {
+    return true;
+  }
+
+  if (cleanPath.startsWith('/notifications')) {
+    return true;
+  }
+
+  if (cleanPath.startsWith('/easter-eggs/')) {
+    return true;
+  }
+
+  if (cleanPath.startsWith('/feedback')) {
+    return true;
+  }
+
+  if (cleanPath.startsWith('/reports')) {
+    return true;
+  }
+
+  if (cleanPath.startsWith('/admin')) {
+    return true;
+  }
+
+  if (cleanPath.startsWith('/posts')) {
+    return true;
+  }
+
+  return false;
+};
+
+const normalizeHeaders = (headers?: HeadersInit) => {
+  if (!headers) {
+    return {};
+  }
+  if (headers instanceof Headers) {
+    return Object.fromEntries(headers.entries());
+  }
+  if (Array.isArray(headers)) {
+    return Object.fromEntries(headers);
+  }
+  return headers;
+};
+
+const apiFetch = async (path: string, options: RequestInit = {}) => {
+  const fingerprint = shouldAttachFingerprint(path, options)
+    ? await getBrowserFingerprint().catch(() => '')
+    : '';
   const response = await fetch(`/api${path}`, {
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       ...(csrfToken && needsAdminCsrf(path) ? { 'X-CSRF-Token': csrfToken } : {}),
       ...(fingerprint ? { 'X-Client-Fingerprint': fingerprint } : {}),
-      ...(options.headers || {}),
+      ...normalizeHeaders(options.headers),
     },
     ...options,
   });

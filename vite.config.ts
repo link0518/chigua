@@ -66,8 +66,16 @@ export default defineConfig(({ mode }) => {
       build: {
         rollupOptions: {
           output: {
-            manualChunks: {
-              recharts: ['recharts'],
+            manualChunks(id) {
+              if (!id.includes('node_modules')) return undefined;
+
+              const normalized = id.replace(/\\/g, '/');
+              if (normalized.includes('/node_modules/recharts/')) return 'recharts';
+              if (normalized.includes('/node_modules/react-dom/')) return 'react-vendor';
+              if (normalized.includes('/node_modules/react/')) return 'react-vendor';
+              if (normalized.includes('/node_modules/scheduler/')) return 'react-vendor';
+
+              return undefined;
             },
           },
         },

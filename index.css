@@ -13,6 +13,26 @@ body {
   background-position: -1px -1px;
 }
 
+.min-h-screen-safe {
+  min-height: 100vh;
+}
+
+.min-h-80vh-safe {
+  min-height: 80vh;
+}
+
+.min-h-70vh-safe {
+  min-height: 70vh;
+}
+
+.min-h-60vh-safe {
+  min-height: 60vh;
+}
+
+.max-h-75vh-safe {
+  max-height: 75vh;
+}
+
 .font-hand,
 .font-display,
 .font-sans,
@@ -26,10 +46,6 @@ body {
 .admin-font .font-sans,
 .admin-font .font-mono {
   font-family: 'Source Han Sans', 'Source Han Sans SC', 'Noto Sans CJK SC', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
-}
-
-.material-symbols-outlined {
-  font-variation-settings: 'FILL' 0, 'wght' 500, 'GRAD' 0, 'opsz' 24;
 }
 
 .doodle-border {

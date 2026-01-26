@@ -1,18 +1,28 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ViewType } from './types';
 import type { NotificationItem } from './types';
-import SubmissionView from './components/SubmissionView';
-import FeedView from './components/FeedView';
-import SearchView from './components/SearchView';
-const AdminGate = React.lazy(() => import('./components/AdminGate'));
-import HomeView from './components/HomeView';
 import Toast from './components/Toast';
 import Modal from './components/Modal';
 import MarkdownRenderer from './components/MarkdownRenderer';
 import StreakCelebration from './components/StreakCelebration';
 import { api } from './api';
-import { Menu, X } from 'lucide-react';
+import HomeView from './components/HomeView';
+import {
+  Bell,
+  Megaphone,
+  Menu,
+  MessageCircle,
+  Pencil,
+  Reply,
+  ThumbsUp,
+  X,
+} from 'lucide-react';
 import { useApp } from './store/AppContext';
+
+const SubmissionView = React.lazy(() => import('./components/SubmissionView'));
+const FeedView = React.lazy(() => import('./components/FeedView'));
+const SearchView = React.lazy(() => import('./components/SearchView'));
+const AdminGate = React.lazy(() => import('./components/AdminGate'));
 
 const normalizePath = (path: string) => {
   if (!path || path === '/') {
@@ -67,6 +77,14 @@ const App: React.FC = () => {
   const [streakCelebrationOpen, setStreakCelebrationOpen] = useState(false);
   const [streakCelebrationDays, setStreakCelebrationDays] = useState(7);
   const streakCelebrationMarkedRef = useRef(false);
+  const [backgroundTasksReady, setBackgroundTasksReady] = useState(false);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setBackgroundTasksReady(true), 15000);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, []);
 
   useEffect(() => {
     const handlePopState = () => {
@@ -183,16 +201,17 @@ const App: React.FC = () => {
     }
   };
 
-  const getNotificationIcon = (type: NotificationItem['type']) => {
+  const renderNotificationIcon = (type: NotificationItem['type']) => {
+    const className = 'w-5 h-5 text-pencil shrink-0';
     switch (type) {
       case 'post_comment':
-        return 'chat_bubble';
+        return <MessageCircle className={className} />;
       case 'comment_reply':
-        return 'forum';
+        return <Reply className={className} />;
       case 'post_like':
-        return 'thumb_up';
+        return <ThumbsUp className={className} />;
       default:
-        return 'notifications';
+        return <Bell className={className} />;
     }
   };
 
@@ -240,8 +259,7 @@ const App: React.FC = () => {
   }, [currentView]);
 
   useEffect(() => {
-    if (currentView !== ViewType.HOME) {
-      setNotificationsOpen(false);
+    if (!backgroundTasksReady) {
       return;
     }
     fetchNotifications();
@@ -249,10 +267,17 @@ const App: React.FC = () => {
     return () => {
       clearInterval(timer);
     };
-  }, [currentView, fetchNotifications]);
+  }, [backgroundTasksReady, fetchNotifications]);
+
+  useEffect(() => {
+    setNotificationsOpen(false);
+  }, [currentView]);
 
   useEffect(() => {
     if (currentView !== ViewType.HOME) {
+      return;
+    }
+    if (!backgroundTasksReady) {
       return;
     }
     if (normalizePath(window.location.pathname) !== '/') {
@@ -280,7 +305,7 @@ const App: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [currentView]);
+  }, [backgroundTasksReady, currentView]);
 
   const closeStreakCelebration = useCallback(() => {
     setStreakCelebrationOpen(false);
@@ -356,7 +381,7 @@ const App: React.FC = () => {
         return (
           <React.Suspense
             fallback={(
-              <div className="flex-grow w-full max-w-2xl mx-auto px-4 py-12 flex flex-col items-center text-center min-h-[70vh]">
+              <div className="flex-grow w-full max-w-2xl mx-auto px-4 py-12 flex flex-col text-center min-h-70vh-safe">
                 <span className="text-5xl mb-4 block">⏳</span>
                 <h2 className="font-display text-3xl text-ink mb-2">后台加载中</h2>
                 <p className="font-hand text-lg text-pencil">马上就好</p>
@@ -368,7 +393,7 @@ const App: React.FC = () => {
         );
       case ViewType.NOT_FOUND:
         return (
-          <div className="flex-grow w-full max-w-2xl mx-auto px-4 py-12 flex flex-col items-center text-center min-h-[70vh]">
+          <div className="flex-grow w-full max-w-2xl mx-auto px-4 py-12 flex flex-col items-center text-center min-h-70vh-safe">
             <span className="text-6xl mb-4 block">🧭</span>
             <h2 className="font-display text-3xl text-ink mb-2">页面不存在</h2>
             <p className="font-hand text-lg text-pencil mb-6">你访问的地址未找到</p>
@@ -411,7 +436,7 @@ const App: React.FC = () => {
 
   if (accessChecked && accessBlocked) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center px-6 text-center bg-paper">
+      <div className="min-h-screen-safe flex flex-col items-center justify-center px-6 text-center bg-paper">
         <span className="text-6xl mb-4 block">⛔</span>
         <h2 className="font-display text-3xl text-ink mb-2">你已被限制浏览</h2>
         <p className="font-hand text-lg text-pencil mb-3">如有疑问请联系管理员</p>
@@ -421,7 +446,7 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen flex flex-col font-sans selection:bg-highlight selection:text-black">
+    <div className="min-h-screen-safe flex flex-col font-sans selection:bg-highlight selection:text-black">
       <StreakCelebration
         open={streakCelebrationOpen}
         onClose={closeStreakCelebration}
@@ -430,9 +455,9 @@ const App: React.FC = () => {
       />
       {/* Top Navigation */}
       {currentView !== ViewType.ADMIN && (
-        <header className="sticky top-0 z-50 w-full border-b-2 border-black bg-[#f9f7f1] px-4 md:px-6 py-3 shadow-[0_4px_0_0_rgba(0,0,0,0.1)]">
+        <header className="sticky top-0 z-50 w-full border-b-2 border-black bg-[#f9f7f1] px-4 md:px-6 py-3 shadow-[0_4px_0_0_rgba(0,0,0,0.1)] min-h-[96px] sm:min-h-[72px]">
           <div className="absolute top-full left-0 w-full h-2 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAiIGhlaWdodD0iMTAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHBhdGggZD0iTTAgMTAgTTEwIDAgTDIwIDEwIiBmaWxsPSJub25lIiBzdHJva2U9IiMwMDAiIHN0cm9rZS13aWR0aD0iMSIvPjwvc3ZnPg==')] opacity-10"></div>
-          <div className="max-w-3xl mx-auto flex items-center justify-between gap-3 sm:gap-4 flex-wrap sm:flex-nowrap">
+          <div className="max-w-3xl mx-auto flex items-center justify-between gap-3 sm:gap-4 flex-nowrap">
             {/* Logo */}
             <div
               className="flex items-center gap-3 cursor-pointer group"
@@ -462,76 +487,72 @@ const App: React.FC = () => {
                 className="flex items-center justify-center rounded-full px-3 py-2 sm:px-5 sm:py-2.5 bg-black text-white hover:bg-ink/90 transition-all shadow-sketch active:shadow-sketch-active active:translate-x-[2px] active:translate-y-[2px] transform rotate-1 hover:-rotate-1"
               >
                 <span className="flex items-center gap-2 font-sans text-base sm:text-lg font-semibold whitespace-nowrap">
-                  <span className="material-symbols-outlined text-[20px] shrink-0">edit</span>
+                  <Pencil className="w-5 h-5 shrink-0" />
                   <span className="leading-none">投稿</span>
                 </span>
               </button>
 
-              {currentView === ViewType.HOME && (
-                <div className="relative" ref={notificationRef}>
-                  <button
-                    onClick={() => setNotificationsOpen((prev) => !prev)}
-                    className="flex items-center justify-center rounded-full px-2.5 py-2 sm:px-3 sm:py-2.5 border-2 border-ink bg-white hover:bg-highlight transition-all shadow-sketch active:shadow-sketch-active active:translate-x-[2px] active:translate-y-[2px]"
-                    aria-label="提醒"
-                    title="提醒"
-                  >
-                    <span className="relative flex items-center">
-                      <span className="material-symbols-outlined text-[20px]">notifications</span>
-                      {notificationsUnread > 0 && (
-                        <span className="absolute -top-2 -right-2 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
-                          {notificationsUnread > 99 ? '99+' : notificationsUnread}
-                        </span>
-                      )}
-                    </span>
-                  </button>
-                  {notificationsOpen && (
-                    <div className="absolute right-0 mt-3 w-80 max-w-[80vw] bg-white border-2 border-ink rounded-lg shadow-sketch-sm p-4 z-50">
-                      <div className="flex items-center justify-between mb-3">
-                        <span className="font-hand font-bold text-base">提醒</span>
-                        <span className="text-xs text-pencil font-sans">
-                          {notificationsUnread > 0 ? `未读 ${notificationsUnread}` : '全部已读'}
-                        </span>
-                      </div>
-                      {notificationsLoading ? (
-                        <div className="text-center py-6 text-pencil font-hand">加载中...</div>
-                      ) : notifications.length === 0 ? (
-                        <div className="text-center py-6 text-pencil font-hand">暂无提醒</div>
-                      ) : (
-                        <div className="flex flex-col gap-3 max-h-80 overflow-auto">
-                          {notifications.map((item) => (
-                            <button
-                              type="button"
-                              key={item.id}
-                              onClick={() => openNotificationTarget(item)}
-                              className={`text-left border-2 rounded-lg p-3 transition-colors ${item.readAt ? 'border-gray-200 bg-gray-50 hover:bg-white' : 'border-ink/70 bg-highlight/30 hover:bg-highlight/50'}`}
-                            >
-                              <div className="flex items-start gap-3">
-                                <span className="material-symbols-outlined text-[20px] text-pencil">
-                                  {getNotificationIcon(item.type)}
-                                </span>
-                                <div className="flex-1">
-                                  <div className="text-sm font-sans text-ink flex items-center gap-2">
-                                    <span className="font-bold">{getNotificationLabel(item.type)}</span>
-                                    {!item.readAt && <span className="h-2 w-2 rounded-full bg-red-500" />}
+              <div className="relative" ref={notificationRef}>
+                <button
+                  onClick={() => setNotificationsOpen((prev) => !prev)}
+                  className="flex items-center justify-center rounded-full px-2.5 py-2 sm:px-3 sm:py-2.5 border-2 border-ink bg-white hover:bg-highlight transition-all shadow-sketch active:shadow-sketch-active active:translate-x-[2px] active:translate-y-[2px]"
+                  aria-label="提醒"
+                  title="提醒"
+                >
+                  <span className="relative flex items-center">
+                    <Bell className="w-5 h-5" />
+                    {notificationsUnread > 0 && (
+                      <span className="absolute -top-2 -right-2 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
+                        {notificationsUnread > 99 ? '99+' : notificationsUnread}
+                      </span>
+                    )}
+                  </span>
+                </button>
+                {notificationsOpen && (
+                  <div className="absolute right-0 mt-3 w-80 max-w-[80vw] bg-white border-2 border-ink rounded-lg shadow-sketch-sm p-4 z-50">
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="font-hand font-bold text-base">提醒</span>
+                      <span className="text-xs text-pencil font-sans">
+                        {notificationsUnread > 0 ? `未读 ${notificationsUnread}` : '全部已读'}
+                      </span>
+                    </div>
+                    {notificationsLoading ? (
+                      <div className="text-center py-6 text-pencil font-hand">加载中...</div>
+                    ) : notifications.length === 0 ? (
+                      <div className="text-center py-6 text-pencil font-hand">暂无提醒</div>
+                    ) : (
+                      <div className="flex flex-col gap-3 max-h-80 overflow-auto">
+                        {notifications.map((item) => (
+                          <button
+                            type="button"
+                            key={item.id}
+                            onClick={() => openNotificationTarget(item)}
+                            className={`text-left border-2 rounded-lg p-3 transition-colors ${item.readAt ? 'border-gray-200 bg-gray-50 hover:bg-white' : 'border-ink/70 bg-highlight/30 hover:bg-highlight/50'}`}
+                          >
+                            <div className="flex items-start gap-3">
+                              {renderNotificationIcon(item.type)}
+                              <div className="flex-1">
+                                <div className="text-sm font-sans text-ink flex items-center gap-2">
+                                  <span className="font-bold">{getNotificationLabel(item.type)}</span>
+                                  {!item.readAt && <span className="h-2 w-2 rounded-full bg-red-500" />}
+                                </div>
+                                {item.preview && (
+                                  <div className="text-xs text-pencil font-sans mt-1 line-clamp-2">
+                                    “{item.preview}”
                                   </div>
-                                  {item.preview && (
-                                    <div className="text-xs text-pencil font-sans mt-1 line-clamp-2">
-                                      “{item.preview}”
-                                    </div>
-                                  )}
-                                  <div className="text-[11px] text-gray-400 mt-2">
-                                    {formatNotificationTime(item.createdAt)}
-                                  </div>
+                                )}
+                                <div className="text-[11px] text-gray-400 mt-2">
+                                  {formatNotificationTime(item.createdAt)}
                                 </div>
                               </div>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
 
               <button
                 onClick={openAnnouncement}
@@ -540,7 +561,7 @@ const App: React.FC = () => {
                 title="公告"
               >
                 <span className="relative flex items-center">
-                  <span className="material-symbols-outlined text-[20px]">campaign</span>
+                  <Megaphone className="w-5 h-5" />
                   {announcementUnread && (
                     <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-red-500" />
                   )}
@@ -599,7 +620,26 @@ const App: React.FC = () => {
 
       {/* Main Content Area */}
       <div className={`flex-grow flex flex-col ${currentView === ViewType.ADMIN ? 'h-screen' : ''}`}>
-        {renderView()}
+        <React.Suspense
+          fallback={(
+            <div
+              aria-busy="true"
+              className={`flex-grow w-full max-w-2xl mx-auto px-4 flex flex-col min-h-80vh-safe ${currentView === ViewType.HOME ? 'py-8' : 'pt-6 pb-20'}`}
+            >
+              <div className="relative w-full">
+                <div className="w-full rounded-lg border-2 border-black bg-white p-8 shadow-paper">
+                  <div className="h-7 w-2/3 bg-gray-200 rounded mb-4" />
+                  <div className="h-4 w-full bg-gray-200 rounded mb-2" />
+                  <div className="h-4 w-11/12 bg-gray-200 rounded mb-2" />
+                  <div className="h-4 w-10/12 bg-gray-200 rounded mb-6" />
+                  <div className="h-10 w-32 bg-gray-200 rounded" />
+                </div>
+              </div>
+            </div>
+          )}
+        >
+          {renderView()}
+        </React.Suspense>
       </div>
 
       {/* Toast Notifications */}

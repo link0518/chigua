@@ -166,7 +166,7 @@ const SubmissionView: React.FC = () => {
                  )}
                </div>
                <div className="flex items-center gap-2 text-xs text-pencil">
-                 <span className="material-symbols-outlined text-sm">visibility_off</span>
+                 <EyeOff className="w-4 h-4" />
                  <span className="font-hand">完全匿名投稿</span>
                </div>
             </div>

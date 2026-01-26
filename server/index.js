@@ -1,5 +1,6 @@
 ﻿import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
+import compression from 'compression';
 import express from 'express';
 import session from 'express-session';
 import BetterSqlite3Store from 'better-sqlite3-session-store';
@@ -116,6 +117,7 @@ const SPA_INDEX = isFilePath(path.join(DIST_DIR, 'index.html'))
     ? path.resolve(process.cwd(), 'index.html')
     : '';
 
+app.use(compression());
 app.use(express.json({ limit: '2mb' }));
 
 const shouldServeSnapshot = (req) => {
@@ -1321,7 +1323,7 @@ app.get('/api/posts/feed', (req, res) => {
     params.push(startOfDay());
   } else if (filter === 'week') {
     conditions.push('posts.created_at >= ?');
-    params.push(startOfWeek());
+    params.push(Date.now() - 7 * 24 * 60 * 60 * 1000);
   }
 
   if (search) {
@@ -3224,10 +3226,8 @@ app.get('/api/admin/stats', requireAdmin, (req, res) => {
   });
 });
 
-app.use((err, req, res, next) => {
-  console.error(err);
-  res.status(500).json({ error: '服务器错误' });
-});
+// 生产环境：提供 dist 静态资源（/assets/*、favicon 等），方便本地预览与 Lighthouse 测量
+app.use(express.static(DIST_DIR, { index: false }));
 
 app.use((req, res, next) => {
   if (!['GET', 'HEAD'].includes(req.method)) return next();
@@ -3237,6 +3237,11 @@ app.use((req, res, next) => {
     return res.status(404).send('Not Found');
   }
   return res.sendFile(SPA_INDEX);
+});
+
+app.use((err, req, res, next) => {
+  console.error(err);
+  res.status(500).json({ error: '服务器错误' });
 });
 
 app.listen(PORT, () => {

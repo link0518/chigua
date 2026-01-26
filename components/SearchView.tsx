@@ -73,7 +73,13 @@ const SearchView: React.FC = () => {
         <p className="mt-3 text-sm text-pencil font-sans">仅按正文关键字搜索（全站）</p>
 
         <div className="mt-6 flex justify-center">
-          <div className="w-full max-w-md flex gap-2">
+          <form
+            className="w-full max-w-md flex gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              submitSearch();
+            }}
+          >
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-pencil w-4 h-4" />
               <input
@@ -86,15 +92,14 @@ const SearchView: React.FC = () => {
               />
             </div>
             <SketchButton
-              type="button"
+              type="submit"
               variant="primary"
               className="h-10 px-4 text-base"
-              onClick={submitSearch}
               disabled={loading}
             >
               搜索
             </SketchButton>
-          </div>
+          </form>
         </div>
 
         {query && (

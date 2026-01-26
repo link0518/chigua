@@ -347,7 +347,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
   const labelMap = buildLabelMap(comments);
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-40 max-h-[75vh] rounded-t-xl border border-gray-200 bg-white p-4 shadow-lg font-sans animate-in slide-in-from-bottom-2 duration-200 md:static md:mt-4 md:max-h-none md:rounded-xl md:shadow-sm md:animate-none">
+    <div className="fixed inset-x-0 bottom-0 z-40 max-h-75vh-safe rounded-t-xl border border-gray-200 bg-white p-4 shadow-lg font-sans animate-in slide-in-from-bottom-2 duration-200 md:static md:mt-4 md:max-h-none md:rounded-xl md:shadow-sm md:animate-none">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <h3 className="font-sans font-semibold text-lg text-ink">评论</h3>

@@ -1161,7 +1161,7 @@ const AdminDashboard: React.FC = () => {
   const totalFeedbackPages = Math.max(Math.ceil(feedbackTotal / FEEDBACK_PAGE_SIZE), 1);
 
   return (
-    <div className="admin-font flex min-h-screen bg-paper overflow-hidden overflow-x-hidden">
+    <div className="admin-font flex min-h-screen-safe bg-paper overflow-hidden overflow-x-hidden">
       {/* Sidebar */}
       <aside className="w-64 flex-shrink-0 flex flex-col border-r-2 border-ink bg-paper z-20 hidden md:flex">
         <div className="p-6">
