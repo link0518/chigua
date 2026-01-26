@@ -4,12 +4,14 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "predev": "node scripts/generate-meme-manifest.mjs",
     "dev": "vite",
     "server": "node server/index.js",
     "dev:full": "concurrently -k \"npm run server\" \"npm run dev\"",
     "init-data": "node server/init-data.js",
     "reset-data": "node server/reset-data.js",
     "seo:generate": "node server/seo-generate.js",
+    "prebuild": "node scripts/generate-meme-manifest.mjs",
     "build": "vite build",
     "preview": "vite preview",
     "perf:budget": "node scripts/perf-budget.mjs"

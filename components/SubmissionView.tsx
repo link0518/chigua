@@ -1,9 +1,10 @@
 import React, { useRef, useState } from 'react';
-import { Send, Eye, EyeOff, CheckCircle } from 'lucide-react';
+import { Send, Eye, EyeOff, CheckCircle, Smile } from 'lucide-react';
 import { SketchCard, SketchButton, Tape } from './SketchUI';
 import { useApp } from '../store/AppContext';
 import MarkdownRenderer from './MarkdownRenderer';
 import Turnstile, { TurnstileHandle } from './Turnstile';
+import MemePicker, { useMemeInsert } from './MemePicker';
 
 const SubmissionView: React.FC = () => {
   const { addPost, showToast, state } = useApp();
@@ -11,7 +12,9 @@ const SubmissionView: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+  const [memeOpen, setMemeOpen] = useState(false);
   const turnstileRef = useRef<TurnstileHandle | null>(null);
+  const { textareaRef, insertMeme } = useMemeInsert(text, setText);
   const maxLength = 2000;
   const turnstileEnabled = state.settings.turnstileEnabled;
 
@@ -122,7 +125,7 @@ const SubmissionView: React.FC = () => {
             <div className="flex justify-between items-center">
               <div className="flex items-center gap-2">
                 <span className="font-hand font-bold text-ink">支持 Markdown</span>
-                <span className="text-xs text-pencil">(**粗体** *斜体* ~~删除线~~ `代码`)</span>
+                <span className="text-xs text-pencil">(**粗体** *斜体* ~~删除线~~ `代码` · 表情短码)</span>
               </div>
               <button
                 type="button"
@@ -132,6 +135,27 @@ const SubmissionView: React.FC = () => {
                 {showPreview ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 {showPreview ? '编辑' : '预览'}
               </button>
+
+              <div className="relative ml-2">
+                <button
+                  type="button"
+                  onClick={() => setMemeOpen((prev) => !prev)}
+                  className="flex items-center gap-1 px-3 py-1 text-sm font-hand font-bold text-pencil hover:text-ink border-2 border-gray-200 hover:border-ink rounded-full transition-all"
+                  aria-label="插入表情包"
+                >
+                  <Smile className="w-4 h-4" />
+                  表情
+                </button>
+                <MemePicker
+                  open={memeOpen}
+                  onClose={() => setMemeOpen(false)}
+                  placement="down"
+                  onSelect={(label) => {
+                    insertMeme(label);
+                    setMemeOpen(false);
+                  }}
+                />
+              </div>
             </div>
 
             {/* Text Area or Preview */}
@@ -145,10 +169,11 @@ const SubmissionView: React.FC = () => {
                   )}
                 </div>
               ) : (
-                <textarea
-                  value={text}
-                  onChange={(e) => setText(e.target.value)}
-                  placeholder="想说什么... 有什么好吃的瓜？&#10;&#10;支持 Markdown 格式：&#10;**粗体** *斜体* ~~删除线~~&#10;`行内代码` [链接](url)&#10;> 引用文字&#10;- 列表项"
+                 <textarea
+                   ref={textareaRef}
+                   value={text}
+                   onChange={(e) => setText(e.target.value)}
+                  placeholder="想说什么... 有什么好吃的瓜？&#10;&#10;支持 Markdown 与表情包：&#10;点右上角“表情”插入（会显示为 [:微笑:] 这种短码）&#10;**粗体** *斜体* ~~删除线~~&#10;`行内代码` [链接](url)&#10;> 引用文字&#10;- 列表项"
                   maxLength={maxLength + 100}
                   className="w-full h-full min-h-[300px] resize-none bg-transparent border-2 border-gray-200 rounded-lg outline-none font-sans text-xl leading-8 text-ink placeholder:text-pencil/40 p-4 focus:border-ink transition-colors"
                 />

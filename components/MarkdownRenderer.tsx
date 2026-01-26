@@ -2,6 +2,8 @@ import React, { useMemo } from 'react';
 import createDOMPurify from 'dompurify';
 import { marked } from 'marked';
 
+import { MEME_BASE_PATH, MEME_LABEL_TO_FILE } from './memeManifest';
+
 interface MarkdownRendererProps {
   content: string;
   className?: string;
@@ -91,6 +93,9 @@ renderer.image = function (token) {
   const safeHref = escapeHtml(normalizedHref);
   const altText = escapeHtml(token.text || '');
   const titleAttr = token.title ? ` title="${escapeHtml(token.title)}"` : '';
+  if (isAllowedMemePath(normalizedHref)) {
+    return `<img src="${safeHref}" alt="${altText}"${titleAttr} class="meme-image inline-block ml-1 w-[22px] h-[22px] object-contain align-text-bottom" loading="lazy" />`;
+  }
   return `<a href="${safeHref}" target="_blank" rel="noopener noreferrer" class="markdown-image-link inline-block">
     <img src="${safeHref}" alt="${altText}"${titleAttr} class="markdown-image max-w-full rounded-md border border-gray-200 cursor-zoom-in" loading="lazy" />
   </a>`;
@@ -128,10 +133,34 @@ const IMAGE_HOSTS = new Set(['img.zsix.de', 'ibed.933211.xyz']);
 let cachedPurifier: ReturnType<typeof createDOMPurify> | null = null;
 let purifierReady = false;
 
+const isAllowedMemePath = (value: string) => {
+  const raw = String(value || '').trim();
+  if (!raw) return false;
+
+  const normalized = raw.startsWith(MEME_BASE_PATH)
+    ? raw
+    : raw.startsWith(MEME_BASE_PATH.slice(1))
+      ? `/${raw}`
+      : '';
+
+  if (!normalized) {
+    return false;
+  }
+  if (normalized.includes('..')) {
+    return false;
+  }
+
+  const pathname = normalized.split('?')[0]?.split('#')[0] || '';
+  return /\.(png|jpe?g|gif|webp|avif|bmp|svg)$/i.test(pathname);
+};
+
 const normalizeImageUrl = (value: string) => {
   const trimmed = String(value || '').trim();
   if (!trimmed) {
     return '';
+  }
+  if (isAllowedMemePath(trimmed)) {
+    return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
   }
   if (/^https?:\/\//i.test(trimmed)) {
     return trimmed;
@@ -148,6 +177,9 @@ const normalizeImageUrl = (value: string) => {
 };
 
 const isAllowedImageSrc = (value: string) => {
+  if (isAllowedMemePath(value)) {
+    return true;
+  }
   try {
     const url = new URL(value);
     if (url.protocol !== 'https:' && url.protocol !== 'http:') {
@@ -161,10 +193,16 @@ const isAllowedImageSrc = (value: string) => {
 
 const isAllowedImageUrl = (value: string) => {
   if (!value) return false;
+  if (isAllowedMemePath(value)) {
+    return true;
+  }
   try {
     const normalized = normalizeImageUrl(value);
     if (!normalized) {
       return false;
+    }
+    if (isAllowedMemePath(normalized)) {
+      return true;
     }
     const url = new URL(normalized);
     if (url.protocol !== 'https:' && url.protocol !== 'http:') {
@@ -289,7 +327,8 @@ const getSanitizer = () => {
       ALLOWED_TAGS,
       ALLOWED_ATTR,
       ALLOW_DATA_ATTR: false,
-      ALLOWED_URI_REGEXP: /^(?:https?:|mailto:)/i,
+      // 允许站内根路径资源（例如 /meme/Default/...），但不允许 //example.com 这种 scheme-relative。
+      ALLOWED_URI_REGEXP: /^(?:https?:|mailto:|\/(?!\/))/i,
     });
     cachedPurifier.addHook('uponSanitizeAttribute', (node, data) => {
       if (node.nodeName === 'IMG' && data.attrName === 'src') {
@@ -303,10 +342,28 @@ const getSanitizer = () => {
   return cachedPurifier;
 };
 
+const encodePathSegment = (value: string) => encodeURIComponent(value).replace(/%2F/g, '/');
+
+const expandMemeShortcodes = (content: string) => {
+  const input = String(content || '');
+  if (!input) return '';
+
+  // 支持短码：[:微笑:] -> ![](/meme/Default/0_1__微笑.gif)
+  return input.replace(/\[:([^\]\n]{1,40}):\]/g, (match, labelRaw) => {
+    const label = String(labelRaw || '').trim();
+    if (!label) return match;
+    const file = MEME_LABEL_TO_FILE.get(label);
+    if (!file) return match;
+    const url = `${MEME_BASE_PATH}/${encodePathSegment(file)}`;
+    return `![](${url})`;
+  });
+};
+
 const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, className = '' }) => {
   const rendered = useMemo(() => {
     if (!content) return '';
-    const baseTokens: any = marked.lexer(content);
+    const normalizedContent = expandMemeShortcodes(content);
+    const baseTokens: any = marked.lexer(normalizedContent);
     const tokens = transformTokens(baseTokens, false) as any[] & { links?: Record<string, { href: string; title: string }> };
     if (baseTokens?.links) {
       tokens.links = baseTokens.links;

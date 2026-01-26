@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useRef, useState } from 'react';
-import { Send } from 'lucide-react';
+import { Send, Smile } from 'lucide-react';
 import { SketchButton } from './SketchUI';
 import { api } from '../api';
 import { Comment } from '../types';
@@ -7,6 +7,7 @@ import { useApp } from '../store/AppContext';
 import MarkdownRenderer from './MarkdownRenderer';
 import Turnstile, { TurnstileHandle } from './Turnstile';
 import ReportModal from './ReportModal';
+import MemePicker, { useMemeInsert } from './MemePicker';
 
 interface CommentModalProps {
   isOpen: boolean;
@@ -31,6 +32,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
   const [loadingMore, setLoadingMore] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [text, setText] = useState('');
+  const [memeOpen, setMemeOpen] = useState(false);
   const [replyToId, setReplyToId] = useState<string | null>(null);
   const [expandedThreads, setExpandedThreads] = useState<Set<string>>(new Set());
   const [lastAddedId, setLastAddedId] = useState<string | null>(null);
@@ -47,6 +49,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
   const turnstileRef = useRef<TurnstileHandle | null>(null);
   const pageSize = 10;
   const turnstileEnabled = state.settings.turnstileEnabled;
+  const { textareaRef, insertMeme } = useMemeInsert(text, setText);
 
   useEffect(() => {
     if (!isOpen || !postId) return;
@@ -495,12 +498,32 @@ const CommentModal: React.FC<CommentModalProps> = ({
         )}
         <div className="flex items-stretch gap-2">
           <textarea
+            ref={textareaRef}
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder="留下你的评论..."
+            placeholder="留下你的评论...（支持 Markdown / 表情包）"
             maxLength={MAX_LENGTH + 10}
             className="flex-1 h-16 p-3 border-2 border-ink rounded-lg resize-none font-sans focus:outline-none focus:shadow-sketch-sm transition-shadow"
           />
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setMemeOpen((prev) => !prev)}
+              className="px-3 h-16 flex items-center justify-center border-2 border-ink rounded-lg bg-white hover:bg-highlight transition-colors shadow-sketch"
+              aria-label="插入表情包"
+              title="表情包"
+            >
+              <Smile className="w-4 h-4" />
+            </button>
+            <MemePicker
+              open={memeOpen}
+              onClose={() => setMemeOpen(false)}
+              onSelect={(label) => {
+                insertMeme(label);
+                setMemeOpen(false);
+              }}
+            />
+          </div>
           <SketchButton
             type="submit"
             className="px-3 h-16 flex items-center justify-center"
