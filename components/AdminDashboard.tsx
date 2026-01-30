@@ -274,10 +274,10 @@ const AdminDashboard: React.FC = () => {
     }
   }, [postPage, postSearch, postSort, postStatus, showToast]);
 
-  const fetchPostComments = useCallback(async (postId: string) => {
+  const fetchPostComments = useCallback(async (postId: string, search = '') => {
     setPostCommentsLoading(true);
     try {
-      const data = await api.getAdminPostComments(postId);
+      const data = await api.getAdminPostComments(postId, 1, 200, search);
       setPostComments(data.items || []);
     } catch (error) {
       const message = error instanceof Error ? error.message : '评论加载失败';
@@ -517,7 +517,33 @@ const AdminDashboard: React.FC = () => {
 
   const openPostComments = (post: AdminPost) => {
     setPostCommentsModal({ isOpen: true, postId: post.id, content: post.content });
-    fetchPostComments(post.id).catch(() => { });
+    fetchPostComments(post.id, postSearch.trim()).catch(() => { });
+  };
+
+  const getHighlightedText = (text: string, keyword: string) => {
+    const normalized = keyword.trim();
+    if (!normalized) {
+      return text;
+    }
+    const escaped = normalized.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(escaped, 'gi');
+    const parts = text.split(regex);
+    const matches = text.match(regex) || [];
+    if (parts.length === 1) {
+      return text;
+    }
+    return (
+      <>
+        {parts.map((part, index) => (
+          <React.Fragment key={`${part}-${index}`}>
+            {part}
+            {index < matches.length && (
+              <span className="bg-highlight/60 px-0.5 rounded-sm">{matches[index]}</span>
+            )}
+          </React.Fragment>
+        ))}
+      </>
+    );
   };
 
   const confirmPostAction = async () => {
@@ -670,6 +696,9 @@ const AdminDashboard: React.FC = () => {
   const renderAdminCommentItem = (item: AdminComment, depth = 0): React.ReactNode => {
     const indent = Math.min(depth * 16, 48);
     const contentClass = item.deleted ? 'text-pencil line-through' : 'text-ink';
+    const content = postSearch.trim()
+      ? getHighlightedText(item.content || '（无内容）', postSearch.trim())
+      : (item.content || '（无内容）');
     return (
       <div key={item.id} style={{ marginLeft: indent }} className="border-l border-dashed border-gray-200 pl-3 py-2">
         <div className="flex flex-wrap items-center gap-2 text-xs text-pencil font-sans mb-1">
@@ -678,7 +707,7 @@ const AdminDashboard: React.FC = () => {
           {item.deleted && <Badge color="bg-gray-200">已删除</Badge>}
           <span>标识：{formatIdentity(item.ip, item.fingerprint)}</span>
         </div>
-        <p className={`text-sm font-sans leading-6 ${contentClass}`}>{item.content || '（无内容）'}</p>
+        <p className={`text-sm font-sans leading-6 ${contentClass}`}>{content}</p>
         <div className="flex items-center gap-2 mt-2">
           <SketchButton
             variant="danger"
@@ -1570,8 +1599,36 @@ const AdminDashboard: React.FC = () => {
                               </span>
                             </div>
                             <p className="text-ink text-base leading-relaxed font-sans font-semibold line-clamp-2">
-                              "{post.content}"
+                              "{postSearch.trim() ? getHighlightedText(post.content, postSearch.trim()) : post.content}"
                             </p>
+                            {postSearch.trim() && (post.matchedCommentCount || 0) > 0 && (
+                              <div className="mt-3 rounded-lg border border-dashed border-ink/40 bg-highlight/10 p-3">
+                                <div className="text-xs font-sans text-pencil mb-2">
+                                  评论命中 {post.matchedCommentCount} 条，已展开前 3 条：
+                                </div>
+                                <div className="flex flex-col gap-3">
+                                  {(post.matchedComments || []).map((comment) => (
+                                    <div key={comment.id} className="border-l-2 border-ink/40 pl-3">
+                                      <div className="text-[11px] text-pencil font-sans mb-1">
+                                        <span className="bg-gray-100 border border-ink text-ink text-[10px] font-bold px-2 py-0.5 rounded font-sans">#{comment.id}</span>
+                                        <span className="ml-2">{comment.timestamp}</span>
+                                        {comment.deleted && <span className="ml-2 text-xs text-pencil">已删除</span>}
+                                      </div>
+                                      <p className="text-sm font-sans text-ink">
+                                        {getHighlightedText(comment.content || '（无内容）', postSearch.trim())}
+                                      </p>
+                                    </div>
+                                  ))}
+                                  <button
+                                    type="button"
+                                    className="text-xs font-bold text-ink hover:underline w-fit"
+                                    onClick={() => openPostComments(post)}
+                                  >
+                                    展开全部评论
+                                  </button>
+                                </div>
+                              </div>
+                            )}
                             <div className="flex flex-wrap items-center gap-4 text-xs text-pencil font-sans mt-3">
                               <span>点赞 {post.likes}</span>
                               <span>评论 {post.comments}</span>

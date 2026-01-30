@@ -144,7 +144,7 @@ export const api = {
     method: 'POST',
     body: JSON.stringify({ content, reason }),
   }),
-  getAdminPostComments: (postId, page = 1, limit = 100) => apiFetch(`/admin/posts/${postId}/comments${toQuery({ page, limit })}`),
+  getAdminPostComments: (postId, page = 1, limit = 100, search = '') => apiFetch(`/admin/posts/${postId}/comments${toQuery({ page, limit, search })}`),
   handleAdminComment: (commentId, action, reason = '', options = {}) => apiFetch(`/admin/comments/${commentId}/action`, {
     method: 'POST',
     body: JSON.stringify({ action, reason, ...options }),

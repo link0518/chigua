@@ -81,6 +81,8 @@ export interface AdminPost {
   sessionId?: string | null;
   ip?: string | null;
   fingerprint?: string | null;
+  matchedComments?: AdminComment[];
+  matchedCommentCount?: number;
 }
 
 export interface AdminComment {

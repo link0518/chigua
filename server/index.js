@@ -2426,9 +2426,23 @@ app.get('/api/admin/posts', requireAdmin, (req, res) => {
   }
 
   if (search) {
-    conditions.push('(posts.id LIKE ? OR posts.content LIKE ? OR posts.ip LIKE ? OR posts.fingerprint LIKE ?)');
+    const commentConditions = [
+      'comments.post_id = posts.id',
+      '(comments.id LIKE ? OR comments.content LIKE ? OR comments.author LIKE ?)',
+    ];
+    conditions.push(`(
+      posts.id LIKE ?
+      OR posts.content LIKE ?
+      OR posts.ip LIKE ?
+      OR posts.fingerprint LIKE ?
+      OR EXISTS (
+        SELECT 1
+        FROM comments
+        WHERE ${commentConditions.join(' AND ')}
+      )
+    )`);
     const likeValue = `%${search}%`;
-    params.push(likeValue, likeValue, likeValue, likeValue);
+    params.push(likeValue, likeValue, likeValue, likeValue, likeValue, likeValue, likeValue);
   }
 
   const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -2457,6 +2471,43 @@ app.get('/api/admin/posts', requireAdmin, (req, res) => {
     )
     .all(...params, limit, offset);
 
+  let matchedCommentsByPost = new Map();
+  let matchedCommentCounts = new Map();
+  if (search && rows.length > 0) {
+    const postIds = rows.map((row) => row.id);
+    const placeholders = postIds.map(() => '?').join(',');
+    const likeValue = `%${search}%`;
+    const commentConditions = [
+      'post_id IN (' + placeholders + ')',
+      '(id LIKE ? OR content LIKE ? OR author LIKE ?)',
+    ];
+    const commentParams = [...postIds, likeValue, likeValue, likeValue];
+
+    const commentRows = db
+      .prepare(
+        `
+        SELECT *
+        FROM comments
+        WHERE ${commentConditions.join(' AND ')}
+        ORDER BY created_at ASC
+        `
+      )
+      .all(...commentParams);
+    matchedCommentsByPost = new Map();
+    matchedCommentCounts = new Map();
+    commentRows.forEach((row) => {
+      const currentCount = matchedCommentCounts.get(row.post_id) || 0;
+      matchedCommentCounts.set(row.post_id, currentCount + 1);
+      if (!matchedCommentsByPost.has(row.post_id)) {
+        matchedCommentsByPost.set(row.post_id, []);
+      }
+      const list = matchedCommentsByPost.get(row.post_id);
+      if (list.length < 3) {
+        list.push(mapAdminCommentRow(row));
+      }
+    });
+  }
+
   const totalRow = db
     .prepare(`SELECT COUNT(1) AS count FROM posts ${whereClause}`)
     .get(...params);
@@ -2476,7 +2527,28 @@ app.get('/api/admin/posts', requireAdmin, (req, res) => {
     sessionId: row.session_id || null,
     ip: row.ip || null,
     fingerprint: row.fingerprint || null,
+    matchedComments: search ? matchedCommentsByPost.get(row.id) || [] : undefined,
+    matchedCommentCount: search ? matchedCommentCounts.get(row.id) || 0 : undefined,
   }));
+
+  if (search) {
+    const keyword = search.toLowerCase();
+    items.sort((a, b) => {
+      const aMatchesPost = [a.id, a.content, a.ip || '', a.fingerprint || '']
+        .some((value) => String(value).toLowerCase().includes(keyword));
+      const bMatchesPost = [b.id, b.content, b.ip || '', b.fingerprint || '']
+        .some((value) => String(value).toLowerCase().includes(keyword));
+      if (aMatchesPost !== bMatchesPost) {
+        return aMatchesPost ? -1 : 1;
+      }
+      const aCommentMatches = a.matchedCommentCount || 0;
+      const bCommentMatches = b.matchedCommentCount || 0;
+      if (aCommentMatches !== bCommentMatches) {
+        return bCommentMatches - aCommentMatches;
+      }
+      return (b.createdAt || 0) - (a.createdAt || 0);
+    });
+  }
 
   return res.json({
     items,
@@ -2836,26 +2908,38 @@ app.get('/api/admin/posts/:id/comments', requireAdmin, (req, res) => {
   const page = Math.max(Number(req.query.page || 1), 1);
   const limit = Math.min(Math.max(Number(req.query.limit || 50), 1), 200);
   const offset = (page - 1) * limit;
+  const search = String(req.query.search || '').trim();
 
   if (!postId) {
     return res.status(400).json({ error: '帖子不存在' });
   }
 
+  const conditions = ['post_id = ?'];
+  const params = [postId];
+
+  if (search) {
+    conditions.push('(id LIKE ? OR content LIKE ? OR author LIKE ?)');
+    const likeValue = `%${search}%`;
+    params.push(likeValue, likeValue, likeValue);
+  }
+
+  const whereClause = `WHERE ${conditions.join(' AND ')}`;
+
   const totalRow = db
-    .prepare('SELECT COUNT(1) AS count FROM comments WHERE post_id = ?')
-    .get(postId);
+    .prepare(`SELECT COUNT(1) AS count FROM comments ${whereClause}`)
+    .get(...params);
 
   const rows = db
     .prepare(
       `
       SELECT *
       FROM comments
-      WHERE post_id = ?
+      ${whereClause}
       ORDER BY created_at ASC
       LIMIT ? OFFSET ?
       `
     )
-    .all(postId, limit, offset);
+    .all(...params, limit, offset);
 
   return res.json({
     items: rows.map((row) => mapAdminCommentRow(row)),
