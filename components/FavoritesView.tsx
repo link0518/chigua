@@ -11,6 +11,7 @@ const FavoritesView: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
+  const [offset, setOffset] = useState(0);
   const pageSize = 10;
 
   const load = async (offset: number, append: boolean) => {
@@ -23,8 +24,17 @@ const FavoritesView: React.FC = () => {
       const data = await api.getFavorites(pageSize, offset);
       const nextItems: Post[] = data?.items || [];
       const total = Number(data?.total || 0);
-      setItems((prev) => (append ? [...prev, ...nextItems] : nextItems));
-      setHasMore(offset + nextItems.length < total);
+      setItems((prev) => {
+        if (!append) {
+          return nextItems;
+        }
+        const existingIds = new Set(prev.map((item) => item.id));
+        const deduped = nextItems.filter((item) => !existingIds.has(item.id));
+        return [...prev, ...deduped];
+      });
+      const nextOffset = offset + nextItems.length;
+      setOffset(nextOffset);
+      setHasMore(nextOffset < total);
     } catch (error) {
       const message = error instanceof Error ? error.message : '收藏加载失败';
       showToast(message, 'error');
@@ -35,6 +45,7 @@ const FavoritesView: React.FC = () => {
   };
 
   useEffect(() => {
+    setOffset(0);
     load(0, false);
   }, []);
 
@@ -174,7 +185,7 @@ const FavoritesView: React.FC = () => {
         <button
           type="button"
           disabled={loadingMore}
-          onClick={() => load(items.length, true)}
+          onClick={() => load(offset, true)}
           className="w-full mt-2 flex items-center justify-center rounded-full px-4 py-3 border-2 border-ink bg-white hover:bg-highlight transition-all shadow-sketch disabled:opacity-60 disabled:cursor-not-allowed"
         >
           <span className="font-hand font-bold text-lg">{loadingMore ? '加载中...' : '加载更多'}</span>

@@ -23,6 +23,7 @@ const SubmissionView = React.lazy(() => import('./components/SubmissionView'));
 const FeedView = React.lazy(() => import('./components/FeedView'));
 const SearchView = React.lazy(() => import('./components/SearchView'));
 const AdminGate = React.lazy(() => import('./components/AdminGate'));
+const FavoritesView = React.lazy(() => import('./components/FavoritesView'));
 
 const normalizePath = (path: string) => {
   if (!path || path === '/') {
@@ -40,6 +41,9 @@ const resolveViewFromPath = (path: string) => {
   if (normalized === '/search') {
     return ViewType.SEARCH;
   }
+  if (normalized === '/favorites') {
+    return ViewType.FAVORITES;
+  }
   if (normalized === '/' || /^\/post\/[^/]+$/.test(normalized)) {
     return ViewType.HOME;
   }
@@ -52,6 +56,9 @@ const getPathForView = (view: ViewType) => {
   }
   if (view === ViewType.SEARCH) {
     return '/search';
+  }
+  if (view === ViewType.FAVORITES) {
+    return '/favorites';
   }
   return '/';
 };
@@ -377,6 +384,8 @@ const App: React.FC = () => {
         return <FeedView />;
       case ViewType.SEARCH:
         return <SearchView />;
+      case ViewType.FAVORITES:
+        return <FavoritesView />;
       case ViewType.ADMIN:
         return (
           <React.Suspense
@@ -479,6 +488,7 @@ const App: React.FC = () => {
                 <NavItem view={ViewType.HOME} label="最新" />
                 <NavItem view={ViewType.FEED} label="热门" />
                 <NavItem view={ViewType.SEARCH} label="搜索" />
+                <NavItem view={ViewType.FAVORITES} label="我的收藏" />
               </nav>
 
               {/* Action Button */}
@@ -602,6 +612,13 @@ const App: React.FC = () => {
                 label="搜索"
                 onClick={() => {
                   navigate(ViewType.SEARCH);
+                  setMobileMenuOpen(false);
+                }}
+              />
+              <MobileNavItem
+                label="我的收藏"
+                onClick={() => {
+                  navigate(ViewType.FAVORITES);
                   setMobileMenuOpen(false);
                 }}
               />

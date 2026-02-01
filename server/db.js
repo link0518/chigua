@@ -46,11 +46,28 @@ CREATE TABLE IF NOT EXISTS post_reactions (
   FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS post_reactions_fingerprint (
+  post_id TEXT NOT NULL,
+  fingerprint TEXT NOT NULL,
+  reaction TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (post_id, fingerprint),
+  FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS post_views (
   post_id TEXT NOT NULL,
   session_id TEXT NOT NULL,
   created_at INTEGER NOT NULL,
   PRIMARY KEY (post_id, session_id),
+  FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS post_favorites (
+  post_id TEXT NOT NULL,
+  fingerprint TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (post_id, fingerprint),
   FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
 );
 
@@ -65,6 +82,13 @@ CREATE TABLE IF NOT EXISTS comments (
   deleted_at INTEGER,
   ip TEXT,
   FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS comment_likes (
+  comment_id TEXT NOT NULL,
+  fingerprint TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (comment_id, fingerprint)
 );
 
 CREATE TABLE IF NOT EXISTS reports (
@@ -235,8 +259,13 @@ CREATE TABLE IF NOT EXISTS easter_egg_seen (
 
 CREATE INDEX IF NOT EXISTS idx_posts_created_at ON posts(created_at);
 CREATE INDEX IF NOT EXISTS idx_posts_deleted ON posts(deleted);
+CREATE INDEX IF NOT EXISTS idx_post_reactions_fingerprint_post_id ON post_reactions_fingerprint(post_id);
+CREATE INDEX IF NOT EXISTS idx_post_reactions_fingerprint_fingerprint_created_at ON post_reactions_fingerprint(fingerprint, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_post_favorites_fingerprint_created_at ON post_favorites(fingerprint, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_comments_post_id ON comments(post_id);
 CREATE INDEX IF NOT EXISTS idx_comments_created_at ON comments(created_at);
+CREATE INDEX IF NOT EXISTS idx_comment_likes_comment_id ON comment_likes(comment_id);
+CREATE INDEX IF NOT EXISTS idx_comment_likes_fingerprint_created_at ON comment_likes(fingerprint, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status);
 CREATE INDEX IF NOT EXISTS idx_feedback_created_at ON feedback_messages(created_at);
 CREATE INDEX IF NOT EXISTS idx_feedback_read_at ON feedback_messages(read_at);
@@ -278,6 +307,32 @@ ensureColumn('banned_fingerprints', 'expires_at', 'INTEGER');
 ensureColumn('banned_fingerprints', 'permissions', 'TEXT');
 ensureColumn('banned_fingerprints', 'reason', 'TEXT');
 ensureColumn('feedback_messages', 'fingerprint', 'TEXT');
+
+const hasColumn = (table, column) => {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all();
+  return columns.some((col) => col.name === column);
+};
+
+const migratePostReactionsFingerprintTable = () => {
+  // 新点赞体系使用独立表；旧 post_reactions(session_id) 数据保持不动，确保历史数据可用。
+  // 兼容中间态：如果某次误迁移导致 post_reactions 里出现 fingerprint 列，尝试把数据搬运到新表。
+  if (!hasColumn('post_reactions', 'fingerprint')) {
+    return;
+  }
+
+  try {
+    db.exec(`
+      INSERT OR IGNORE INTO post_reactions_fingerprint (post_id, fingerprint, reaction, created_at)
+      SELECT post_id, fingerprint, reaction, created_at
+      FROM post_reactions
+      WHERE fingerprint IS NOT NULL AND fingerprint != '';
+    `);
+  } catch {
+    // 忽略：保证启动可用
+  }
+};
+
+migratePostReactionsFingerprintTable();
 
 db.exec('CREATE INDEX IF NOT EXISTS idx_comments_parent_id ON comments(parent_id);');
 

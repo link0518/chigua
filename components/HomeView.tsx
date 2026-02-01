@@ -6,6 +6,7 @@ import {
   Flag,
   MessageCircle,
   Share2,
+  Star,
   ThumbsDown,
   ThumbsUp,
   UserX,
@@ -29,6 +30,8 @@ const HomeView: React.FC = () => {
     dislikePost,
     isLiked,
     isDisliked,
+    isFavorited,
+    toggleFavoritePost,
     showToast,
     loadHomePosts,
     viewPost,
@@ -243,6 +246,19 @@ const HomeView: React.FC = () => {
       showToast('分享链接已复制', 'success');
     } catch {
       showToast('复制失败，请手动复制链接', 'error');
+    }
+  };
+
+  const handleToggleFavorite = async () => {
+    if (!currentPost?.id) {
+      return;
+    }
+    try {
+      const favorited = await toggleFavoritePost(currentPost.id);
+      showToast(favorited ? '已收藏' : '已取消收藏', 'success');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '操作失败';
+      showToast(message, 'error');
     }
   };
 
@@ -498,7 +514,7 @@ const HomeView: React.FC = () => {
               )}
             </div>
             {/* Tags */}
-            <div className="flex gap-2">
+            <div className="flex items-center gap-2">
               {currentPost.isHot && (
                 <span className="bg-alert border border-ink px-2 py-0.5 text-xs font-bold rounded-sm shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] transform -rotate-1">🔥 热门</span>
               )}
@@ -511,6 +527,15 @@ const HomeView: React.FC = () => {
                   {tag}
                 </span>
               ))}
+              <button
+                type="button"
+                onClick={handleToggleFavorite}
+                className={`ml-1 flex items-center justify-center rounded-full px-2.5 py-2 border-2 border-ink transition-all shadow-sketch active:shadow-sketch-active active:translate-x-[2px] active:translate-y-[2px] ${isFavorited(currentPost.id) ? 'bg-marker-yellow hover:bg-marker-yellow/90' : 'bg-white hover:bg-highlight'}`}
+                title={isFavorited(currentPost.id) ? '取消收藏' : '收藏'}
+                aria-label={isFavorited(currentPost.id) ? '取消收藏' : '收藏'}
+              >
+                <Star className="w-5 h-5" fill={isFavorited(currentPost.id) ? 'currentColor' : 'none'} />
+              </button>
             </div>
           </div>
 

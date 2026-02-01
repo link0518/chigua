@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ThumbsUp, ThumbsDown, MessageSquare, MoreHorizontal, Flag, Share2, UserX } from 'lucide-react';
+import { ThumbsUp, ThumbsDown, MessageSquare, MoreHorizontal, Flag, Share2, Star, UserX } from 'lucide-react';
 import { Post } from '../types';
 import { Badge, roughBorderClassSm } from './SketchUI';
 import { useApp } from '../store/AppContext';
@@ -16,6 +16,7 @@ const PostItem: React.FC<{
   rank?: number;
   onLike: () => void;
   onDislike: () => void;
+  onFavorite: () => void;
   onComment: () => void;
   onCommentClose: () => void;
   commentOpen: boolean;
@@ -23,7 +24,8 @@ const PostItem: React.FC<{
   onReport: () => void;
   isLiked: boolean;
   isDisliked: boolean;
-}> = ({ post, rank, onLike, onDislike, onComment, onCommentClose, commentOpen, onShare, onReport, isLiked, isDisliked }) => {
+  isFavorited: boolean;
+}> = ({ post, rank, onLike, onDislike, onFavorite, onComment, onCommentClose, commentOpen, onShare, onReport, isLiked, isDisliked, isFavorited }) => {
   const isDeveloperPost = post.author === 'admin';
   return (
     <div className={`relative group ${rank ? 'mb-10' : 'mb-6'}`}>
@@ -82,6 +84,13 @@ const PostItem: React.FC<{
               <ThumbsDown className={`w-5 h-5 mt-1 ${isDisliked ? 'fill-current' : ''}`} />
             </button>
             <button
+              onClick={onFavorite}
+              className={`flex items-center gap-1 transition-colors ${isFavorited ? 'text-amber-600' : 'hover:text-ink'}`}
+              title={isFavorited ? '取消收藏' : '收藏'}
+            >
+              <Star className={`w-5 h-5 ${isFavorited ? 'fill-current' : ''}`} />
+            </button>
+            <button
               onClick={onComment}
               className="flex items-center gap-1 hover:text-ink transition-colors ml-auto"
             >
@@ -122,7 +131,7 @@ const PostItem: React.FC<{
 };
 
 const FeedView: React.FC = () => {
-  const { state, loadFeedPosts, likePost, dislikePost, isLiked, isDisliked, showToast } = useApp();
+  const { state, loadFeedPosts, likePost, dislikePost, isLiked, isDisliked, isFavorited, toggleFavoritePost, showToast } = useApp();
   const [filter, setFilter] = useState<FilterType>('today');
   const [reportModal, setReportModal] = useState<{ isOpen: boolean; postId: string; content: string }>({
     isOpen: false,
@@ -165,6 +174,16 @@ const FeedView: React.FC = () => {
       await dislikePost(postId);
     } catch (error) {
       const message = error instanceof Error ? error.message : '操作失败，请稍后重试';
+      showToast(message, 'error');
+    }
+  };
+
+  const handleFavorite = async (postId: string) => {
+    try {
+      const favorited = await toggleFavoritePost(postId);
+      showToast(favorited ? '已收藏' : '已取消收藏', 'success');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '收藏失败，请稍后重试';
       showToast(message, 'error');
     }
   };
@@ -256,6 +275,7 @@ const FeedView: React.FC = () => {
               rank={post.rank}
               onLike={() => handleLike(post.id)}
               onDislike={() => handleDislike(post.id)}
+              onFavorite={() => handleFavorite(post.id)}
               onComment={() => handleComment(post.id, post.content)}
               onCommentClose={() => setCommentModal({ isOpen: false, postId: '', content: '' })}
               commentOpen={commentModal.isOpen && commentModal.postId === post.id}
@@ -263,6 +283,7 @@ const FeedView: React.FC = () => {
               onReport={() => handleReport(post.id, post.content)}
               isLiked={isLiked(post.id)}
               isDisliked={isDisliked(post.id)}
+              isFavorited={isFavorited(post.id)}
             />
           ))
         )}

@@ -40,6 +40,7 @@ interface AppState {
   toasts: Toast[];
   likedPosts: Set<string>;
   dislikedPosts: Set<string>;
+  favoritedPosts: Set<string>;
   adminSession: AdminSession;
   settings: AppSettings;
 }
@@ -50,6 +51,7 @@ interface AppContextType {
   addComment: (postId: string, content: string, turnstileToken: string, parentId?: string | null, replyToId?: string | null) => Promise<Comment>;
   likePost: (postId: string) => Promise<void>;
   dislikePost: (postId: string) => Promise<void>;
+  toggleFavoritePost: (postId: string) => Promise<boolean>;
   deletePost: (postId: string) => void;
   reportPost: (postId: string, reason: string) => Promise<void>;
   reportComment: (commentId: string, reason: string) => Promise<void>;
@@ -58,6 +60,7 @@ interface AppContextType {
   removeToast: (id: string) => void;
   isLiked: (postId: string) => boolean;
   isDisliked: (postId: string) => boolean;
+  isFavorited: (postId: string) => boolean;
   getHomePosts: () => Post[];
   getFeedPosts: (filter?: 'week' | 'today' | 'all') => Post[];
   getPendingReports: () => Report[];
@@ -96,6 +99,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     toasts: [],
     likedPosts: new Set(),
     dislikedPosts: new Set(),
+    favoritedPosts: new Set(),
     adminSession: { loggedIn: false, checked: false, disabled: false, csrfToken: null },
     settings: { turnstileEnabled: true },
   });
@@ -123,14 +127,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setState((prev) => {
       const likedPosts = new Set(prev.likedPosts);
       const dislikedPosts = new Set(prev.dislikedPosts);
+      const favoritedPosts = new Set(prev.favoritedPosts);
 
       posts.forEach((post) => {
         likedPosts.delete(post.id);
         dislikedPosts.delete(post.id);
+        favoritedPosts.delete(post.id);
         if (post.viewerReaction === 'like') {
           likedPosts.add(post.id);
         } else if (post.viewerReaction === 'dislike') {
           dislikedPosts.add(post.id);
+        }
+        if (post.viewerFavorited) {
+          favoritedPosts.add(post.id);
         }
       });
 
@@ -138,6 +147,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         ...prev,
         likedPosts,
         dislikedPosts,
+        favoritedPosts,
       };
     });
   }, []);
@@ -349,6 +359,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   }, []);
 
+  const toggleFavoritePost = useCallback(async (postId: string) => {
+    const data = await api.toggleFavoritePost(postId);
+    const favorited = Boolean(data?.favorited);
+    setState((prev) => {
+      const favoritedPosts = new Set(prev.favoritedPosts);
+      if (favorited) {
+        favoritedPosts.add(postId);
+      } else {
+        favoritedPosts.delete(postId);
+      }
+
+      const updateList = (list: Post[]) =>
+        list.map((post) =>
+          post.id === postId
+            ? { ...post, viewerFavorited: favorited }
+            : post
+        );
+
+      return {
+        ...prev,
+        favoritedPosts,
+        homePosts: updateList(prev.homePosts),
+        feedPosts: updateList(prev.feedPosts),
+      };
+    });
+    return favorited;
+  }, []);
+
   const deletePost = useCallback((postId: string) => {
     setState((prev) => ({
       ...prev,
@@ -363,6 +401,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       })(),
       dislikedPosts: (() => {
         const next = new Set(prev.dislikedPosts);
+        next.delete(postId);
+        return next;
+      })(),
+      favoritedPosts: (() => {
+        const next = new Set(prev.favoritedPosts);
         next.delete(postId);
         return next;
       })(),
@@ -412,6 +455,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const isLiked = useCallback((postId: string) => state.likedPosts.has(postId), [state.likedPosts]);
   const isDisliked = useCallback((postId: string) => state.dislikedPosts.has(postId), [state.dislikedPosts]);
+  const isFavorited = useCallback((postId: string) => state.favoritedPosts.has(postId), [state.favoritedPosts]);
 
   const getHomePosts = useCallback(() => state.homePosts, [state.homePosts]);
   const getFeedPosts = useCallback(() => state.feedPosts, [state.feedPosts]);
@@ -424,6 +468,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       addComment,
       likePost,
       dislikePost,
+      toggleFavoritePost,
       deletePost,
       reportPost,
       reportComment,
@@ -432,6 +477,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       removeToast,
       isLiked,
       isDisliked,
+      isFavorited,
       getHomePosts,
       getFeedPosts,
       getPendingReports,
@@ -452,6 +498,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       addComment,
       likePost,
       dislikePost,
+      toggleFavoritePost,
       deletePost,
       reportPost,
       reportComment,
@@ -460,6 +507,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       removeToast,
       isLiked,
       isDisliked,
+      isFavorited,
       getHomePosts,
       getFeedPosts,
       getPendingReports,

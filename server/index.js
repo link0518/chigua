@@ -922,6 +922,7 @@ const mapPostRow = (row, isHot) => ({
   imageUrl: row.image_url || '',
   createdAt: row.created_at,
   viewerReaction: row.viewer_reaction || null,
+  viewerFavorited: Boolean(row.viewer_favorited),
 });
 
 const mapCommentRow = (row) => {
@@ -936,6 +937,8 @@ const mapCommentRow = (row) => {
     timestamp: formatRelativeTime(row.created_at),
     createdAt: row.created_at,
     deleted,
+    likes: Number(row.likes_count || 0),
+    viewerLiked: Boolean(row.viewer_liked),
   };
 };
 
@@ -1305,17 +1308,22 @@ app.get('/api/posts/home', (req, res) => {
   const rows = db
     .prepare(
       `
-        SELECT posts.*, ${hotScoreSql} AS hot_score, pr.reaction AS viewer_reaction
+        SELECT posts.*, ${hotScoreSql} AS hot_score,
+          pr.reaction AS viewer_reaction,
+          pf.post_id IS NOT NULL AS viewer_favorited
       FROM posts
-      LEFT JOIN post_reactions pr
+      LEFT JOIN post_reactions_fingerprint pr
         ON pr.post_id = posts.id
-        AND pr.session_id = ?
+        AND pr.fingerprint = ?
+      LEFT JOIN post_favorites pf
+        ON pf.post_id = posts.id
+        AND pf.fingerprint = ?
         WHERE posts.deleted = 0
         ORDER BY posts.created_at DESC
         LIMIT ? OFFSET ?
         `
     )
-    .all(viewerFingerprint, limit, offset);
+    .all(viewerFingerprint, viewerFingerprint, limit, offset);
 
   const posts = rows.map((row) => mapPostRow(row, row.hot_score >= 20));
   res.json({ items: posts, total });
@@ -1332,7 +1340,7 @@ app.get('/api/posts/feed', (req, res) => {
   const viewerFingerprint = getOptionalFingerprint(req);
 
   const conditions = ['posts.deleted = 0'];
-  const params = [viewerFingerprint];
+  const params = [viewerFingerprint, viewerFingerprint];
 
   if (filter === 'today') {
     conditions.push('posts.created_at >= ?');
@@ -1353,11 +1361,16 @@ app.get('/api/posts/feed', (req, res) => {
   const rows = db
     .prepare(
       `
-      SELECT posts.*, ${hotScoreSql} AS hot_score, pr.reaction AS viewer_reaction
+      SELECT posts.*, ${hotScoreSql} AS hot_score,
+        pr.reaction AS viewer_reaction,
+        pf.post_id IS NOT NULL AS viewer_favorited
       FROM posts
-      LEFT JOIN post_reactions pr
+      LEFT JOIN post_reactions_fingerprint pr
         ON pr.post_id = posts.id
-        AND pr.session_id = ?
+        AND pr.fingerprint = ?
+      LEFT JOIN post_favorites pf
+        ON pf.post_id = posts.id
+        AND pf.fingerprint = ?
       ${whereClause}
       ORDER BY hot_score DESC, posts.created_at DESC
       `
@@ -1402,18 +1415,23 @@ app.get('/api/posts/search', (req, res) => {
   const rows = db
     .prepare(
       `
-        SELECT posts.*, ${hotScoreSql} AS hot_score, pr.reaction AS viewer_reaction
+        SELECT posts.*, ${hotScoreSql} AS hot_score,
+          pr.reaction AS viewer_reaction,
+          pf.post_id IS NOT NULL AS viewer_favorited
         FROM posts
-        LEFT JOIN post_reactions pr
+        LEFT JOIN post_reactions_fingerprint pr
           ON pr.post_id = posts.id
-          AND pr.session_id = ?
+          AND pr.fingerprint = ?
+        LEFT JOIN post_favorites pf
+          ON pf.post_id = posts.id
+          AND pf.fingerprint = ?
         WHERE posts.deleted = 0
           AND posts.content LIKE ? ESCAPE '\\'
         ORDER BY posts.created_at DESC
         LIMIT ? OFFSET ?
       `
     )
-    .all(viewerFingerprint, keyword, limit, offset);
+    .all(viewerFingerprint, viewerFingerprint, keyword, limit, offset);
 
   const items = rows.map((row) => mapPostRow(row, row.hot_score >= 20));
   return res.json({ items, total, page, limit });
@@ -1469,15 +1487,20 @@ app.post('/api/posts', async (req, res) => {
   const row = db
     .prepare(
       `
-      SELECT posts.*, ${hotScoreSql} AS hot_score, pr.reaction AS viewer_reaction
+      SELECT posts.*, ${hotScoreSql} AS hot_score,
+        pr.reaction AS viewer_reaction,
+        pf.post_id IS NOT NULL AS viewer_favorited
       FROM posts
-      LEFT JOIN post_reactions pr
+      LEFT JOIN post_reactions_fingerprint pr
         ON pr.post_id = posts.id
-        AND pr.session_id = ?
+        AND pr.fingerprint = ?
+      LEFT JOIN post_favorites pf
+        ON pf.post_id = posts.id
+        AND pf.fingerprint = ?
       WHERE posts.id = ?
       `
     )
-    .get(fingerprint, postId);
+    .get(fingerprint, fingerprint, postId);
 
   generateSnapshotForPost({ id: postId, content, created_at: now });
   scheduleSitemapGenerate();
@@ -1498,16 +1521,21 @@ app.get('/api/posts/:id', (req, res) => {
   const row = db
     .prepare(
       `
-      SELECT posts.*, ${hotScoreSql} AS hot_score, pr.reaction AS viewer_reaction
+      SELECT posts.*, ${hotScoreSql} AS hot_score,
+        pr.reaction AS viewer_reaction,
+        pf.post_id IS NOT NULL AS viewer_favorited
       FROM posts
-      LEFT JOIN post_reactions pr
+      LEFT JOIN post_reactions_fingerprint pr
         ON pr.post_id = posts.id
-        AND pr.session_id = ?
+        AND pr.fingerprint = ?
+      LEFT JOIN post_favorites pf
+        ON pf.post_id = posts.id
+        AND pf.fingerprint = ?
       WHERE posts.id = ?
         AND posts.deleted = 0
       `
     )
-    .get(viewerFingerprint, postId);
+    .get(viewerFingerprint, viewerFingerprint, postId);
 
   if (!row) {
     return res.status(404).json({ error: '帖子不存在或已删除' });
@@ -1516,50 +1544,55 @@ app.get('/api/posts/:id', (req, res) => {
   return res.json({ post: mapPostRow(row, row.hot_score >= 20) });
 });
 
+const sumReactionCounts = (postId) => {
+  const base = db
+    .prepare(
+      `
+      SELECT
+        COALESCE(SUM(CASE WHEN reaction = 'like' THEN 1 ELSE 0 END), 0) AS likes_count,
+        COALESCE(SUM(CASE WHEN reaction = 'dislike' THEN 1 ELSE 0 END), 0) AS dislikes_count
+      FROM (
+        SELECT reaction FROM post_reactions WHERE post_id = ?
+        UNION ALL
+        SELECT reaction FROM post_reactions_fingerprint WHERE post_id = ?
+      )
+      `
+    )
+    .get(postId, postId);
+
+  return {
+    likes_count: Number(base?.likes_count || 0),
+    dislikes_count: Number(base?.dislikes_count || 0),
+  };
+};
+
 const toggleReaction = db.transaction((postId, identityKey, reaction) => {
   const existing = db
-    .prepare('SELECT reaction FROM post_reactions WHERE post_id = ? AND session_id = ?')
+    .prepare('SELECT reaction FROM post_reactions_fingerprint WHERE post_id = ? AND fingerprint = ?')
     .get(postId, identityKey);
 
-  let likesDelta = 0;
-  let dislikesDelta = 0;
   let nextReaction = null;
 
   if (!existing) {
     db.prepare(
-      'INSERT INTO post_reactions (post_id, session_id, reaction, created_at) VALUES (?, ?, ?, ?)'
+      'INSERT INTO post_reactions_fingerprint (post_id, fingerprint, reaction, created_at) VALUES (?, ?, ?, ?)'
     ).run(postId, identityKey, reaction, Date.now());
-    if (reaction === 'like') likesDelta += 1;
-    if (reaction === 'dislike') dislikesDelta += 1;
     nextReaction = reaction;
   } else if (existing.reaction === reaction) {
-    db.prepare('DELETE FROM post_reactions WHERE post_id = ? AND session_id = ?').run(postId, identityKey);
-    if (reaction === 'like') likesDelta -= 1;
-    if (reaction === 'dislike') dislikesDelta -= 1;
+    db.prepare('DELETE FROM post_reactions_fingerprint WHERE post_id = ? AND fingerprint = ?').run(postId, identityKey);
     nextReaction = null;
   } else {
-    db.prepare('UPDATE post_reactions SET reaction = ?, created_at = ? WHERE post_id = ? AND session_id = ?')
+    db.prepare('UPDATE post_reactions_fingerprint SET reaction = ?, created_at = ? WHERE post_id = ? AND fingerprint = ?')
       .run(reaction, Date.now(), postId, identityKey);
-    if (reaction === 'like') {
-      likesDelta += 1;
-      dislikesDelta -= 1;
-    } else {
-      likesDelta -= 1;
-      dislikesDelta += 1;
-    }
     nextReaction = reaction;
   }
 
-  db.prepare(
-    `
-    UPDATE posts
-    SET likes_count = MAX(likes_count + ?, 0),
-        dislikes_count = MAX(dislikes_count + ?, 0)
-    WHERE id = ?
-    `
-  ).run(likesDelta, dislikesDelta, postId);
+  // 旧数据（post_reactions:session_id）需要继续可用，因此这里不再做增量更新，
+  // 而是从“旧表 + 新表”汇总计数，保证展示与返回稳定正确。
+  const counts = sumReactionCounts(postId);
+  db.prepare('UPDATE posts SET likes_count = ?, dislikes_count = ? WHERE id = ?')
+    .run(counts.likes_count, counts.dislikes_count, postId);
 
-  const counts = db.prepare('SELECT likes_count, dislikes_count FROM posts WHERE id = ?').get(postId);
   return { ...counts, reaction: nextReaction };
 });
 
@@ -1612,6 +1645,85 @@ app.post('/api/posts/:id/dislike', (req, res) => {
   });
 });
 
+const toggleFavorite = db.transaction((postId, fingerprint) => {
+  const existing = db
+    .prepare('SELECT created_at FROM post_favorites WHERE post_id = ? AND fingerprint = ?')
+    .get(postId, fingerprint);
+
+  if (existing) {
+    db.prepare('DELETE FROM post_favorites WHERE post_id = ? AND fingerprint = ?').run(postId, fingerprint);
+    return { favorited: false };
+  }
+
+  db.prepare('INSERT INTO post_favorites (post_id, fingerprint, created_at) VALUES (?, ?, ?)')
+    .run(postId, fingerprint, Date.now());
+  return { favorited: true };
+});
+
+app.post('/api/posts/:id/favorite', (req, res) => {
+  const postId = String(req.params.id || '').trim();
+  if (!postId) {
+    return res.status(400).json({ error: '帖子不存在' });
+  }
+
+  const post = db.prepare('SELECT id FROM posts WHERE id = ? AND deleted = 0').get(postId);
+  if (!post) {
+    return res.status(404).json({ error: '内容不存在' });
+  }
+
+  const fingerprint = requireFingerprint(req, res);
+  if (!fingerprint) {
+    return;
+  }
+
+  if (!checkBanFor(req, res, 'like', '你已被限制操作')) {
+    return;
+  }
+
+  const result = toggleFavorite(postId, fingerprint);
+  return res.json(result);
+});
+
+app.get('/api/favorites', (req, res) => {
+  if (!checkBanFor(req, res, 'view', '你已被限制浏览')) {
+    return;
+  }
+  const fingerprint = requireFingerprint(req, res);
+  if (!fingerprint) {
+    return;
+  }
+
+  const limit = Math.min(Math.max(Number(req.query.limit || 20), 1), 50);
+  const offset = Math.max(Number(req.query.offset || 0), 0);
+
+  const total = db
+    .prepare('SELECT COUNT(1) AS count FROM post_favorites WHERE fingerprint = ?')
+    .get(fingerprint)?.count ?? 0;
+
+  const rows = db
+    .prepare(
+      `
+      SELECT posts.*, ${hotScoreSql} AS hot_score,
+        pr.reaction AS viewer_reaction,
+        1 AS viewer_favorited,
+        pf.created_at AS favorited_at
+      FROM post_favorites pf
+      JOIN posts ON posts.id = pf.post_id
+      LEFT JOIN post_reactions_fingerprint pr
+        ON pr.post_id = posts.id
+        AND pr.fingerprint = ?
+      WHERE pf.fingerprint = ?
+        AND posts.deleted = 0
+      ORDER BY pf.created_at DESC
+      LIMIT ? OFFSET ?
+      `
+    )
+    .all(fingerprint, fingerprint, limit, offset);
+
+  const items = rows.map((row) => mapPostRow(row, row.hot_score >= 20));
+  return res.json({ items, total });
+});
+
 app.post('/api/posts/:id/view', (req, res) => {
   if (!checkBanFor(req, res, 'view', '你已被限制浏览')) {
     return;
@@ -1641,6 +1753,7 @@ app.get('/api/posts/:id/comments', (req, res) => {
   const postId = req.params.id;
   const limit = Math.min(Number(req.query.limit || 10), 200);
   const offset = Math.max(Number(req.query.offset || 0), 0);
+  const viewerFingerprint = getOptionalFingerprint(req);
 
   const post = db.prepare('SELECT id, fingerprint FROM posts WHERE id = ? AND deleted = 0').get(postId);
   if (!post) {
@@ -1654,9 +1767,25 @@ app.get('/api/posts/:id/comments', (req, res) => {
 
   const rootRows = db
     .prepare(
-      `\n      SELECT *\n      FROM comments\n      WHERE post_id = ? AND parent_id IS NULL\n      ORDER BY created_at ASC\n      LIMIT ? OFFSET ?\n      `
+      `
+      SELECT comments.*,
+        COALESCE(cl.likes_count, 0) AS likes_count,
+        viewer.comment_id IS NOT NULL AS viewer_liked
+      FROM comments
+      LEFT JOIN (
+        SELECT comment_id, COUNT(1) AS likes_count
+        FROM comment_likes
+        GROUP BY comment_id
+      ) cl ON cl.comment_id = comments.id
+      LEFT JOIN comment_likes viewer
+        ON viewer.comment_id = comments.id
+        AND viewer.fingerprint = ?
+      WHERE comments.post_id = ? AND comments.parent_id IS NULL
+      ORDER BY comments.created_at ASC
+      LIMIT ? OFFSET ?
+      `
     )
-    .all(postId, limit, offset);
+    .all(viewerFingerprint, postId, limit, offset);
 
   if (rootRows.length === 0) {
     return res.json({ items: [], total });
@@ -1666,9 +1795,24 @@ app.get('/api/posts/:id/comments', (req, res) => {
   const placeholders = rootIds.map(() => '?').join(', ');
   const replyRows = db
     .prepare(
-      `\n      SELECT *\n      FROM comments\n      WHERE post_id = ? AND parent_id IN (${placeholders})\n      ORDER BY created_at ASC\n      `
+      `
+      SELECT comments.*,
+        COALESCE(cl.likes_count, 0) AS likes_count,
+        viewer.comment_id IS NOT NULL AS viewer_liked
+      FROM comments
+      LEFT JOIN (
+        SELECT comment_id, COUNT(1) AS likes_count
+        FROM comment_likes
+        GROUP BY comment_id
+      ) cl ON cl.comment_id = comments.id
+      LEFT JOIN comment_likes viewer
+        ON viewer.comment_id = comments.id
+        AND viewer.fingerprint = ?
+      WHERE comments.post_id = ? AND comments.parent_id IN (${placeholders})
+      ORDER BY comments.created_at ASC
+      `
     )
-    .all(postId, ...rootIds);
+    .all(viewerFingerprint, postId, ...rootIds);
 
   return res.json({ items: buildCommentTree([...rootRows, ...replyRows]), total });
 });
@@ -1682,6 +1826,7 @@ app.get('/api/posts/:id/comment-thread', (req, res) => {
   if (!commentId) {
     return res.status(400).json({ error: '缺少 commentId' });
   }
+  const viewerFingerprint = getOptionalFingerprint(req);
 
   const commentRow = db
     .prepare('SELECT * FROM comments WHERE id = ?')
@@ -1692,8 +1837,24 @@ app.get('/api/posts/:id/comment-thread', (req, res) => {
 
   const rootId = commentRow.parent_id || commentRow.id;
   const rootRow = db
-    .prepare('SELECT * FROM comments WHERE id = ?')
-    .get(rootId);
+    .prepare(
+      `
+      SELECT comments.*,
+        COALESCE(cl.likes_count, 0) AS likes_count,
+        viewer.comment_id IS NOT NULL AS viewer_liked
+      FROM comments
+      LEFT JOIN (
+        SELECT comment_id, COUNT(1) AS likes_count
+        FROM comment_likes
+        GROUP BY comment_id
+      ) cl ON cl.comment_id = comments.id
+      LEFT JOIN comment_likes viewer
+        ON viewer.comment_id = comments.id
+        AND viewer.fingerprint = ?
+      WHERE comments.id = ?
+      `
+    )
+    .get(viewerFingerprint, rootId);
   if (!rootRow || rootRow.post_id !== postId) {
     return res.status(404).json({ error: '评论不存在' });
   }
@@ -1701,13 +1862,23 @@ app.get('/api/posts/:id/comment-thread', (req, res) => {
   const replyRows = db
     .prepare(
       `
-      SELECT *
+      SELECT comments.*,
+        COALESCE(cl.likes_count, 0) AS likes_count,
+        viewer.comment_id IS NOT NULL AS viewer_liked
       FROM comments
-      WHERE post_id = ? AND parent_id = ?
-      ORDER BY created_at ASC
+      LEFT JOIN (
+        SELECT comment_id, COUNT(1) AS likes_count
+        FROM comment_likes
+        GROUP BY comment_id
+      ) cl ON cl.comment_id = comments.id
+      LEFT JOIN comment_likes viewer
+        ON viewer.comment_id = comments.id
+        AND viewer.fingerprint = ?
+      WHERE comments.post_id = ? AND comments.parent_id = ?
+      ORDER BY comments.created_at ASC
       `
     )
-    .all(postId, rootId);
+    .all(viewerFingerprint, postId, rootId);
 
   const replies = replyRows
     .filter((row) => row.id !== rootId)
@@ -1821,8 +1992,55 @@ app.post('/api/posts/:id/comments', async (req, res) => {
       content,
       author: '匿名',
       created_at: now,
+      likes_count: 0,
+      viewer_liked: 0,
     }),
   });
+});
+
+const toggleCommentLike = db.transaction((commentId, fingerprint) => {
+  const comment = db.prepare('SELECT id, post_id FROM comments WHERE id = ? AND deleted = 0').get(commentId);
+  if (!comment) {
+    return { status: 404, error: '评论不存在' };
+  }
+
+  const existing = db
+    .prepare('SELECT created_at FROM comment_likes WHERE comment_id = ? AND fingerprint = ?')
+    .get(commentId, fingerprint);
+
+  if (existing) {
+    db.prepare('DELETE FROM comment_likes WHERE comment_id = ? AND fingerprint = ?').run(commentId, fingerprint);
+  } else {
+    db.prepare('INSERT INTO comment_likes (comment_id, fingerprint, created_at) VALUES (?, ?, ?)')
+      .run(commentId, fingerprint, Date.now());
+  }
+
+  const likesRow = db.prepare('SELECT COUNT(1) AS count FROM comment_likes WHERE comment_id = ?').get(commentId);
+  const likes = likesRow?.count ?? 0;
+  const viewerLiked = !existing;
+  return { status: 200, data: { commentId, postId: comment.post_id, likes, viewerLiked } };
+});
+
+app.post('/api/comments/:id/like', (req, res) => {
+  const commentId = String(req.params.id || '').trim();
+  if (!commentId) {
+    return res.status(400).json({ error: '评论不存在' });
+  }
+
+  const fingerprint = requireFingerprint(req, res);
+  if (!fingerprint) {
+    return;
+  }
+
+  if (!checkBanFor(req, res, 'like', '你已被限制操作')) {
+    return;
+  }
+
+  const result = toggleCommentLike(commentId, fingerprint);
+  if (result.error) {
+    return res.status(result.status || 400).json({ error: result.error });
+  }
+  return res.json(result.data);
 });
 
 const resolveRiskLevel = (reason) => {
@@ -2200,9 +2418,9 @@ app.post('/api/admin/posts', requireAdmin, requireAdminCsrf, (req, res) => {
       `
       SELECT posts.*, ${hotScoreSql} AS hot_score, pr.reaction AS viewer_reaction
       FROM posts
-      LEFT JOIN post_reactions pr
+      LEFT JOIN post_reactions_fingerprint pr
         ON pr.post_id = posts.id
-        AND pr.session_id = ?
+        AND pr.fingerprint = ?
       WHERE posts.id = ?
       `
     )

@@ -3,6 +3,7 @@ export enum ViewType {
   SUBMISSION = 'SUBMISSION',
   FEED = 'FEED',
   SEARCH = 'SEARCH',
+  FAVORITES = 'FAVORITES',
   ADMIN = 'ADMIN',
   NOT_FOUND = 'NOT_FOUND'
 }
@@ -21,6 +22,7 @@ export interface Post {
   imageUrl?: string;
   createdAt?: number; // Unix timestamp for sorting
   viewerReaction?: 'like' | 'dislike' | null;
+  viewerFavorited?: boolean;
 }
 
 export interface Report {
@@ -54,6 +56,8 @@ export interface Comment {
   createdAt?: number;
   replies?: Comment[];
   deleted?: boolean;
+  likes?: number;
+  viewerLiked?: boolean;
 }
 
 export interface NotificationItem {

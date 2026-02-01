@@ -48,6 +48,14 @@ const shouldAttachFingerprint = (path: string, options: RequestInit) => {
     return true;
   }
 
+  if (cleanPath.startsWith('/favorites')) {
+    return true;
+  }
+
+  if (cleanPath.startsWith('/comments')) {
+    return true;
+  }
+
   return false;
 };
 
@@ -107,6 +115,7 @@ export const api = {
   }),
   likePost: (postId) => apiFetch(`/posts/${postId}/like`, { method: 'POST' }),
   dislikePost: (postId) => apiFetch(`/posts/${postId}/dislike`, { method: 'POST' }),
+  toggleFavoritePost: (postId) => apiFetch(`/posts/${postId}/favorite`, { method: 'POST' }),
   viewPost: (postId) => apiFetch(`/posts/${postId}/view`, { method: 'POST' }),
   getComments: (postId, offset = 0, limit = 10) => apiFetch(`/posts/${postId}/comments${toQuery({ offset, limit })}`),
   getCommentThread: (postId, commentId) => apiFetch(`/posts/${postId}/comment-thread${toQuery({ commentId })}`),
@@ -114,6 +123,8 @@ export const api = {
     method: 'POST',
     body: JSON.stringify({ content, turnstileToken, parentId, replyToId }),
   }),
+  toggleCommentLike: (commentId) => apiFetch(`/comments/${commentId}/like`, { method: 'POST' }),
+  getFavorites: (limit = 20, offset = 0) => apiFetch(`/favorites${toQuery({ limit, offset })}`),
   reportPost: (postId, reason) => apiFetch('/reports', {
     method: 'POST',
     body: JSON.stringify({ postId, reason }),

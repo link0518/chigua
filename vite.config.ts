@@ -40,14 +40,16 @@ const buildAppVersion = () => {
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
     const appVersion = buildAppVersion();
+    const apiPort = Number(env.PORT || 4395);
+    const devPort = Number(env.VITE_PORT || 4396);
     return {
       server: {
-        port: 4396,
+        port: devPort,
         host: '0.0.0.0',
         strictPort: true,
         proxy: {
           '^/api/': {
-            target: 'http://localhost:4395',
+            target: `http://localhost:${apiPort}`,
             changeOrigin: true,
           },
         },

@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useRef, useState } from 'react';
-import { Send, Smile } from 'lucide-react';
+import { Send, Smile, ThumbsUp } from 'lucide-react';
 import { SketchButton } from './SketchUI';
 import { api } from '../api';
 import { Comment } from '../types';
@@ -235,6 +235,30 @@ const CommentModal: React.FC<CommentModalProps> = ({
     return items.reduce((sum, item) => sum + 1 + countComments(item.replies || []), 0);
   };
 
+  const updateCommentLike = (items: Comment[], commentId: string, likes: number, viewerLiked: boolean): Comment[] => {
+    return items.map((item) => {
+      if (item.id === commentId) {
+        return { ...item, likes, viewerLiked };
+      }
+      if (item.replies?.length) {
+        return { ...item, replies: updateCommentLike(item.replies, commentId, likes, viewerLiked) };
+      }
+      return item;
+    });
+  };
+
+  const handleToggleLike = async (commentId: string) => {
+    try {
+      const data = await api.toggleCommentLike(commentId);
+      const likes = Number(data?.likes || 0);
+      const viewerLiked = Boolean(data?.viewerLiked);
+      setComments((prev) => updateCommentLike(prev, commentId, likes, viewerLiked));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '点赞失败';
+      showToast(message, 'error');
+    }
+  };
+
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     const trimmed = text.trim();
@@ -422,6 +446,18 @@ const CommentModal: React.FC<CommentModalProps> = ({
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="text-gray-400">{item.timestamp}</span>
+                        {!isDeleted && (
+                          <button
+                            type="button"
+                            onClick={() => handleToggleLike(item.id)}
+                            className={`flex items-center gap-1 rounded-full px-2 py-1 border border-gray-200 bg-white hover:bg-highlight transition-colors ${item.viewerLiked ? 'text-blue-600' : 'text-gray-500'}`}
+                            aria-label="点赞"
+                            title={item.viewerLiked ? '取消点赞' : '点赞'}
+                          >
+                            <ThumbsUp className="w-3.5 h-3.5" fill={item.viewerLiked ? 'currentColor' : 'none'} />
+                            <span className="text-[12px] font-bold">{Number(item.likes || 0)}</span>
+                          </button>
+                        )}
                         {!isDeleted && (
                           <button
                             type="button"

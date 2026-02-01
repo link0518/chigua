@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Search } from 'lucide-react';
+import { Search, Star } from 'lucide-react';
 import { api } from '../api';
 import type { Post } from '../types';
 import { useApp } from '../store/AppContext';
@@ -8,7 +8,7 @@ import { SketchButton, Badge } from './SketchUI';
 const PAGE_SIZE = 20;
 
 const SearchView: React.FC = () => {
-  const { showToast } = useApp();
+  const { showToast, isFavorited, toggleFavoritePost } = useApp();
   const [keyword, setKeyword] = useState('');
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
@@ -23,6 +23,16 @@ const SearchView: React.FC = () => {
     if (window.location.pathname + window.location.search !== targetPath) {
       window.history.pushState({}, '', targetPath);
       window.dispatchEvent(new PopStateEvent('popstate'));
+    }
+  };
+
+  const handleFavorite = async (postId: string) => {
+    try {
+      const favorited = await toggleFavoritePost(postId);
+      showToast(favorited ? '已收藏' : '已取消收藏', 'success');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '收藏失败，请稍后重试';
+      showToast(message, 'error');
     }
   };
 
@@ -155,13 +165,24 @@ const SearchView: React.FC = () => {
                   <span>·</span>
                   <span>评 {post.comments}</span>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => openPost(post.id)}
-                  className="font-bold text-ink hover:underline"
-                >
-                  打开
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleFavorite(post.id)}
+                    className={`inline-flex items-center gap-1 font-bold transition-colors ${isFavorited(post.id) ? 'text-amber-600' : 'text-ink hover:underline'}`}
+                    title={isFavorited(post.id) ? '取消收藏' : '收藏'}
+                    aria-label={isFavorited(post.id) ? '取消收藏' : '收藏'}
+                  >
+                    <Star className={`w-4 h-4 ${isFavorited(post.id) ? 'fill-current' : ''}`} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openPost(post.id)}
+                    className="font-bold text-ink hover:underline"
+                  >
+                    打开
+                  </button>
+                </div>
               </div>
             </div>
           ))
