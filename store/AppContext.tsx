@@ -47,7 +47,7 @@ interface AppState {
 
 interface AppContextType {
   state: AppState;
-  addPost: (post: Omit<Post, 'id' | 'likes' | 'comments' | 'createdAt'>, turnstileToken: string) => Promise<void>;
+  addPost: (post: Omit<Post, 'id' | 'likes' | 'dislikes' | 'comments' | 'createdAt'>, turnstileToken: string) => Promise<void>;
   addComment: (postId: string, content: string, turnstileToken: string, parentId?: string | null, replyToId?: string | null) => Promise<Comment>;
   likePost: (postId: string) => Promise<void>;
   dislikePost: (postId: string) => Promise<void>;
@@ -264,7 +264,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }));
   }, []);
 
-  const addPost = useCallback(async (post: Omit<Post, 'id' | 'likes' | 'comments' | 'createdAt'>, turnstileToken: string) => {
+  const addPost = useCallback(async (post: Omit<Post, 'id' | 'likes' | 'dislikes' | 'comments' | 'createdAt'>, turnstileToken: string) => {
     const data = await api.createPost(post.content, post.tags || [], turnstileToken);
     const newPost: Post = data.post;
     setState((prev) => ({
@@ -313,7 +313,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const updateList = (list: Post[]) =>
         list.map((post) =>
           post.id === postId
-            ? { ...post, likes: data.likes ?? post.likes, viewerReaction: data.reaction }
+            ? {
+              ...post,
+              likes: data.likes ?? post.likes,
+              dislikes: data.dislikes ?? post.dislikes,
+              viewerReaction: data.reaction,
+            }
             : post
         );
 
@@ -345,7 +350,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const updateList = (list: Post[]) =>
         list.map((post) =>
           post.id === postId
-            ? { ...post, likes: data.likes ?? post.likes, viewerReaction: data.reaction }
+            ? {
+              ...post,
+              likes: data.likes ?? post.likes,
+              dislikes: data.dislikes ?? post.dislikes,
+              viewerReaction: data.reaction,
+            }
             : post
         );
 

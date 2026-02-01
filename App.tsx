@@ -120,7 +120,7 @@ const App: React.FC = () => {
         const lastSeen = Number(localStorage.getItem('announcement:lastSeen') || '0');
         setAnnouncementUnread(updatedAt > lastSeen);
       })
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   useEffect(() => {
@@ -131,14 +131,14 @@ const App: React.FC = () => {
           setAccessExpiresAt(typeof data?.expiresAt === 'number' ? data.expiresAt : null);
         }
       })
-      .catch(() => {})
+      .catch(() => { })
       .finally(() => {
         setAccessChecked(true);
       });
   }, []);
 
   useEffect(() => {
-    loadSettings().catch(() => {});
+    loadSettings().catch(() => { });
   }, [loadSettings]);
 
   useEffect(() => {
@@ -472,9 +472,9 @@ const App: React.FC = () => {
               className="flex items-center gap-3 cursor-pointer group"
               onClick={() => navigate(ViewType.HOME)}
             >
-                <div className="size-10 sm:size-12 flex items-center justify-center rounded-full border-2 border-black bg-alert shadow-sketch group-hover:rotate-12 transition-transform duration-300">
-                  <span className="text-black text-[22px] font-sans font-bold">瓜</span>
-                </div>
+              <div className="size-10 sm:size-12 flex items-center justify-center rounded-full border-2 border-black bg-alert shadow-sketch group-hover:rotate-12 transition-transform duration-300">
+                <span className="text-black text-[22px] font-sans font-bold">瓜</span>
+              </div>
               <h1 className="text-black text-2xl sm:text-3xl font-display font-bold tracking-widest relative leading-none sm:leading-tight">
                 <span className="block sm:inline">JX3</span>
                 <span className="block sm:inline">瓜田</span>
@@ -488,7 +488,7 @@ const App: React.FC = () => {
                 <NavItem view={ViewType.HOME} label="最新" />
                 <NavItem view={ViewType.FEED} label="热门" />
                 <NavItem view={ViewType.SEARCH} label="搜索" />
-                <NavItem view={ViewType.FAVORITES} label="我的收藏" />
+                <NavItem view={ViewType.FAVORITES} label="收藏" />
               </nav>
 
               {/* Action Button */}
@@ -616,7 +616,7 @@ const App: React.FC = () => {
                 }}
               />
               <MobileNavItem
-                label="我的收藏"
+                label="收藏"
                 onClick={() => {
                   navigate(ViewType.FAVORITES);
                   setMobileMenuOpen(false);

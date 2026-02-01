@@ -15,6 +15,7 @@ export interface Post {
   timestamp: string;
   location?: string;
   likes: number;
+  dislikes: number;
   comments: number;
   tags?: string[];
   rank?: number;

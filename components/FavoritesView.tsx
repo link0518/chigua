@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowUpRight, MessageCircle, Share2, Star, ThumbsUp } from 'lucide-react';
+import { ArrowUpRight, MessageCircle, Share2, Star, ThumbsDown, ThumbsUp } from 'lucide-react';
 import { api } from '../api';
 import { Post } from '../types';
 import { useApp } from '../store/AppContext';
@@ -119,7 +119,7 @@ const FavoritesView: React.FC = () => {
       <div className="flex items-center justify-between">
         <h2 className="font-display text-3xl text-ink tracking-widest flex items-center gap-2">
           <Star className="w-7 h-7" />
-          我的收藏
+          收藏
         </h2>
         <span className="text-xs text-pencil font-sans">按收藏时间倒序</span>
       </div>
@@ -162,6 +162,10 @@ const FavoritesView: React.FC = () => {
                 <span className="flex items-center gap-1.5">
                   <ThumbsUp className="w-4 h-4" />
                   <span className="font-hand font-bold text-base">{post.likes}</span>
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <ThumbsDown className="w-4 h-4" />
+                  <span className="font-hand font-bold text-base">{post.dislikes}</span>
                 </span>
                 <span className="flex items-center gap-1.5">
                   <MessageCircle className="w-4 h-4" />

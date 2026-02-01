@@ -82,6 +82,7 @@ const PostItem: React.FC<{
               className={`flex items-center gap-1 transition-colors ${isDisliked ? 'text-red-600' : 'hover:text-ink'}`}
             >
               <ThumbsDown className={`w-5 h-5 mt-1 ${isDisliked ? 'fill-current' : ''}`} />
+              <span>{post.dislikes > 1000 ? (post.dislikes / 1000).toFixed(1) + 'k' : post.dislikes}</span>
             </button>
             <button
               onClick={onFavorite}

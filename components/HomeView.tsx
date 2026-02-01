@@ -565,6 +565,7 @@ const HomeView: React.FC = () => {
                   className="w-[22px] h-[22px] group-hover/btn:translate-y-1 transition-transform"
                   fill={isDisliked(currentPost.id) ? 'currentColor' : 'none'}
                 />
+                <span className="font-hand font-bold text-base">{currentPost.dislikes}</span>
               </button>
             </div>
             <div className="flex items-center gap-6">

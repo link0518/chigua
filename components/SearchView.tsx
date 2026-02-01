@@ -163,6 +163,8 @@ const SearchView: React.FC = () => {
                   <span>·</span>
                   <span>赞 {post.likes}</span>
                   <span>·</span>
+                  <span>踩 {post.dislikes}</span>
+                  <span>·</span>
                   <span>评 {post.comments}</span>
                 </div>
                 <div className="flex items-center gap-2">

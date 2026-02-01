@@ -916,6 +916,7 @@ const mapPostRow = (row, isHot) => ({
   timestamp: formatRelativeTime(row.created_at),
   location: row.location || undefined,
   likes: row.likes_count,
+  dislikes: row.dislikes_count,
   comments: row.comments_count,
   tags: parseTags(row.tags),
   isHot,
