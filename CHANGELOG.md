@@ -6,6 +6,7 @@
 - 优化移动端帖子操作栏点击间距，降低“点踩/评论”误触 `components/HomeView.tsx`
 - 修复安卓软键盘遮挡评论输入框：移动端聚焦时将输入区改为浮动层（键盘可见区居中）并锁定滚动 `components/CommentModal.tsx`
 - 修复热门榜单首条帖子展开评论区与上方元素重叠（层叠上下文）`components/FeedView.tsx`
+- 移动端评论输入统一改为弹窗编辑，避免键盘遮挡与闪退，并增强“正在回复 X楼”提示 `components/CommentModal.tsx` `components/CommentInputModal.tsx`
 
 ### Added
 - 新增 Lighthouse 性能预算脚本 `npm run perf:budget`（Mobile + Desktop，覆盖主要路由）

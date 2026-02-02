@@ -8,7 +8,7 @@ import MarkdownRenderer from './MarkdownRenderer';
 import Turnstile, { TurnstileHandle } from './Turnstile';
 import ReportModal from './ReportModal';
 import MemePicker, { useMemeInsert } from './MemePicker';
-import { createPortal } from 'react-dom';
+import CommentInputModal from './CommentInputModal';
 
 interface CommentModalProps {
   isOpen: boolean;
@@ -54,16 +54,15 @@ const CommentModal: React.FC<CommentModalProps> = ({
   const pageSize = 10;
   const turnstileEnabled = state.settings.turnstileEnabled;
   const { textareaRef: inlineTextareaRef, insertMeme: inlineInsertMeme } = useMemeInsert(text, setText);
-  const { textareaRef: overlayTextareaRefHook, insertMeme: overlayInsertMeme } = useMemeInsert(text, setText);
   const overlayTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [keyboardInset, setKeyboardInset] = useState(0);
-  const [keyboardMode, setKeyboardMode] = useState(false);
+  const [keyboardMode] = useState(false);
   const [overlayTop, setOverlayTop] = useState<number | null>(null);
   const [fallbackOverlayTop, setFallbackOverlayTop] = useState<number | null>(null);
-  const [hasTextareaFocus, setHasTextareaFocus] = useState(false);
+  const [inputModalOpen, setInputModalOpen] = useState(false);
 
   const isMobile = typeof window !== 'undefined' ? window.matchMedia('(max-width: 767px)').matches : false;
-  const debugOverlay = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debugComment') === '1';
+  // debugComment 调试输出已移除
 
   useEffect(() => {
     if (!isOpen) {
@@ -88,7 +87,6 @@ const CommentModal: React.FC<CommentModalProps> = ({
         const layoutHeight = window.innerHeight;
         const delta = Math.max(0, Math.round(layoutHeight - viewportHeight - vv.offsetTop));
         setKeyboardInset(delta);
-        setKeyboardMode(delta > 0);
         if (delta > 0) {
           const centeredTop = Math.max(12, Math.round(vv.offsetTop + viewportHeight * 0.5));
           setOverlayTop(centeredTop);
@@ -109,7 +107,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
   }, [isOpen]);
 
   useEffect(() => {
-    if (!isOpen || !isMobile || !keyboardMode) {
+    if (!isOpen || !isMobile || !keyboardInset) {
       return;
     }
     const update = () => {
@@ -119,50 +117,34 @@ const CommentModal: React.FC<CommentModalProps> = ({
     update();
     window.addEventListener('resize', update);
     return () => window.removeEventListener('resize', update);
-  }, [isMobile, isOpen, keyboardMode]);
+  }, [isMobile, isOpen, keyboardInset]);
 
   useEffect(() => {
     if (!isOpen) {
       return;
     }
-    const onFocusIn = (event: FocusEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (!target) {
-        return;
-      }
-      if (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT' || (target as HTMLElement).isContentEditable) {
-        setHasTextareaFocus(true);
-        if (isMobile) {
-          // 延迟执行让键盘有时间弹出
-          setTimeout(() => {
-            // 使用 scrollIntoView 将输入框滚动到可见区域
-            (target as HTMLElement).scrollIntoView({ block: 'center', behavior: 'smooth' });
-          }, 300);
-        }
-      }
-    };
     const onFocusOut = () => {
-      setHasTextareaFocus(false);
       setOverlayTop(null);
     };
-    rootRef.current?.addEventListener('focusin', onFocusIn);
     rootRef.current?.addEventListener('focusout', onFocusOut);
     return () => {
-      rootRef.current?.removeEventListener('focusin', onFocusIn);
       rootRef.current?.removeEventListener('focusout', onFocusOut);
       document.body.style.overflow = '';
     };
   }, [isOpen]);
 
-  const enterKeyboardMode = () => {
-    // 不再需要 keyboardMode
+  const openInputModal = () => {
+    if (!isMobile) {
+      return;
+    }
+    setInputModalOpen(true);
   };
 
   useEffect(() => {
     if (!isOpen || !isMobile) {
       return;
     }
-    if (keyboardMode) {
+    if (inputModalOpen) {
       document.body.style.overflow = 'hidden';
       return;
     }
@@ -170,7 +152,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
     return () => {
       document.body.style.overflow = '';
     };
-  }, [isMobile, isOpen, keyboardMode]);
+  }, [isMobile, inputModalOpen, isOpen]);
 
   useEffect(() => {
     if (!isOpen || keyboardInset <= 0) {
@@ -392,16 +374,15 @@ const CommentModal: React.FC<CommentModalProps> = ({
     }
   };
 
-  const handleSubmit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    const trimmed = text.trim();
+  const submitText = async (nextText: string) => {
+    const trimmed = nextText.trim();
     if (!trimmed) {
       showToast('评论不能为空', 'warning');
-      return;
+      return false;
     }
     if (trimmed.length > MAX_LENGTH) {
       showToast('评论长度不能超过 300 字', 'error');
-      return;
+      return false;
     }
 
     setSubmitting(true);
@@ -449,12 +430,19 @@ const CommentModal: React.FC<CommentModalProps> = ({
       setText('');
       setReplyToId(null);
       showToast('评论已发布', 'success');
+      return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : '评论失败，请稍后重试';
       showToast(message, 'error');
+      return false;
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    await submitText(text);
   };
 
   useEffect(() => {
@@ -506,6 +494,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
   };
 
   const labelMap = buildLabelMap(comments);
+  const replyTargetLabel = replyToId ? (labelMap.get(replyToId) || '') : '';
 
   return (
     <div
@@ -513,7 +502,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
       className="fixed inset-x-0 bottom-0 z-40 max-h-75vh-safe rounded-t-xl border border-gray-200 bg-white p-4 shadow-lg font-sans animate-in slide-in-from-bottom-2 duration-200 md:static md:mt-4 md:max-h-none md:rounded-xl md:shadow-sm md:animate-none"
       style={{
         paddingBottom: keyboardInset ? keyboardInset + 16 : undefined,
-        bottom: keyboardMode && keyboardInset ? keyboardInset : undefined,
+        bottom: undefined,
       }}
     >
       <div className="flex items-center justify-between mb-3">
@@ -530,12 +519,6 @@ const CommentModal: React.FC<CommentModalProps> = ({
         </button>
       </div>
 
-      {debugOverlay && (
-        <div className="mb-2 text-[11px] font-mono text-gray-500">
-          debugComment=1 | mobile={String(isMobile)} open={String(isOpen)} keyboardMode={String(keyboardMode)} focus={String(hasTextareaFocus)} inset={keyboardInset} top={overlayTop ?? fallbackOverlayTop ?? 120}
-        </div>
-      )}
-
       {contentPreview && (
         <div className="p-3 bg-gray-50 border border-dashed border-ink rounded-lg mb-3 max-h-28 overflow-hidden">
           <MarkdownRenderer
@@ -547,7 +530,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
 
       <div
         ref={listRef}
-        className={`max-h-64 overflow-y-auto rounded-lg border border-gray-200 bg-white flex flex-col gap-3 pr-1 ${isMobile && keyboardMode ? 'hidden' : ''}`}
+        className="max-h-64 overflow-y-auto rounded-lg border border-gray-200 bg-white flex flex-col gap-3 pr-1"
       >
         {loading ? (
           <div className="flex flex-col gap-3 px-3 pt-3">
@@ -666,7 +649,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
         )}
       </div>
 
-      <form className={`flex flex-col gap-3 mt-4 ${isMobile && keyboardMode ? 'mt-0' : ''}`} onSubmit={handleSubmit}>
+      <form className="flex flex-col gap-3 mt-4" onSubmit={handleSubmit}>
         {replyToId && (
           <div className="flex items-center justify-between text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
             <span>正在回复某条评论</span>
@@ -689,9 +672,10 @@ const CommentModal: React.FC<CommentModalProps> = ({
             className="flex-1 h-16 p-3 border-2 border-ink rounded-lg resize-none font-sans bg-white focus:outline-none focus:shadow-sketch-sm transition-shadow"
             onFocus={() => {
               if (isMobile) {
-                enterKeyboardMode();
+                openInputModal();
               }
             }}
+            readOnly={isMobile}
           />
           <div className="relative">
             <button
@@ -729,89 +713,23 @@ const CommentModal: React.FC<CommentModalProps> = ({
         </div>
       </form>
 
-      {false && isMobile && keyboardMode && createPortal((
-        <>
-          <div className="fixed inset-0 z-[60] bg-black/30" aria-hidden="true" />
-          <div
-            ref={inputOverlayRef}
-            className="fixed left-1/2 z-[70] w-[min(520px,92vw)] -translate-x-1/2"
-            style={{ top: overlayTop ?? fallbackOverlayTop ?? 120 }}
-          >
-            {debugOverlay && (
-              <div className="mb-2 text-[11px] font-mono text-white bg-black/60 px-2 py-1 rounded">
-                portal visible | keyboardMode={String(keyboardMode)} focus={String(hasTextareaFocus)} inset={keyboardInset} top={overlayTop ?? fallbackOverlayTop ?? 120}
-              </div>
-            )}
-            <form className="flex flex-col gap-3" onSubmit={handleSubmit}>
-              {replyToId && (
-                <div className="flex items-center justify-between text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-                  <span>正在回复某条评论</span>
-                  <button
-                    type="button"
-                    onClick={() => setReplyToId(null)}
-                    className="hover:text-ink transition-colors"
-                  >
-                    取消回复
-                  </button>
-                </div>
-              )}
-              <div className="flex items-stretch gap-2">
-                <textarea
-                  ref={overlayTextareaRef}
-                  value={text}
-                  onChange={(e) => setText(e.target.value)}
-                  placeholder="留下你的评论...（支持 Markdown / 表情包）"
-                  maxLength={MAX_LENGTH + 10}
-                  className="flex-1 h-16 p-3 border-2 border-ink rounded-lg resize-none font-sans bg-white focus:outline-none focus:shadow-sketch-sm transition-shadow"
-                  autoFocus
-                  onFocus={() => {
-                    setHasTextareaFocus(true);
-                    setKeyboardMode(true);
-                  }}
-                  onBlur={() => {
-                    setHasTextareaFocus(false);
-                  }}
-                />
-                <div className="relative">
-                  <button
-                    ref={memeButtonRef}
-                    type="button"
-                    onClick={() => setMemeOpen((prev) => !prev)}
-                    className="px-3 h-16 flex items-center justify-center border-2 border-ink rounded-lg bg-white hover:bg-highlight transition-colors shadow-sketch"
-                    aria-label="插入表情包"
-                    title="表情包"
-                  >
-                    <Smile className="w-4 h-4" />
-                  </button>
-                  <MemePicker
-                    open={memeOpen}
-                    onClose={() => setMemeOpen(false)}
-                    anchorRef={memeButtonRef}
-                    onSelect={(packName, label) => {
-                      overlayInsertMeme(packName, label);
-                      setMemeOpen(false);
-                      // 重新聚焦到 overlay textarea
-                      setTimeout(() => overlayTextareaRef.current?.focus(), 50);
-                    }}
-                  />
-                </div>
-                <SketchButton
-                  type="submit"
-                  className="px-3 h-16 flex items-center justify-center"
-                  disabled={submitting}
-                  aria-label="发布评论"
-                >
-                  <Send className="w-4 h-4" />
-                </SketchButton>
-              </div>
-              <div className="flex items-center justify-between text-xs text-pencil">
-                <span>{text.length} / {MAX_LENGTH}</span>
-                {text.length > MAX_LENGTH && <span className="text-red-500">超出限制</span>}
-              </div>
-            </form>
-          </div>
-        </>
-      ), document.body)}
+      <CommentInputModal
+        isOpen={isMobile && inputModalOpen}
+        onClose={() => setInputModalOpen(false)}
+        title={replyToId ? '回复评论' : '写评论'}
+        helperText={replyToId ? `正在回复 ${replyTargetLabel || '某一'}楼` : undefined}
+        onCancelReply={replyToId ? () => setReplyToId(null) : undefined}
+        initialText={text}
+        maxLength={MAX_LENGTH}
+        submitting={submitting}
+        onSubmit={async (nextText) => {
+          setText(nextText);
+          const ok = await submitText(nextText);
+          if (ok) {
+            setInputModalOpen(false);
+          }
+        }}
+      />
 
       <Turnstile ref={turnstileRef} action="comment" enabled={isOpen && turnstileEnabled} />
 
