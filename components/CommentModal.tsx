@@ -160,9 +160,6 @@ const CommentModal: React.FC<CommentModalProps> = ({
     }
     setKeyboardMode(true);
     setHasTextareaFocus(true);
-    requestAnimationFrame(() => {
-      overlayTextareaRef.current?.focus();
-    });
   };
 
   useEffect(() => {
@@ -736,7 +733,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
         </div>
       </form>
 
-      {isMobile && keyboardMode && createPortal((
+      {false && isMobile && keyboardMode && createPortal((
         <>
           <div className="fixed inset-0 z-[60] bg-black/30" aria-hidden="true" />
           <div
@@ -762,7 +759,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
                   </button>
                 </div>
               )}
-              <div className="flex items-stretch gap-2" onMouseDown={(e) => e.preventDefault()}>
+              <div className="flex items-stretch gap-2">
                 <textarea
                   ref={overlayTextareaRef}
                   value={text}
