@@ -97,48 +97,46 @@ const CommentInputModal: React.FC<CommentInputModalProps> = ({
       onClose={onClose}
       title={title}
       titleClassName="mb-2"
-      panelClassName="max-w-xl p-4 sm:p-6 max-h-[calc(100vh-260px)] sm:max-h-[calc(100vh-180px)] overflow-hidden"
+      panelClassName="max-w-xl p-4 sm:p-6 max-h-[calc(100vh-240px)] sm:max-h-[calc(100vh-180px)] overflow-hidden"
       closeButtonClassName="top-2 right-2"
       overlayClassName="items-start sm:items-center pt-[calc(env(safe-area-inset-top)+72px)]"
     >
       {isMobile && viewportTopInset > 0 && (
         <div style={{ height: viewportTopInset }} />
       )}
-      <form
-        className="flex flex-col gap-2"
-        onSubmit={handleSubmit}
-      >
-        {(helperText || onCancelReply) && (
-          <div className="flex items-center justify-between gap-2 border-2 border-ink bg-highlight rounded-lg px-3 py-2 shadow-sketch -mt-1">
-            <div className="font-hand font-bold text-ink text-sm">
-              {helperText || ''}
+      <form className="flex flex-col h-full" onSubmit={handleSubmit}>
+        <div className="flex-1 flex flex-col gap-2 min-h-0">
+          {(helperText || onCancelReply) && (
+            <div className="flex items-center justify-between gap-2 border-2 border-ink bg-highlight rounded-lg px-3 py-2 shadow-sketch -mt-1">
+              <div className="font-hand font-bold text-ink text-sm">
+                {helperText || ''}
+              </div>
+              {onCancelReply && (
+                <button
+                  type="button"
+                  onClick={onCancelReply}
+                  className="px-3 py-1 border-2 border-ink rounded-lg bg-white hover:bg-gray-50 transition-colors shadow-sketch font-hand font-bold text-sm"
+                >
+                  取消回复
+                </button>
+              )}
             </div>
-            {onCancelReply && (
-              <button
-                type="button"
-                onClick={onCancelReply}
-                className="px-3 py-1 border-2 border-ink rounded-lg bg-white hover:bg-gray-50 transition-colors shadow-sketch font-hand font-bold text-sm"
-              >
-                取消回复
-              </button>
-            )}
+          )}
+          <textarea
+            ref={textareaRef}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="留下你的评论...（支持 Markdown / 表情包）"
+            maxLength={maxLength + 10}
+            className="w-full flex-1 min-h-[96px] sm:min-h-[160px] p-3 border-2 border-ink rounded-lg resize-none font-sans bg-white focus:outline-none focus:shadow-sketch-sm transition-shadow"
+          />
+          <div className="flex items-center justify-between text-xs text-pencil">
+            <span>{text.length} / {maxLength}</span>
+            {text.length > maxLength && <span className="text-red-500">超出限制</span>}
           </div>
-        )}
-        <textarea
-          ref={textareaRef}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder="留下你的评论...（支持 Markdown / 表情包）"
-          maxLength={maxLength + 10}
-          className="w-full min-h-[92px] sm:min-h-[160px] p-3 border-2 border-ink rounded-lg resize-none font-sans bg-white focus:outline-none focus:shadow-sketch-sm transition-shadow"
-        />
-
-        <div className="flex items-center justify-between text-xs text-pencil">
-          <span>{text.length} / {maxLength}</span>
-          {text.length > maxLength && <span className="text-red-500">超出限制</span>}
         </div>
 
-        <div className="flex items-center justify-between gap-2">
+        <div className="mt-2 pt-2 border-t border-gray-100 flex items-center justify-between gap-2">
           <div className="relative">
             <button
               ref={memeButtonRef}
