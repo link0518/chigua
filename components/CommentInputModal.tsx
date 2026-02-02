@@ -97,7 +97,7 @@ const CommentInputModal: React.FC<CommentInputModalProps> = ({
       onClose={onClose}
       title={title}
       titleClassName="mb-2"
-      panelClassName="max-w-xl p-4 sm:p-6 max-h-[calc(100vh-240px)] sm:max-h-[calc(100vh-180px)] overflow-auto"
+      panelClassName="max-w-xl p-4 sm:p-6 max-h-[calc(100vh-260px)] sm:max-h-[calc(100vh-180px)] overflow-hidden"
       closeButtonClassName="top-2 right-2"
       overlayClassName="items-start sm:items-center pt-[calc(env(safe-area-inset-top)+72px)]"
     >
@@ -105,7 +105,7 @@ const CommentInputModal: React.FC<CommentInputModalProps> = ({
         <div style={{ height: viewportTopInset }} />
       )}
       <form
-        className="flex flex-col gap-3"
+        className="flex flex-col gap-2"
         onSubmit={handleSubmit}
       >
         {(helperText || onCancelReply) && (
@@ -130,7 +130,7 @@ const CommentInputModal: React.FC<CommentInputModalProps> = ({
           onChange={(e) => setText(e.target.value)}
           placeholder="留下你的评论...（支持 Markdown / 表情包）"
           maxLength={maxLength + 10}
-          className="w-full min-h-[120px] sm:min-h-[160px] p-3 border-2 border-ink rounded-lg resize-none font-sans bg-white focus:outline-none focus:shadow-sketch-sm transition-shadow"
+          className="w-full min-h-[92px] sm:min-h-[160px] p-3 border-2 border-ink rounded-lg resize-none font-sans bg-white focus:outline-none focus:shadow-sketch-sm transition-shadow"
         />
 
         <div className="flex items-center justify-between text-xs text-pencil">
@@ -144,7 +144,7 @@ const CommentInputModal: React.FC<CommentInputModalProps> = ({
               ref={memeButtonRef}
               type="button"
               onClick={() => setMemeOpen((prev) => !prev)}
-              className="px-3 h-11 flex items-center justify-center border-2 border-ink rounded-lg bg-white hover:bg-highlight transition-colors shadow-sketch"
+              className="px-3 h-10 flex items-center justify-center border-2 border-ink rounded-lg bg-white hover:bg-highlight transition-colors shadow-sketch"
               aria-label="插入表情包"
               title="表情包"
             >
@@ -165,13 +165,13 @@ const CommentInputModal: React.FC<CommentInputModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 h-11 border-2 border-ink rounded-lg bg-white hover:bg-highlight transition-colors shadow-sketch font-hand font-bold"
+              className="px-4 h-10 border-2 border-ink rounded-lg bg-white hover:bg-highlight transition-colors shadow-sketch font-hand font-bold"
             >
               取消
             </button>
             <SketchButton
               type="submit"
-              className="px-4 h-11 flex items-center justify-center gap-2"
+              className="px-4 h-10 flex items-center justify-center gap-2"
               disabled={submitting || !text.trim() || text.trim().length > maxLength}
             >
               <span>发布</span>
