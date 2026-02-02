@@ -48,9 +48,59 @@ const CommentModal: React.FC<CommentModalProps> = ({
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const turnstileRef = useRef<TurnstileHandle | null>(null);
   const memeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
   const pageSize = 10;
   const turnstileEnabled = state.settings.turnstileEnabled;
   const { textareaRef, insertMeme } = useMemeInsert(text, setText);
+  const [keyboardInset, setKeyboardInset] = useState(0);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setKeyboardInset(0);
+      return;
+    }
+    const vv = window.visualViewport;
+    if (!vv) {
+      return;
+    }
+
+    let rafId: number | null = null;
+    const update = () => {
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+      }
+      rafId = requestAnimationFrame(() => {
+        const viewportHeight = vv.height;
+        const layoutHeight = window.innerHeight;
+        const delta = Math.max(0, Math.round(layoutHeight - viewportHeight - vv.offsetTop));
+        setKeyboardInset(delta);
+      });
+    };
+
+    update();
+    vv.addEventListener('resize', update);
+    vv.addEventListener('scroll', update);
+    return () => {
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+      }
+      vv.removeEventListener('resize', update);
+      vv.removeEventListener('scroll', update);
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || keyboardInset <= 0) {
+      return;
+    }
+    const root = rootRef.current;
+    if (!root) {
+      return;
+    }
+    requestAnimationFrame(() => {
+      root.scrollIntoView({ block: 'end' });
+    });
+  }, [isOpen, keyboardInset]);
 
   useEffect(() => {
     if (!isOpen || !postId) return;
@@ -375,7 +425,11 @@ const CommentModal: React.FC<CommentModalProps> = ({
   const labelMap = buildLabelMap(comments);
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-40 max-h-75vh-safe rounded-t-xl border border-gray-200 bg-white p-4 shadow-lg font-sans animate-in slide-in-from-bottom-2 duration-200 md:static md:mt-4 md:max-h-none md:rounded-xl md:shadow-sm md:animate-none">
+    <div
+      ref={rootRef}
+      className="fixed inset-x-0 bottom-0 z-40 max-h-75vh-safe rounded-t-xl border border-gray-200 bg-white p-4 shadow-lg font-sans animate-in slide-in-from-bottom-2 duration-200 md:static md:mt-4 md:max-h-none md:rounded-xl md:shadow-sm md:animate-none"
+      style={{ paddingBottom: keyboardInset ? keyboardInset + 16 : undefined }}
+    >
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <h3 className="font-sans font-semibold text-lg text-ink">评论</h3>

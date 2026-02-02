@@ -271,8 +271,17 @@ const App: React.FC = () => {
     }
     fetchNotifications();
     const timer = setInterval(fetchNotifications, 30000);
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        fetchNotifications();
+      }
+    };
+    window.addEventListener('focus', fetchNotifications);
+    document.addEventListener('visibilitychange', handleVisibility);
     return () => {
       clearInterval(timer);
+      window.removeEventListener('focus', fetchNotifications);
+      document.removeEventListener('visibilitychange', handleVisibility);
     };
   }, [backgroundTasksReady, fetchNotifications]);
 

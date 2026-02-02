@@ -546,7 +546,7 @@ const HomeView: React.FC = () => {
 
           {/* Action Bar */}
           <div className="flex items-center justify-between mt-4 pt-4 border-t-2 border-black border-dashed">
-            <div className="flex items-center gap-6">
+            <div className="flex items-center gap-6 pr-2">
               <button
                 onClick={handleLike}
                 className={`flex items-center gap-1.5 group/btn transition-colors ${isLiked(currentPost.id) ? 'text-blue-600' : 'hover:text-ink'}`}
@@ -568,7 +568,7 @@ const HomeView: React.FC = () => {
                 <span className="font-hand font-bold text-base">{currentPost.dislikes}</span>
               </button>
             </div>
-            <div className="flex items-center gap-6">
+            <div className="flex items-center gap-8 pl-2">
               <button
                 onClick={() => {
                   setFocusCommentId(null);

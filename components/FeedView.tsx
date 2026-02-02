@@ -18,17 +18,15 @@ const PostItem: React.FC<{
   onDislike: () => void;
   onFavorite: () => void;
   onComment: () => void;
-  onCommentClose: () => void;
-  commentOpen: boolean;
   onShare: () => void;
   onReport: () => void;
   isLiked: boolean;
   isDisliked: boolean;
   isFavorited: boolean;
-}> = ({ post, rank, onLike, onDislike, onFavorite, onComment, onCommentClose, commentOpen, onShare, onReport, isLiked, isDisliked, isFavorited }) => {
+}> = ({ post, rank, onLike, onDislike, onFavorite, onComment, onShare, onReport, isLiked, isDisliked, isFavorited }) => {
   const isDeveloperPost = post.author === 'admin';
   return (
-    <div className={`relative group ${rank ? 'mb-10' : 'mb-6'}`}>
+    <div className={`relative group ${rank ? 'mb-10' : 'mb-6'} z-0`}>
       {/* Rank Badge */}
       {rank && rank <= 3 && (
         <div className="absolute -left-3 md:-left-6 -top-4 z-10 transition-transform group-hover:scale-110 duration-200">
@@ -118,13 +116,6 @@ const PostItem: React.FC<{
             </button>
           </div>
         </div>
-
-        <CommentModal
-          isOpen={commentOpen}
-          onClose={onCommentClose}
-          postId={post.id}
-          contentPreview={post.content}
-        />
 
       </div>
     </div>
@@ -278,8 +269,6 @@ const FeedView: React.FC = () => {
               onDislike={() => handleDislike(post.id)}
               onFavorite={() => handleFavorite(post.id)}
               onComment={() => handleComment(post.id, post.content)}
-              onCommentClose={() => setCommentModal({ isOpen: false, postId: '', content: '' })}
-              commentOpen={commentModal.isOpen && commentModal.postId === post.id}
               onShare={() => handleShare(post.id)}
               onReport={() => handleReport(post.id, post.content)}
               isLiked={isLiked(post.id)}
@@ -303,6 +292,13 @@ const FeedView: React.FC = () => {
         onClose={() => setReportModal({ isOpen: false, postId: '', content: '' })}
         postId={reportModal.postId}
         contentPreview={reportModal.content.substring(0, 80)}
+      />
+
+      <CommentModal
+        isOpen={commentModal.isOpen}
+        onClose={() => setCommentModal({ isOpen: false, postId: '', content: '' })}
+        postId={commentModal.postId}
+        contentPreview={commentModal.content}
       />
 
     </div>

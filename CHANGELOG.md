@@ -1,5 +1,12 @@
 ## [Unreleased]
 
+### Fixed
+
+- 修复铃铛提醒在页面切回前台/重新获得焦点时不即时刷新（仍保留 30s 轮询兜底）`App.tsx`
+- 优化移动端帖子操作栏点击间距，降低“点踩/评论”误触 `components/HomeView.tsx`
+- 修复安卓软键盘遮挡评论输入框：基于 `visualViewport` 动态补足弹窗底部安全区 `components/CommentModal.tsx`
+- 修复热门榜单首条帖子展开评论区与上方元素重叠（层叠上下文）`components/FeedView.tsx`
+
 ### Added
 - 新增 Lighthouse 性能预算脚本 `npm run perf:budget`（Mobile + Desktop，覆盖主要路由）
 - 新增 Lighthouse 配置（`lighthouserc.mobile.cjs`、`lighthouserc.desktop.cjs`）与预算校验脚本（`scripts/perf-budget.mjs` 等）
