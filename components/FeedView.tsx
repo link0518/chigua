@@ -4,7 +4,6 @@ import { Post } from '../types';
 import { Badge, roughBorderClassSm } from './SketchUI';
 import { useApp } from '../store/AppContext';
 import ReportModal from './ReportModal';
-import CommentModal from './CommentModal';
 import MarkdownRenderer from './MarkdownRenderer';
 import DeveloperMiniCard from './DeveloperMiniCard';
 
@@ -130,15 +129,9 @@ const FeedView: React.FC = () => {
     postId: '',
     content: '',
   });
-  const [commentModal, setCommentModal] = useState<{ isOpen: boolean; postId: string; content: string }>({
-    isOpen: false,
-    postId: '',
-    content: '',
-  });
 
   useEffect(() => {
     loadFeedPosts(filter).catch(() => {});
-    setCommentModal({ isOpen: false, postId: '', content: '' });
   }, [filter, loadFeedPosts]);
 
   const posts = useMemo(() => {
@@ -207,12 +200,11 @@ const FeedView: React.FC = () => {
   };
 
   const handleComment = (postId: string, content: string) => {
-    setCommentModal((prev) => {
-      if (prev.isOpen && prev.postId === postId) {
-        return { isOpen: false, postId: '', content: '' };
-      }
-      return { isOpen: true, postId, content };
-    });
+    const targetPath = `/post/${encodeURIComponent(postId)}`;
+    if (window.location.pathname + window.location.search !== targetPath) {
+      window.history.pushState({}, '', targetPath);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    }
   };
 
   return (
@@ -292,13 +284,6 @@ const FeedView: React.FC = () => {
         onClose={() => setReportModal({ isOpen: false, postId: '', content: '' })}
         postId={reportModal.postId}
         contentPreview={reportModal.content.substring(0, 80)}
-      />
-
-      <CommentModal
-        isOpen={commentModal.isOpen}
-        onClose={() => setCommentModal({ isOpen: false, postId: '', content: '' })}
-        postId={commentModal.postId}
-        contentPreview={commentModal.content}
       />
 
     </div>

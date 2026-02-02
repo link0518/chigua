@@ -155,7 +155,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
   }, [isMobile, inputModalOpen, isOpen]);
 
   useEffect(() => {
-    if (!isOpen || keyboardInset <= 0) {
+    if (!isOpen || !isMobile || keyboardInset <= 0) {
       return;
     }
     const root = rootRef.current;
@@ -165,7 +165,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
     requestAnimationFrame(() => {
       root.scrollIntoView({ block: 'end' });
     });
-  }, [isOpen, keyboardInset]);
+  }, [isMobile, isOpen, keyboardInset]);
 
   useEffect(() => {
     if (!isOpen || !postId) return;
