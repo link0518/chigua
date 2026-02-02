@@ -8,6 +8,7 @@ import MarkdownRenderer from './MarkdownRenderer';
 import Turnstile, { TurnstileHandle } from './Turnstile';
 import ReportModal from './ReportModal';
 import MemePicker, { useMemeInsert } from './MemePicker';
+import { createPortal } from 'react-dom';
 
 interface CommentModalProps {
   isOpen: boolean;
@@ -650,13 +651,6 @@ const CommentModal: React.FC<CommentModalProps> = ({
         )}
       </div>
 
-      {isMobile && keyboardMode && (
-        <div
-          className="fixed inset-0 z-[60] bg-black/30"
-          aria-hidden="true"
-        />
-      )}
-
       <form className={`flex flex-col gap-3 mt-4 ${isMobile && keyboardMode ? 'mt-0' : ''}`} onSubmit={handleSubmit}>
         {replyToId && (
           <div className="flex items-center justify-between text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
@@ -670,11 +664,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
             </button>
           </div>
         )}
-        <div
-          ref={inputOverlayRef}
-          className={`flex items-stretch gap-2 ${isMobile && keyboardMode ? 'fixed left-1/2 z-[70] w-[min(520px,92vw)] -translate-x-1/2' : ''}`}
-          style={isMobile && keyboardMode ? { top: overlayTop ?? fallbackOverlayTop ?? 120 } : undefined}
-        >
+        <div className="flex items-stretch gap-2">
           <textarea
             ref={textareaRef}
             value={text}
@@ -718,6 +708,75 @@ const CommentModal: React.FC<CommentModalProps> = ({
           {text.length > MAX_LENGTH && <span className="text-red-500">超出限制</span>}
         </div>
       </form>
+
+      {isMobile && keyboardMode && createPortal((
+        <>
+          <div className="fixed inset-0 z-[60] bg-black/30" aria-hidden="true" />
+          <div
+            ref={inputOverlayRef}
+            className="fixed left-1/2 z-[70] w-[min(520px,92vw)] -translate-x-1/2"
+            style={{ top: overlayTop ?? fallbackOverlayTop ?? 120 }}
+          >
+            <form className="flex flex-col gap-3" onSubmit={handleSubmit}>
+              {replyToId && (
+                <div className="flex items-center justify-between text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                  <span>正在回复某条评论</span>
+                  <button
+                    type="button"
+                    onClick={() => setReplyToId(null)}
+                    className="hover:text-ink transition-colors"
+                  >
+                    取消回复
+                  </button>
+                </div>
+              )}
+              <div className="flex items-stretch gap-2">
+                <textarea
+                  ref={textareaRef}
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  placeholder="留下你的评论...（支持 Markdown / 表情包）"
+                  maxLength={MAX_LENGTH + 10}
+                  className="flex-1 h-16 p-3 border-2 border-ink rounded-lg resize-none font-sans bg-white focus:outline-none focus:shadow-sketch-sm transition-shadow"
+                />
+                <div className="relative">
+                  <button
+                    ref={memeButtonRef}
+                    type="button"
+                    onClick={() => setMemeOpen((prev) => !prev)}
+                    className="px-3 h-16 flex items-center justify-center border-2 border-ink rounded-lg bg-white hover:bg-highlight transition-colors shadow-sketch"
+                    aria-label="插入表情包"
+                    title="表情包"
+                  >
+                    <Smile className="w-4 h-4" />
+                  </button>
+                  <MemePicker
+                    open={memeOpen}
+                    onClose={() => setMemeOpen(false)}
+                    anchorRef={memeButtonRef}
+                    onSelect={(packName, label) => {
+                      insertMeme(packName, label);
+                      setMemeOpen(false);
+                    }}
+                  />
+                </div>
+                <SketchButton
+                  type="submit"
+                  className="px-3 h-16 flex items-center justify-center"
+                  disabled={submitting}
+                  aria-label="发布评论"
+                >
+                  <Send className="w-4 h-4" />
+                </SketchButton>
+              </div>
+              <div className="flex items-center justify-between text-xs text-pencil">
+                <span>{text.length} / {MAX_LENGTH}</span>
+                {text.length > MAX_LENGTH && <span className="text-red-500">超出限制</span>}
+              </div>
+            </form>
+          </div>
+        </>
+      ), document.body)}
 
       <Turnstile ref={turnstileRef} action="comment" enabled={isOpen && turnstileEnabled} />
 
