@@ -53,7 +53,8 @@ const CommentModal: React.FC<CommentModalProps> = ({
   const inputOverlayRef = useRef<HTMLDivElement | null>(null);
   const pageSize = 10;
   const turnstileEnabled = state.settings.turnstileEnabled;
-  const { textareaRef, insertMeme } = useMemeInsert(text, setText);
+  const { textareaRef: inlineTextareaRef, insertMeme } = useMemeInsert(text, setText);
+  const overlayTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [keyboardInset, setKeyboardInset] = useState(0);
   const [keyboardMode, setKeyboardMode] = useState(false);
   const [overlayTop, setOverlayTop] = useState<number | null>(null);
@@ -152,6 +153,17 @@ const CommentModal: React.FC<CommentModalProps> = ({
       document.body.style.overflow = '';
     };
   }, [isOpen]);
+
+  const enterKeyboardMode = () => {
+    if (!isMobile) {
+      return;
+    }
+    setKeyboardMode(true);
+    setHasTextareaFocus(true);
+    requestAnimationFrame(() => {
+      overlayTextareaRef.current?.focus();
+    });
+  };
 
   useEffect(() => {
     if (!isOpen || !isMobile) {
@@ -676,12 +688,17 @@ const CommentModal: React.FC<CommentModalProps> = ({
         )}
         <div className="flex items-stretch gap-2">
           <textarea
-            ref={textareaRef}
+            ref={inlineTextareaRef}
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder="留下你的评论...（支持 Markdown / 表情包）"
             maxLength={MAX_LENGTH + 10}
             className="flex-1 h-16 p-3 border-2 border-ink rounded-lg resize-none font-sans bg-white focus:outline-none focus:shadow-sketch-sm transition-shadow"
+            onFocus={() => {
+              if (isMobile) {
+                enterKeyboardMode();
+              }
+            }}
           />
           <div className="relative">
             <button
@@ -745,14 +762,22 @@ const CommentModal: React.FC<CommentModalProps> = ({
                   </button>
                 </div>
               )}
-              <div className="flex items-stretch gap-2">
+              <div className="flex items-stretch gap-2" onMouseDown={(e) => e.preventDefault()}>
                 <textarea
-                  ref={textareaRef}
+                  ref={overlayTextareaRef}
                   value={text}
                   onChange={(e) => setText(e.target.value)}
                   placeholder="留下你的评论...（支持 Markdown / 表情包）"
                   maxLength={MAX_LENGTH + 10}
                   className="flex-1 h-16 p-3 border-2 border-ink rounded-lg resize-none font-sans bg-white focus:outline-none focus:shadow-sketch-sm transition-shadow"
+                  autoFocus
+                  onFocus={() => {
+                    setHasTextareaFocus(true);
+                    setKeyboardMode(true);
+                  }}
+                  onBlur={() => {
+                    setHasTextareaFocus(false);
+                  }}
                 />
                 <div className="relative">
                   <button
