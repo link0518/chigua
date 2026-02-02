@@ -58,8 +58,10 @@ const CommentModal: React.FC<CommentModalProps> = ({
   const [keyboardMode, setKeyboardMode] = useState(false);
   const [overlayTop, setOverlayTop] = useState<number | null>(null);
   const [fallbackOverlayTop, setFallbackOverlayTop] = useState<number | null>(null);
+  const [hasTextareaFocus, setHasTextareaFocus] = useState(false);
 
   const isMobile = typeof window !== 'undefined' ? window.matchMedia('(max-width: 767px)').matches : false;
+  const debugOverlay = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debugComment') === '1';
 
   useEffect(() => {
     if (!isOpen) {
@@ -127,6 +129,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
       }
       if (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT' || (target as HTMLElement).isContentEditable) {
         setKeyboardMode(true);
+        setHasTextareaFocus(true);
         if (isMobile) {
           document.body.style.overflow = 'hidden';
           requestAnimationFrame(() => {
@@ -137,6 +140,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
     };
     const onFocusOut = () => {
       setKeyboardMode(false);
+      setHasTextareaFocus(false);
       setOverlayTop(null);
       document.body.style.overflow = '';
     };
@@ -521,6 +525,12 @@ const CommentModal: React.FC<CommentModalProps> = ({
         </button>
       </div>
 
+      {debugOverlay && (
+        <div className="mb-2 text-[11px] font-mono text-gray-500">
+          debugComment=1 | mobile={String(isMobile)} open={String(isOpen)} keyboardMode={String(keyboardMode)} focus={String(hasTextareaFocus)} inset={keyboardInset} top={overlayTop ?? fallbackOverlayTop ?? 120}
+        </div>
+      )}
+
       {contentPreview && (
         <div className="p-3 bg-gray-50 border border-dashed border-ink rounded-lg mb-3 max-h-28 overflow-hidden">
           <MarkdownRenderer
@@ -717,6 +727,11 @@ const CommentModal: React.FC<CommentModalProps> = ({
             className="fixed left-1/2 z-[70] w-[min(520px,92vw)] -translate-x-1/2"
             style={{ top: overlayTop ?? fallbackOverlayTop ?? 120 }}
           >
+            {debugOverlay && (
+              <div className="mb-2 text-[11px] font-mono text-white bg-black/60 px-2 py-1 rounded">
+                portal visible | keyboardMode={String(keyboardMode)} focus={String(hasTextareaFocus)} inset={keyboardInset} top={overlayTop ?? fallbackOverlayTop ?? 120}
+              </div>
+            )}
             <form className="flex flex-col gap-3" onSubmit={handleSubmit}>
               {replyToId && (
                 <div className="flex items-center justify-between text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
