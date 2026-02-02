@@ -30,6 +30,7 @@ const CommentInputModal: React.FC<CommentInputModalProps> = ({
   const [text, setText] = useState(initialText);
   const [memeOpen, setMemeOpen] = useState(false);
   const [viewportTopInset, setViewportTopInset] = useState(0);
+  const [panelMaxHeight, setPanelMaxHeight] = useState<number | null>(null);
   const isMobile = typeof window !== 'undefined' ? window.matchMedia('(max-width: 767px)').matches : false;
   const memeButtonRef = useRef<HTMLButtonElement | null>(null);
   const { textareaRef, insertMeme } = useMemeInsert(text, setText);
@@ -60,9 +61,17 @@ const CommentInputModal: React.FC<CommentInputModalProps> = ({
         cancelAnimationFrame(rafId);
       }
       rafId = requestAnimationFrame(() => {
+        if (!isMobile) {
+          setViewportTopInset(0);
+          setPanelMaxHeight(null);
+          return;
+        }
         // iOS/部分安卓：键盘弹起时 visualViewport 可能会有 offsetTop，
         // 这里把它作为“需要额外向下避让”的量，避免弹窗顶部被导航栏/状态栏遮到。
         setViewportTopInset(Math.max(0, Math.round(vv.offsetTop)));
+        // 面板最大高度绑定到可视视口高度，确保底部按钮不会落到键盘后面
+        // 预留一点点上下边距（12px）避免贴边。
+        setPanelMaxHeight(Math.max(240, Math.round(vv.height - 12)));
       });
     };
     update();
@@ -75,7 +84,7 @@ const CommentInputModal: React.FC<CommentInputModalProps> = ({
       vv.removeEventListener('resize', update);
       vv.removeEventListener('scroll', update);
     };
-  }, [isOpen]);
+  }, [isMobile, isOpen]);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -97,9 +106,10 @@ const CommentInputModal: React.FC<CommentInputModalProps> = ({
       onClose={onClose}
       title={title}
       titleClassName="mb-2"
-      panelClassName="max-w-xl p-4 sm:p-6 max-h-[calc(100vh-240px)] sm:max-h-[calc(100vh-180px)] overflow-hidden"
+      panelClassName="max-w-xl p-4 sm:p-6 overflow-hidden"
       closeButtonClassName="top-2 right-2"
       overlayClassName="items-start sm:items-center pt-[calc(env(safe-area-inset-top)+72px)]"
+      panelStyle={panelMaxHeight ? { maxHeight: `${panelMaxHeight}px` } : undefined}
     >
       {isMobile && viewportTopInset > 0 && (
         <div style={{ height: viewportTopInset }} />
@@ -128,7 +138,7 @@ const CommentInputModal: React.FC<CommentInputModalProps> = ({
             onChange={(e) => setText(e.target.value)}
             placeholder="留下你的评论...（支持 Markdown / 表情包）"
             maxLength={maxLength + 10}
-            className="w-full flex-1 min-h-[96px] sm:min-h-[160px] p-3 border-2 border-ink rounded-lg resize-none font-sans bg-white focus:outline-none focus:shadow-sketch-sm transition-shadow"
+            className="w-full flex-1 min-h-[72px] sm:min-h-[160px] p-3 border-2 border-ink rounded-lg resize-none font-sans bg-white focus:outline-none focus:shadow-sketch-sm transition-shadow"
           />
           <div className="flex items-center justify-between text-xs text-pencil">
             <span>{text.length} / {maxLength}</span>

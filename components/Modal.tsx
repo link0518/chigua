@@ -12,6 +12,7 @@ interface ModalProps {
   overlayClassName?: string;
   titleClassName?: string;
   closeButtonClassName?: string;
+  panelStyle?: React.CSSProperties;
 }
 
 const Modal: React.FC<ModalProps> = ({
@@ -24,6 +25,7 @@ const Modal: React.FC<ModalProps> = ({
   overlayClassName = '',
   titleClassName = '',
   closeButtonClassName = '',
+  panelStyle,
 }) => {
   const handleEscape = useCallback((e: KeyboardEvent) => {
     if (e.key === 'Escape') {
@@ -51,6 +53,7 @@ const Modal: React.FC<ModalProps> = ({
     >
       <div
         className={`relative w-full max-w-md bg-white border-2 border-ink p-6 shadow-sketch-lg ${roughBorderClass} animate-in zoom-in-95 duration-200 ${panelClassName}`}
+        style={panelStyle}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Close Button */}
