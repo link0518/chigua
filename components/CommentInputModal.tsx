@@ -63,6 +63,7 @@ const CommentInputModal: React.FC<CommentInputModalProps> = ({
       onClose={onClose}
       title={title}
       panelClassName="max-w-xl"
+      overlayClassName="items-start sm:items-center pt-[calc(env(safe-area-inset-top)+88px)] sm:pt-4"
     >
       <form className="flex flex-col gap-3" onSubmit={handleSubmit}>
         {(helperText || onCancelReply) && (
@@ -131,7 +132,7 @@ const CommentInputModal: React.FC<CommentInputModalProps> = ({
               className="px-4 h-11 flex items-center justify-center gap-2"
               disabled={submitting || !text.trim() || text.trim().length > maxLength}
             >
-              <span>发送</span>
+              <span>发布</span>
               <Send className="w-4 h-4" />
             </SketchButton>
           </div>
