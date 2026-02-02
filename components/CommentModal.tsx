@@ -53,7 +53,8 @@ const CommentModal: React.FC<CommentModalProps> = ({
   const inputOverlayRef = useRef<HTMLDivElement | null>(null);
   const pageSize = 10;
   const turnstileEnabled = state.settings.turnstileEnabled;
-  const { textareaRef: inlineTextareaRef, insertMeme } = useMemeInsert(text, setText);
+  const { textareaRef: inlineTextareaRef, insertMeme: inlineInsertMeme } = useMemeInsert(text, setText);
+  const { textareaRef: overlayTextareaRefHook, insertMeme: overlayInsertMeme } = useMemeInsert(text, setText);
   const overlayTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [keyboardInset, setKeyboardInset] = useState(0);
   const [keyboardMode, setKeyboardMode] = useState(false);
@@ -112,7 +113,8 @@ const CommentModal: React.FC<CommentModalProps> = ({
       return;
     }
     const update = () => {
-      setFallbackOverlayTop(Math.max(12, Math.round(window.innerHeight * 0.42)));
+      // 计算 fallback 位置：屏幕顶部 1/3 处，确保不与键盘重叠
+      setFallbackOverlayTop(Math.max(12, Math.round(window.innerHeight * 0.15)));
     };
     update();
     window.addEventListener('resize', update);
@@ -129,21 +131,19 @@ const CommentModal: React.FC<CommentModalProps> = ({
         return;
       }
       if (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT' || (target as HTMLElement).isContentEditable) {
-        setKeyboardMode(true);
         setHasTextareaFocus(true);
         if (isMobile) {
-          document.body.style.overflow = 'hidden';
-          requestAnimationFrame(() => {
-            inputOverlayRef.current?.scrollIntoView({ block: 'center' });
-          });
+          // 延迟执行让键盘有时间弹出
+          setTimeout(() => {
+            // 使用 scrollIntoView 将输入框滚动到可见区域
+            (target as HTMLElement).scrollIntoView({ block: 'center', behavior: 'smooth' });
+          }, 300);
         }
       }
     };
     const onFocusOut = () => {
-      setKeyboardMode(false);
       setHasTextareaFocus(false);
       setOverlayTop(null);
-      document.body.style.overflow = '';
     };
     rootRef.current?.addEventListener('focusin', onFocusIn);
     rootRef.current?.addEventListener('focusout', onFocusOut);
@@ -155,11 +155,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
   }, [isOpen]);
 
   const enterKeyboardMode = () => {
-    if (!isMobile) {
-      return;
-    }
-    setKeyboardMode(true);
-    setHasTextareaFocus(true);
+    // 不再需要 keyboardMode
   };
 
   useEffect(() => {
@@ -713,7 +709,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
               onClose={() => setMemeOpen(false)}
               anchorRef={memeButtonRef}
               onSelect={(packName, label) => {
-                insertMeme(packName, label);
+                inlineInsertMeme(packName, label);
                 setMemeOpen(false);
               }}
             />
@@ -792,8 +788,10 @@ const CommentModal: React.FC<CommentModalProps> = ({
                     onClose={() => setMemeOpen(false)}
                     anchorRef={memeButtonRef}
                     onSelect={(packName, label) => {
-                      insertMeme(packName, label);
+                      overlayInsertMeme(packName, label);
                       setMemeOpen(false);
+                      // 重新聚焦到 overlay textarea
+                      setTimeout(() => overlayTextareaRef.current?.focus(), 50);
                     }}
                   />
                 </div>
