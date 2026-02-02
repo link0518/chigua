@@ -49,16 +49,23 @@ const CommentModal: React.FC<CommentModalProps> = ({
   const turnstileRef = useRef<TurnstileHandle | null>(null);
   const memeButtonRef = useRef<HTMLButtonElement | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const inputOverlayRef = useRef<HTMLDivElement | null>(null);
   const pageSize = 10;
   const turnstileEnabled = state.settings.turnstileEnabled;
   const { textareaRef, insertMeme } = useMemeInsert(text, setText);
   const [keyboardInset, setKeyboardInset] = useState(0);
   const [keyboardMode, setKeyboardMode] = useState(false);
+  const [overlayTop, setOverlayTop] = useState<number | null>(null);
+  const [fallbackOverlayTop, setFallbackOverlayTop] = useState<number | null>(null);
+
+  const isMobile = typeof window !== 'undefined' ? window.matchMedia('(max-width: 767px)').matches : false;
 
   useEffect(() => {
     if (!isOpen) {
       setKeyboardInset(0);
       setKeyboardMode(false);
+      setOverlayTop(null);
+      setFallbackOverlayTop(null);
       return;
     }
     const vv = window.visualViewport;
@@ -77,6 +84,10 @@ const CommentModal: React.FC<CommentModalProps> = ({
         const delta = Math.max(0, Math.round(layoutHeight - viewportHeight - vv.offsetTop));
         setKeyboardInset(delta);
         setKeyboardMode(delta > 0);
+        if (delta > 0) {
+          const centeredTop = Math.max(12, Math.round(vv.offsetTop + viewportHeight * 0.5));
+          setOverlayTop(centeredTop);
+        }
       });
     };
 
@@ -93,6 +104,18 @@ const CommentModal: React.FC<CommentModalProps> = ({
   }, [isOpen]);
 
   useEffect(() => {
+    if (!isOpen || !isMobile || !keyboardMode) {
+      return;
+    }
+    const update = () => {
+      setFallbackOverlayTop(Math.max(12, Math.round(window.innerHeight * 0.42)));
+    };
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, [isMobile, isOpen, keyboardMode]);
+
+  useEffect(() => {
     if (!isOpen) {
       return;
     }
@@ -103,21 +126,41 @@ const CommentModal: React.FC<CommentModalProps> = ({
       }
       if (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT' || (target as HTMLElement).isContentEditable) {
         setKeyboardMode(true);
-        requestAnimationFrame(() => {
-          target.scrollIntoView({ block: 'center' });
-        });
+        if (isMobile) {
+          document.body.style.overflow = 'hidden';
+          requestAnimationFrame(() => {
+            inputOverlayRef.current?.scrollIntoView({ block: 'center' });
+          });
+        }
       }
     };
     const onFocusOut = () => {
       setKeyboardMode(false);
+      setOverlayTop(null);
+      document.body.style.overflow = '';
     };
     rootRef.current?.addEventListener('focusin', onFocusIn);
     rootRef.current?.addEventListener('focusout', onFocusOut);
     return () => {
       rootRef.current?.removeEventListener('focusin', onFocusIn);
       rootRef.current?.removeEventListener('focusout', onFocusOut);
+      document.body.style.overflow = '';
     };
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || !isMobile) {
+      return;
+    }
+    if (keyboardMode) {
+      document.body.style.overflow = 'hidden';
+      return;
+    }
+    document.body.style.overflow = '';
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isMobile, isOpen, keyboardMode]);
 
   useEffect(() => {
     if (!isOpen || keyboardInset <= 0) {
@@ -607,6 +650,13 @@ const CommentModal: React.FC<CommentModalProps> = ({
         )}
       </div>
 
+      {isMobile && keyboardMode && (
+        <div
+          className="fixed inset-0 z-[60] bg-black/30"
+          aria-hidden="true"
+        />
+      )}
+
       <form className="flex flex-col gap-3 mt-4" onSubmit={handleSubmit}>
         {replyToId && (
           <div className="flex items-center justify-between text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
@@ -620,14 +670,18 @@ const CommentModal: React.FC<CommentModalProps> = ({
             </button>
           </div>
         )}
-        <div className="flex items-stretch gap-2">
+        <div
+          ref={inputOverlayRef}
+          className={`flex items-stretch gap-2 ${isMobile && keyboardMode ? 'fixed left-1/2 z-[70] w-[min(520px,92vw)] -translate-x-1/2' : ''}`}
+          style={isMobile && keyboardMode ? { top: overlayTop ?? fallbackOverlayTop ?? 120 } : undefined}
+        >
           <textarea
             ref={textareaRef}
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder="留下你的评论...（支持 Markdown / 表情包）"
             maxLength={MAX_LENGTH + 10}
-            className="flex-1 h-16 p-3 border-2 border-ink rounded-lg resize-none font-sans focus:outline-none focus:shadow-sketch-sm transition-shadow"
+            className="flex-1 h-16 p-3 border-2 border-ink rounded-lg resize-none font-sans bg-white focus:outline-none focus:shadow-sketch-sm transition-shadow"
           />
           <div className="relative">
             <button
