@@ -29,6 +29,8 @@ const CommentInputModal: React.FC<CommentInputModalProps> = ({
 }) => {
   const [text, setText] = useState(initialText);
   const [memeOpen, setMemeOpen] = useState(false);
+  const [viewportTopInset, setViewportTopInset] = useState(0);
+  const isMobile = typeof window !== 'undefined' ? window.matchMedia('(max-width: 767px)').matches : false;
   const memeButtonRef = useRef<HTMLButtonElement | null>(null);
   const { textareaRef, insertMeme } = useMemeInsert(text, setText);
 
@@ -38,10 +40,42 @@ const CommentInputModal: React.FC<CommentInputModalProps> = ({
     }
     setText(initialText);
     setMemeOpen(false);
+    setViewportTopInset(0);
     requestAnimationFrame(() => {
       textareaRef.current?.focus();
     });
   }, [initialText, isOpen, textareaRef]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+    const vv = window.visualViewport;
+    if (!vv) {
+      return;
+    }
+    let rafId: number | null = null;
+    const update = () => {
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+      }
+      rafId = requestAnimationFrame(() => {
+        // iOS/部分安卓：键盘弹起时 visualViewport 可能会有 offsetTop，
+        // 这里把它作为“需要额外向下避让”的量，避免弹窗顶部被导航栏/状态栏遮到。
+        setViewportTopInset(Math.max(0, Math.round(vv.offsetTop)));
+      });
+    };
+    update();
+    vv.addEventListener('resize', update);
+    vv.addEventListener('scroll', update);
+    return () => {
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+      }
+      vv.removeEventListener('resize', update);
+      vv.removeEventListener('scroll', update);
+    };
+  }, [isOpen]);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -62,12 +96,20 @@ const CommentInputModal: React.FC<CommentInputModalProps> = ({
       isOpen={isOpen}
       onClose={onClose}
       title={title}
-      panelClassName="max-w-xl"
-      overlayClassName="items-start sm:items-center pt-[calc(env(safe-area-inset-top)+88px)] sm:pt-4"
+      titleClassName="mb-2"
+      panelClassName="max-w-xl p-4 sm:p-6 max-h-[calc(100vh-240px)] sm:max-h-[calc(100vh-180px)] overflow-auto"
+      closeButtonClassName="top-2 right-2"
+      overlayClassName="items-start sm:items-center pt-[calc(env(safe-area-inset-top)+72px)]"
     >
-      <form className="flex flex-col gap-3" onSubmit={handleSubmit}>
+      {isMobile && viewportTopInset > 0 && (
+        <div style={{ height: viewportTopInset }} />
+      )}
+      <form
+        className="flex flex-col gap-3"
+        onSubmit={handleSubmit}
+      >
         {(helperText || onCancelReply) && (
-          <div className="flex items-center justify-between gap-2 border-2 border-ink bg-highlight rounded-lg px-3 py-2 shadow-sketch">
+          <div className="flex items-center justify-between gap-2 border-2 border-ink bg-highlight rounded-lg px-3 py-2 shadow-sketch -mt-1">
             <div className="font-hand font-bold text-ink text-sm">
               {helperText || ''}
             </div>
@@ -88,7 +130,7 @@ const CommentInputModal: React.FC<CommentInputModalProps> = ({
           onChange={(e) => setText(e.target.value)}
           placeholder="留下你的评论...（支持 Markdown / 表情包）"
           maxLength={maxLength + 10}
-          className="w-full min-h-[160px] p-3 border-2 border-ink rounded-lg resize-none font-sans bg-white focus:outline-none focus:shadow-sketch-sm transition-shadow"
+          className="w-full min-h-[120px] sm:min-h-[160px] p-3 border-2 border-ink rounded-lg resize-none font-sans bg-white focus:outline-none focus:shadow-sketch-sm transition-shadow"
         />
 
         <div className="flex items-center justify-between text-xs text-pencil">

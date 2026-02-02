@@ -10,6 +10,8 @@ interface ModalProps {
   showCloseButton?: boolean;
   panelClassName?: string;
   overlayClassName?: string;
+  titleClassName?: string;
+  closeButtonClassName?: string;
 }
 
 const Modal: React.FC<ModalProps> = ({
@@ -20,6 +22,8 @@ const Modal: React.FC<ModalProps> = ({
   showCloseButton = true,
   panelClassName = '',
   overlayClassName = '',
+  titleClassName = '',
+  closeButtonClassName = '',
 }) => {
   const handleEscape = useCallback((e: KeyboardEvent) => {
     if (e.key === 'Escape') {
@@ -53,7 +57,7 @@ const Modal: React.FC<ModalProps> = ({
         {showCloseButton && (
           <button
             onClick={onClose}
-            className="absolute -top-3 -right-3 p-2 bg-white border-2 border-ink rounded-full shadow-sketch hover:bg-gray-100 hover:-translate-y-0.5 transition-all"
+            className={`absolute -top-3 -right-3 p-2 bg-white border-2 border-ink rounded-full shadow-sketch hover:bg-gray-100 hover:-translate-y-0.5 transition-all ${closeButtonClassName}`}
           >
             <X className="w-4 h-4" />
           </button>
@@ -61,7 +65,7 @@ const Modal: React.FC<ModalProps> = ({
 
         {/* Title */}
         {title && (
-          <h2 className="font-display text-2xl text-ink mb-4 transform -rotate-1">
+          <h2 className={`font-display text-2xl text-ink mb-4 transform -rotate-1 ${titleClassName}`}>
             {title}
           </h2>
         )}
