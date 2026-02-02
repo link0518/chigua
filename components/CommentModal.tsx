@@ -531,7 +531,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
 
       <div
         ref={listRef}
-        className="max-h-64 overflow-y-auto rounded-lg border border-gray-200 bg-white flex flex-col gap-3 pr-1"
+        className={`max-h-64 overflow-y-auto rounded-lg border border-gray-200 bg-white flex flex-col gap-3 pr-1 ${isMobile && keyboardMode ? 'hidden' : ''}`}
       >
         {loading ? (
           <div className="flex flex-col gap-3 px-3 pt-3">
@@ -657,7 +657,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
         />
       )}
 
-      <form className="flex flex-col gap-3 mt-4" onSubmit={handleSubmit}>
+      <form className={`flex flex-col gap-3 mt-4 ${isMobile && keyboardMode ? 'mt-0' : ''}`} onSubmit={handleSubmit}>
         {replyToId && (
           <div className="flex items-center justify-between text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
             <span>正在回复某条评论</span>
