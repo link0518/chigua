@@ -2647,7 +2647,7 @@ app.get('/api/admin/posts', requireAdmin, (req, res) => {
   if (search) {
     const commentConditions = [
       'comments.post_id = posts.id',
-      '(comments.id LIKE ? OR comments.content LIKE ? OR comments.author LIKE ?)',
+      '(comments.id LIKE ? OR comments.content LIKE ? OR comments.author LIKE ? OR comments.ip LIKE ? OR comments.fingerprint LIKE ?)',
     ];
     conditions.push(`(
       posts.id LIKE ?
@@ -2661,7 +2661,7 @@ app.get('/api/admin/posts', requireAdmin, (req, res) => {
       )
     )`);
     const likeValue = `%${search}%`;
-    params.push(likeValue, likeValue, likeValue, likeValue, likeValue, likeValue, likeValue);
+    params.push(likeValue, likeValue, likeValue, likeValue, likeValue, likeValue, likeValue, likeValue, likeValue);
   }
 
   const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -2698,9 +2698,9 @@ app.get('/api/admin/posts', requireAdmin, (req, res) => {
     const likeValue = `%${search}%`;
     const commentConditions = [
       'post_id IN (' + placeholders + ')',
-      '(id LIKE ? OR content LIKE ? OR author LIKE ?)',
+      '(id LIKE ? OR content LIKE ? OR author LIKE ? OR ip LIKE ? OR fingerprint LIKE ?)',
     ];
-    const commentParams = [...postIds, likeValue, likeValue, likeValue];
+    const commentParams = [...postIds, likeValue, likeValue, likeValue, likeValue, likeValue];
 
     const commentRows = db
       .prepare(
@@ -3137,9 +3137,9 @@ app.get('/api/admin/posts/:id/comments', requireAdmin, (req, res) => {
   const params = [postId];
 
   if (search) {
-    conditions.push('(id LIKE ? OR content LIKE ? OR author LIKE ?)');
+    conditions.push('(id LIKE ? OR content LIKE ? OR author LIKE ? OR ip LIKE ? OR fingerprint LIKE ?)');
     const likeValue = `%${search}%`;
-    params.push(likeValue, likeValue, likeValue);
+    params.push(likeValue, likeValue, likeValue, likeValue, likeValue);
   }
 
   const whereClause = `WHERE ${conditions.join(' AND ')}`;
