@@ -20,6 +20,41 @@ interface CommentModalProps {
 
 const MAX_LENGTH = 300;
 
+const formatCompactTime = (value?: number | null) => {
+  if (!value) {
+    return '';
+  }
+
+  const diffMs = Date.now() - value;
+  if (diffMs < 0) {
+    return 'now';
+  }
+
+  const minute = 60 * 1000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+
+  if (diffMs < minute) {
+    return 'now';
+  }
+  if (diffMs < hour) {
+    return `${Math.floor(diffMs / minute)}m`;
+  }
+  if (diffMs < day) {
+    return `${Math.floor(diffMs / hour)}h`;
+  }
+
+  const days = Math.floor(diffMs / day);
+  if (days <= 7) {
+    return `${days}d`;
+  }
+
+  const date = new Date(value);
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  return `${mm}/${dd}`;
+};
+
 const CommentModal: React.FC<CommentModalProps> = ({
   isOpen,
   onClose,
@@ -565,16 +600,22 @@ const CommentModal: React.FC<CommentModalProps> = ({
                 return (
                   <div key={item.id} data-comment-id={item.id} style={{ marginLeft: maxIndent }} className="group px-3 pt-2">
                     <div className="flex items-start justify-between text-[12px] text-gray-500 font-sans">
-                      <div className="flex items-center gap-2">
+                      <div className="min-w-0 flex items-center gap-2 overflow-hidden whitespace-nowrap">
                         <span className="text-[12px] font-mono text-gray-500">{threadLabel}楼</span>
                         <span className="text-gray-800">匿名用户</span>
                         {isDeleted && <span className="text-[11px] text-gray-400">已处理</span>}
                         {replyLabel && (
-                          <span className="text-[11px] text-gray-500">回复 {replyLabel}楼</span>
+                          <span className="text-[11px] text-gray-500 sm:inline hidden">回复 {replyLabel}楼</span>
+                        )}
+                        {replyLabel && (
+                          <span className="text-[11px] text-gray-500 sm:hidden inline font-mono">↪{replyLabel}</span>
                         )}
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-gray-400">{item.timestamp}</span>
+                      <div className="flex items-center gap-2 flex-shrink-0 whitespace-nowrap">
+                        <span className="text-gray-400" title={item.timestamp}>
+                          <span className="sm:inline hidden">{item.timestamp}</span>
+                          <span className="sm:hidden inline">{formatCompactTime(item.createdAt) || item.timestamp}</span>
+                        </span>
                         {!isDeleted && (
                           <button
                             type="button"
