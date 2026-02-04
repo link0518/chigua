@@ -599,7 +599,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
 
                 return (
                   <div key={item.id} data-comment-id={item.id} style={{ marginLeft: maxIndent }} className="group px-3 pt-2">
-                    <div className="flex items-start justify-between text-[12px] text-gray-500 font-sans">
+                    <div className="flex items-center justify-between text-[12px] text-gray-500 font-sans">
                       <div className="min-w-0 flex items-center gap-2 overflow-hidden whitespace-nowrap">
                         <span className="text-[12px] font-mono text-gray-500">{threadLabel}楼</span>
                         <span className="text-gray-800">匿名用户</span>
