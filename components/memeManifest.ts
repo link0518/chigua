@@ -127,6 +127,32 @@ export const MEME_PACKS: MemePack[] = [
     { file: `1_111__b晕.gif`, label: `b晕` },
     { file: `1_112__b再见.gif`, label: `b再见` },
   ] },
+  { name: `幻狐`, items: [
+    { file: `21_431__t鄙视.gif`, label: `t鄙视` },
+    { file: `21_432__t沉默.gif`, label: `t沉默` },
+    { file: `21_433__t害羞.gif`, label: `t害羞` },
+    { file: `21_434__t可怜.gif`, label: `t可怜` },
+    { file: `21_435__t抠鼻.gif`, label: `t抠鼻` },
+    { file: `21_436__t哭.gif`, label: `t哭` },
+    { file: `21_437__t流汗.gif`, label: `t流汗` },
+    { file: `21_438__t呕吐.gif`, label: `t呕吐` },
+    { file: `21_439__t色.gif`, label: `t色` },
+    { file: `21_440__t睡觉.gif`, label: `t睡觉` },
+    { file: `21_441__t掀桌.gif`, label: `t掀桌` },
+    { file: `21_442__t再见.gif`, label: `t再见` },
+  ] },
+  { name: `甜兔`, items: [
+    { file: `35_598__TT捏脸.gif`, label: `TT捏脸` },
+    { file: `35_599__TT抖耳朵.gif`, label: `TT抖耳朵` },
+    { file: `35_600__TT瞌睡.gif`, label: `TT瞌睡` },
+    { file: `35_601__TT哭泣.gif`, label: `TT哭泣` },
+    { file: `35_602__TT崩溃.gif`, label: `TT崩溃` },
+    { file: `35_603__TT气愤.gif`, label: `TT气愤` },
+    { file: `35_604__TT祈祷.gif`, label: `TT祈祷` },
+    { file: `35_605__TT疑问.gif`, label: `TT疑问` },
+    { file: `35_606__TT饥饿.gif`, label: `TT饥饿` },
+    { file: `35_607__TT吃瓜.gif`, label: `TT吃瓜` },
+  ] },
 ];
 
 export const MEME_PACK_TO_ITEMS = new Map<string, MemeItem[]>(

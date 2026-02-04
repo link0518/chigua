@@ -57,7 +57,27 @@ const listPackDirs = () => {
 
   const others = names
     .filter((name) => name !== DEFAULT_PACK_DIR)
-    .sort((a, b) => a.localeCompare(b, 'zh-CN', { numeric: true }));
+    .map((name) => {
+      const dirPath = path.join(MEME_ROOT, name);
+      try {
+        const stat = fs.statSync(dirPath);
+        const createdAtMs = Number(stat.birthtimeMs || 0);
+        const mtimeMs = Number(stat.mtimeMs || 0);
+        return { name, createdAtMs, mtimeMs };
+      } catch {
+        return { name, createdAtMs: 0, mtimeMs: 0 };
+      }
+    })
+    .sort((a, b) => {
+      const left = a.createdAtMs || a.mtimeMs;
+      const right = b.createdAtMs || b.mtimeMs;
+      if (left !== right) {
+        return left - right;
+      }
+      // 兜底：同一时间戳时保持稳定顺序（按名称）
+      return a.name.localeCompare(b.name, 'zh-CN', { numeric: true });
+    })
+    .map((item) => item.name);
 
   return names.includes(DEFAULT_PACK_DIR) ? [DEFAULT_PACK_DIR, ...others] : others;
 };
