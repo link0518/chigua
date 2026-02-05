@@ -168,10 +168,10 @@ const SubmissionView: React.FC = () => {
                 <SketchIconButton
                   onClick={() => setShowPreview(!showPreview)}
                   label={showPreview ? '编辑' : '预览'}
-                  icon={showPreview ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  icon={showPreview ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                   variant="doodle"
                   iconOnly
-                  className="h-10 w-10 px-0"
+                  className="h-11 w-11 px-0"
                 />
 
                 <input
@@ -191,10 +191,10 @@ const SubmissionView: React.FC = () => {
                   onClick={handlePickUpload}
                   disabled={uploading}
                   label={uploading ? '上传中' : '上传图片'}
-                  icon={<Image className="w-4 h-4" />}
+                  icon={<Image className="w-5 h-5" />}
                   variant="doodle"
                   iconOnly
-                  className="h-10 w-10 px-0"
+                  className="h-11 w-11 px-0"
                 />
 
                 <div className="relative">
@@ -202,10 +202,10 @@ const SubmissionView: React.FC = () => {
                     ref={memeButtonRef}
                     onClick={() => setMemeOpen((prev) => !prev)}
                     label="表情"
-                    icon={<Smile className="w-4 h-4" />}
+                    icon={<Smile className="w-5 h-5" />}
                     variant="doodle"
                     iconOnly
-                    className="h-10 w-10 px-0"
+                    className="h-11 w-11 px-0"
                   />
                   <MemePicker
                     open={memeOpen}
