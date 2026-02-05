@@ -1,8 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Send, Smile } from 'lucide-react';
+import { Image, Send, Smile } from 'lucide-react';
 import Modal from './Modal';
 import { SketchButton } from './SketchUI';
 import MemePicker, { useMemeInsert } from './MemePicker';
+import { api } from '../api';
+import { useInsertAtCursor } from './useInsertAtCursor';
+import { SketchIconButton } from './SketchIconButton';
 
 interface CommentInputModalProps {
   isOpen: boolean;
@@ -10,6 +13,7 @@ interface CommentInputModalProps {
   onSubmit: (text: string) => Promise<void> | void;
   maxLength: number;
   submitting: boolean;
+  showToast: (message: string, type?: 'success' | 'error' | 'info' | 'warning') => void;
   title?: string;
   initialText?: string;
   helperText?: string;
@@ -22,6 +26,7 @@ const CommentInputModal: React.FC<CommentInputModalProps> = ({
   onSubmit,
   maxLength,
   submitting,
+  showToast,
   title = '写评论',
   initialText = '',
   helperText,
@@ -29,11 +34,42 @@ const CommentInputModal: React.FC<CommentInputModalProps> = ({
 }) => {
   const [text, setText] = useState(initialText);
   const [memeOpen, setMemeOpen] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [viewportTopInset, setViewportTopInset] = useState(0);
   const [panelMaxHeight, setPanelMaxHeight] = useState<number | null>(null);
   const isMobile = typeof window !== 'undefined' ? window.matchMedia('(max-width: 767px)').matches : false;
   const memeButtonRef = useRef<HTMLButtonElement | null>(null);
   const { textareaRef, insertMeme } = useMemeInsert(text, setText);
+  const { insertAtCursor } = useInsertAtCursor(text, setText, textareaRef);
+  const uploadInputRef = useRef<HTMLInputElement | null>(null);
+
+  const handlePickUpload = () => {
+    if (uploading) {
+      return;
+    }
+    uploadInputRef.current?.click();
+  };
+
+  const handleUploadFile = async (file: File) => {
+    if (!file) {
+      return;
+    }
+    if (!file.type.startsWith('image/')) {
+      return;
+    }
+
+    setUploading(true);
+    try {
+      const result = await api.uploadImage(file, { uploadChannel: 'telegram' });
+      insertAtCursor(`![](${result.url}) `);
+      showToast('图片上传成功', 'success');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '图片上传失败，请稍后重试';
+      showToast(message, 'error');
+    } finally {
+      setUploading(false);
+    }
+  };
 
   useEffect(() => {
     if (!isOpen) {
@@ -147,26 +183,49 @@ const CommentInputModal: React.FC<CommentInputModalProps> = ({
         </div>
 
         <div className="mt-2 pt-2 border-t border-gray-100 flex items-center justify-between gap-2">
-          <div className="relative">
-            <button
-              ref={memeButtonRef}
-              type="button"
-              onClick={() => setMemeOpen((prev) => !prev)}
-              className="px-3 h-10 flex items-center justify-center border-2 border-ink rounded-lg bg-white hover:bg-highlight transition-colors shadow-sketch"
-              aria-label="插入表情包"
-              title="表情包"
-            >
-              <Smile className="w-4 h-4" />
-            </button>
-            <MemePicker
-              open={memeOpen}
-              onClose={() => setMemeOpen(false)}
-              anchorRef={memeButtonRef}
-              onSelect={(packName, label) => {
-                insertMeme(packName, label);
-                setMemeOpen(false);
+          <div className="flex items-center gap-2">
+            <input
+              ref={uploadInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) {
+                  void handleUploadFile(file);
+                }
+                e.target.value = '';
               }}
             />
+            <SketchIconButton
+              onClick={handlePickUpload}
+              disabled={uploading}
+              label={uploading ? '上传中' : '上传图片'}
+              icon={<Image className="w-4 h-4" />}
+              variant="doodle"
+              iconOnly
+              className="h-10 w-10 px-0"
+            />
+            <div className="relative">
+              <SketchIconButton
+                ref={memeButtonRef}
+                onClick={() => setMemeOpen((prev) => !prev)}
+                label="表情"
+                variant={memeOpen ? 'active' : 'doodle'}
+                icon={<Smile className="w-4 h-4" />}
+                iconOnly
+                className="h-10 w-10 px-0"
+              />
+              <MemePicker
+                open={memeOpen}
+                onClose={() => setMemeOpen(false)}
+                anchorRef={memeButtonRef}
+                onSelect={(packName, label) => {
+                  insertMeme(packName, label);
+                  setMemeOpen(false);
+                }}
+              />
+            </div>
           </div>
 
           <div className="flex items-center gap-2">

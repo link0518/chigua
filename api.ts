@@ -11,6 +11,9 @@ const toQuery = (params: Record<string, unknown>) => {
 
 let csrfToken = '';
 
+const IMGBED_BASE_URL = import.meta.env.VITE_IMGBED_BASE_URL || '';
+const IMGBED_TOKEN = import.meta.env.VITE_IMGBED_TOKEN || '';
+
 const needsAdminCsrf = (path: string) => path.startsWith('/admin') || path.startsWith('/reports');
 
 const shouldAttachFingerprint = (path: string, options: RequestInit) => {
@@ -223,4 +226,63 @@ export const api = {
   }),
   adminLogout: () => apiFetch('/admin/logout', { method: 'POST' }),
   getStats: () => apiFetch('/admin/stats'),
+  uploadImage: async (
+    file: File,
+    options: {
+      uploadChannel?: string;
+      channelName?: string;
+      serverCompress?: boolean;
+      autoRetry?: boolean;
+      uploadNameType?: 'default' | 'index' | 'origin' | 'short';
+      returnFormat?: 'default' | 'full';
+      uploadFolder?: string;
+    } = {}
+  ): Promise<{ src: string; url: string }> => {
+    if (!IMGBED_BASE_URL) {
+      throw new Error('未配置图床地址（VITE_IMGBED_BASE_URL）');
+    }
+    if (!IMGBED_TOKEN) {
+      throw new Error('未配置图床 Token（VITE_IMGBED_TOKEN）');
+    }
+
+    const form = new FormData();
+    form.append('file', file);
+
+    const query = toQuery({
+      uploadChannel: options.uploadChannel,
+      channelName: options.channelName,
+      serverCompress: options.serverCompress ?? true,
+      autoRetry: options.autoRetry ?? true,
+      uploadNameType: options.uploadNameType ?? 'default',
+      returnFormat: options.returnFormat ?? 'default',
+      uploadFolder: options.uploadFolder,
+    });
+
+    const base = String(IMGBED_BASE_URL).replace(/\/$/, '');
+    const response = await fetch(`${base}/upload${query}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${IMGBED_TOKEN}`,
+      },
+      body: form,
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const message = (data as any)?.error || '上传失败';
+      throw new Error(message);
+    }
+
+    const first = Array.isArray(data) ? data[0] : (data as any)?.data?.[0];
+    const src = String(first?.src || '');
+    if (!src) {
+      throw new Error('上传成功但未返回 src');
+    }
+
+    const url = src.startsWith('http')
+      ? src
+      : `${base}${src.startsWith('/') ? '' : '/'}${src}`;
+
+    return { src, url };
+  },
 };

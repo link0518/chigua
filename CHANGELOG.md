@@ -1,5 +1,19 @@
 ## [Unreleased]
 
+### Added
+
+- 接入图床上传能力（前端直传）：新增 `api.uploadImage`，投稿与评论支持上传图片并插入 Markdown 图片链接（`![](url)`）。
+- 新增环境变量示例：`.env.example` 增加 `VITE_IMGBED_BASE_URL` / `VITE_IMGBED_TOKEN`。
+
+### Changed
+
+- 评论区体验调整：评论弹窗不再展示帖子详情；评论区图片展示尺寸更紧凑以适配布局。
+- 投稿页编辑工具条调整：预览/图片/表情按钮保持固定位置（`sticky`），避免滚动时跳动。
+
+### Fixed
+
+- 修复 Vite 环境变量读取：图床配置改为通过 `import.meta.env` 读取，避免已配置仍提示“未配置”。
+
 ### Fixed
 
 - 评论弹窗“热门评论”右上角点赞按钮支持直接点赞/取消点赞，并与评论列表状态同步 `components/CommentModal.tsx`

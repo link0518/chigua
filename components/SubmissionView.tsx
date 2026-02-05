@@ -1,10 +1,13 @@
 import React, { useRef, useState } from 'react';
-import { Send, Eye, EyeOff, CheckCircle, Smile } from 'lucide-react';
+import { Send, Eye, EyeOff, CheckCircle, Smile, Image } from 'lucide-react';
 import { SketchCard, SketchButton, Tape } from './SketchUI';
 import { useApp } from '../store/AppContext';
 import MarkdownRenderer from './MarkdownRenderer';
 import Turnstile, { TurnstileHandle } from './Turnstile';
 import MemePicker, { useMemeInsert } from './MemePicker';
+import { api } from '../api';
+import { useInsertAtCursor } from './useInsertAtCursor';
+import { SketchIconButton } from './SketchIconButton';
 
 const SubmissionView: React.FC = () => {
   const { addPost, showToast, state } = useApp();
@@ -13,11 +16,43 @@ const SubmissionView: React.FC = () => {
   const [isSuccess, setIsSuccess] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [memeOpen, setMemeOpen] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const turnstileRef = useRef<TurnstileHandle | null>(null);
   const memeButtonRef = useRef<HTMLButtonElement | null>(null);
   const { textareaRef, insertMeme } = useMemeInsert(text, setText);
+  const { insertAtCursor } = useInsertAtCursor(text, setText, textareaRef);
   const maxLength = 2000;
   const turnstileEnabled = state.settings.turnstileEnabled;
+  const uploadInputRef = useRef<HTMLInputElement | null>(null);
+
+  const handlePickUpload = () => {
+    if (uploading) {
+      return;
+    }
+    uploadInputRef.current?.click();
+  };
+
+  const handleUploadFile = async (file: File) => {
+    if (!file) {
+      return;
+    }
+    if (!file.type.startsWith('image/')) {
+      showToast('只支持上传图片文件', 'warning');
+      return;
+    }
+
+    setUploading(true);
+    try {
+      const result = await api.uploadImage(file, { uploadChannel: 'telegram' });
+      insertAtCursor(`![](${result.url}) `);
+      showToast('图片上传成功', 'success');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '图片上传失败，请稍后重试';
+      showToast(message, 'error');
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const requestTurnstileToken = async () => {
     if (!turnstileEnabled) {
@@ -122,42 +157,67 @@ const SubmissionView: React.FC = () => {
           <Tape />
 
           <form className="mt-6 flex flex-col h-full gap-4" onSubmit={handleSubmit}>
-            {/* Preview Toggle */}
-            <div className="flex justify-between items-center">
+            {/* Preview / Upload / Meme */}
+            <div className="sticky top-3 z-10 bg-white/90 backdrop-blur-sm px-3 py-2 flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <span className="font-hand font-bold text-ink">支持 Markdown</span>
-                <span className="text-xs text-pencil">(**粗体** *斜体* ~~删除线~~ `代码` · 表情短码)</span>
+                {/* <span className="text-xs text-pencil">(**粗体** *斜体* ~~删除线~~ `代码` · 表情短码)</span> */}
               </div>
-              <button
-                type="button"
-                onClick={() => setShowPreview(!showPreview)}
-                className="flex items-center gap-1 px-3 py-1 text-sm font-hand font-bold text-pencil hover:text-ink border-2 border-gray-200 hover:border-ink rounded-full transition-all"
-              >
-                {showPreview ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                {showPreview ? '编辑' : '预览'}
-              </button>
+              <div className="flex items-center gap-2">
 
-              <div className="relative ml-2">
-                <button
-                  ref={memeButtonRef}
-                  type="button"
-                  onClick={() => setMemeOpen((prev) => !prev)}
-                  className="flex items-center gap-1 px-3 py-1 text-sm font-hand font-bold text-pencil hover:text-ink border-2 border-gray-200 hover:border-ink rounded-full transition-all"
-                  aria-label="插入表情包"
-                >
-                  <Smile className="w-4 h-4" />
-                  表情
-                </button>
-                <MemePicker
-                  open={memeOpen}
-                  onClose={() => setMemeOpen(false)}
-                  placement="down"
-                  anchorRef={memeButtonRef}
-                  onSelect={(packName, label) => {
-                    insertMeme(packName, label);
-                    setMemeOpen(false);
+                <SketchIconButton
+                  onClick={() => setShowPreview(!showPreview)}
+                  label={showPreview ? '编辑' : '预览'}
+                  icon={showPreview ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  variant="doodle"
+                  iconOnly
+                  className="h-10 w-10 px-0"
+                />
+
+                <input
+                  ref={uploadInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      void handleUploadFile(file);
+                    }
+                    e.target.value = '';
                   }}
                 />
+                <SketchIconButton
+                  onClick={handlePickUpload}
+                  disabled={uploading}
+                  label={uploading ? '上传中' : '上传图片'}
+                  icon={<Image className="w-4 h-4" />}
+                  variant="doodle"
+                  iconOnly
+                  className="h-10 w-10 px-0"
+                />
+
+                <div className="relative">
+                  <SketchIconButton
+                    ref={memeButtonRef}
+                    onClick={() => setMemeOpen((prev) => !prev)}
+                    label="表情"
+                    icon={<Smile className="w-4 h-4" />}
+                    variant="doodle"
+                    iconOnly
+                    className="h-10 w-10 px-0"
+                  />
+                  <MemePicker
+                    open={memeOpen}
+                    onClose={() => setMemeOpen(false)}
+                    placement="down"
+                    anchorRef={memeButtonRef}
+                    onSelect={(packName, label) => {
+                      insertMeme(packName, label);
+                      setMemeOpen(false);
+                    }}
+                  />
+                </div>
               </div>
             </div>
 
@@ -172,10 +232,10 @@ const SubmissionView: React.FC = () => {
                   )}
                 </div>
               ) : (
-                 <textarea
-                   ref={textareaRef}
-                   value={text}
-                   onChange={(e) => setText(e.target.value)}
+                <textarea
+                  ref={textareaRef}
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
                   placeholder="想说什么... 有什么好吃的瓜？&#10;&#10;支持 Markdown 与表情包：&#10;点右上角“表情”插入（会显示为 [:微笑:] 这种短码）&#10;**粗体** *斜体* ~~删除线~~&#10;`行内代码` [链接](url)&#10;> 引用文字&#10;- 列表项"
                   maxLength={maxLength + 100}
                   className="w-full h-full min-h-[300px] resize-none bg-transparent border-2 border-gray-200 rounded-lg outline-none font-sans text-xl leading-8 text-ink placeholder:text-pencil/40 p-4 focus:border-ink transition-colors"
@@ -185,18 +245,18 @@ const SubmissionView: React.FC = () => {
 
             {/* Footer */}
             <div className="flex justify-between items-center">
-               <div className="flex items-center gap-4">
-                 <span className={`font-hand text-lg ${text.length > maxLength ? 'text-red-500 font-bold' : text.length > maxLength * 0.9 ? 'text-yellow-600' : 'text-pencil'}`}>
-                   {text.length} / {maxLength}
-                 </span>
-                 {text.length > maxLength && (
-                   <span className="text-red-500 text-sm font-hand">超出限制！</span>
-                 )}
-               </div>
-               <div className="flex items-center gap-2 text-xs text-pencil">
-                 <EyeOff className="w-4 h-4" />
-                 <span className="font-hand">完全匿名投稿</span>
-               </div>
+              <div className="flex items-center gap-4">
+                <span className={`font-hand text-lg ${text.length > maxLength ? 'text-red-500 font-bold' : text.length > maxLength * 0.9 ? 'text-yellow-600' : 'text-pencil'}`}>
+                  {text.length} / {maxLength}
+                </span>
+                {text.length > maxLength && (
+                  <span className="text-red-500 text-sm font-hand">超出限制！</span>
+                )}
+              </div>
+              <div className="flex items-center gap-2 text-xs text-pencil">
+                <EyeOff className="w-4 h-4" />
+                <span className="font-hand">完全匿名投稿</span>
+              </div>
             </div>
 
             {/* Submit Button */}

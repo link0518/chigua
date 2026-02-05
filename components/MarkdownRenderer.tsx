@@ -97,7 +97,7 @@ renderer.image = function (token) {
     return `<img src="${safeHref}" alt="${altText}"${titleAttr} class="meme-image inline-block ml-1 w-[22px] h-[22px] object-contain align-text-bottom" loading="lazy" />`;
   }
   return `<a href="${safeHref}" target="_blank" rel="noopener noreferrer" class="markdown-image-link inline-block">
-    <img src="${safeHref}" alt="${altText}"${titleAttr} class="markdown-image max-w-full rounded-md border border-gray-200 cursor-zoom-in" loading="lazy" />
+    <img src="${safeHref}" alt="${altText}"${titleAttr} class="markdown-image max-w-full max-h-[420px] w-auto h-auto object-contain rounded-md border border-gray-200 cursor-zoom-in bg-white" loading="lazy" />
   </a>`;
 };
 

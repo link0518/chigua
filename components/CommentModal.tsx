@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useRef, useState } from 'react';
-import { Send, Smile, ThumbsUp } from 'lucide-react';
+import { Image, Send, Smile, ThumbsUp } from 'lucide-react';
 import { SketchButton } from './SketchUI';
 import { api } from '../api';
 import { Comment } from '../types';
@@ -9,6 +9,7 @@ import Turnstile, { TurnstileHandle } from './Turnstile';
 import ReportModal from './ReportModal';
 import MemePicker, { useMemeInsert } from './MemePicker';
 import CommentInputModal from './CommentInputModal';
+import { useInsertAtCursor } from './useInsertAtCursor';
 
 interface CommentModalProps {
   isOpen: boolean;
@@ -121,7 +122,10 @@ const CommentModal: React.FC<CommentModalProps> = ({
   const pageSize = 10;
   const turnstileEnabled = state.settings.turnstileEnabled;
   const { textareaRef: inlineTextareaRef, insertMeme: inlineInsertMeme } = useMemeInsert(text, setText);
+  const { insertAtCursor } = useInsertAtCursor(text, setText, inlineTextareaRef);
   const overlayTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const uploadInputRef = useRef<HTMLInputElement | null>(null);
+  const [uploading, setUploading] = useState(false);
   const [keyboardInset, setKeyboardInset] = useState(0);
   const [keyboardMode, setKeyboardMode] = useState(false);
   const [overlayTop, setOverlayTop] = useState<number | null>(null);
@@ -130,6 +134,35 @@ const CommentModal: React.FC<CommentModalProps> = ({
 
   const isMobile = typeof window !== 'undefined' ? window.matchMedia('(max-width: 767px)').matches : false;
   // debugComment 调试输出已移除
+
+  const handlePickUpload = () => {
+    if (uploading) {
+      return;
+    }
+    uploadInputRef.current?.click();
+  };
+
+  const handleUploadFile = async (file: File) => {
+    if (!file) {
+      return;
+    }
+    if (!file.type.startsWith('image/')) {
+      showToast('只支持上传图片文件', 'warning');
+      return;
+    }
+
+    setUploading(true);
+    try {
+      const result = await api.uploadImage(file, { uploadChannel: 'telegram' });
+      insertAtCursor(`![](${result.url}) `);
+      showToast('图片上传成功', 'success');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '图片上传失败，请稍后重试';
+      showToast(message, 'error');
+    } finally {
+      setUploading(false);
+    }
+  };
 
   useEffect(() => {
     if (!isOpen) {
@@ -615,7 +648,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
           <div className="max-h-28 overflow-hidden">
             <MarkdownRenderer
               content={mostLikedComment.content}
-              className="markdown-preview text-sm text-pencil [&_.markdown-image-link]:block [&_.markdown-image]:max-h-32 md:[&_.markdown-image]:max-h-44 [&_.markdown-image]:object-contain [&_.markdown-image]:mx-auto [&_.markdown-image]:w-auto [&_.markdown-image]:!max-w-52 md:[&_.markdown-image]:!max-w-64"
+              className="markdown-preview text-sm text-pencil [&_.markdown-image-link]:block [&_.markdown-image]:max-h-24 md:[&_.markdown-image]:max-h-28 [&_.markdown-image]:object-contain [&_.markdown-image]:mx-auto [&_.markdown-image]:w-auto [&_.markdown-image]:!max-w-40 md:[&_.markdown-image]:!max-w-48"
             />
           </div>
         ) : (
@@ -624,17 +657,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
           </div>
         )}
 
-        {!mostLikedComment && contentPreview && (
-          <div className="mt-2 pt-2 border-t border-gray-200/70">
-            <div className="text-xs text-gray-500 font-sans mb-1">帖子详情</div>
-            <div className="max-h-20 overflow-hidden">
-              <MarkdownRenderer
-                content={contentPreview}
-                className="markdown-preview text-sm text-pencil [&_.markdown-image-link]:block [&_.markdown-image]:max-h-24 md:[&_.markdown-image]:max-h-28 [&_.markdown-image]:object-contain [&_.markdown-image]:mx-auto [&_.markdown-image]:w-auto [&_.markdown-image]:!max-w-52 md:[&_.markdown-image]:!max-w-64"
-              />
-            </div>
-          </div>
-        )}
+        {/* 评论区不展示帖子详情（即使没有评论） */}
       </div>
 
       <div
@@ -651,7 +674,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
             ))}
           </div>
         ) : comments.length === 0 ? (
-          <div className="text-center text-gray-500">还没有评论，来当第一个吃瓜群众吧！</div>
+          <div className="px-3 py-6 text-center text-gray-500 text-sm">还没有评论，来当第一个吃瓜群众吧！</div>
         ) : (
           [...comments]
             .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0))
@@ -792,14 +815,37 @@ const CommentModal: React.FC<CommentModalProps> = ({
             }}
             readOnly={isMobile}
           />
+          <input
+            ref={uploadInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) {
+                void handleUploadFile(file);
+              }
+              e.target.value = '';
+            }}
+          />
+          <button
+            type="button"
+            onClick={handlePickUpload}
+            disabled={uploading}
+            className="px-3 h-16 flex items-center justify-center border-2 border-ink rounded-lg bg-white hover:bg-highlight transition-colors shadow-sketch disabled:opacity-60"
+            aria-label="上传图片"
+            title={uploading ? '正在上传...' : '上传图片'}
+          >
+            <Image className="w-4 h-4" />
+          </button>
           <div className="relative">
             <button
               ref={memeButtonRef}
               type="button"
               onClick={() => setMemeOpen((prev) => !prev)}
               className="px-3 h-16 flex items-center justify-center border-2 border-ink rounded-lg bg-white hover:bg-highlight transition-colors shadow-sketch"
-              aria-label="插入表情包"
-              title="表情包"
+              aria-label="表情"
+              title="表情"
             >
               <Smile className="w-4 h-4" />
             </button>
@@ -837,6 +883,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
         initialText={text}
         maxLength={MAX_LENGTH}
         submitting={submitting}
+        showToast={showToast}
         onSubmit={async (nextText) => {
           setText(nextText);
           const ok = await submitText(nextText);
