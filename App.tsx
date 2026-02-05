@@ -18,6 +18,7 @@ import {
   X,
 } from 'lucide-react';
 import { useApp } from './store/AppContext';
+import AntigravityBackground from './components/AntigravityBackground';
 
 const SubmissionView = React.lazy(() => import('./components/SubmissionView'));
 const FeedView = React.lazy(() => import('./components/FeedView'));
@@ -433,8 +434,8 @@ const App: React.FC = () => {
     <button
       onClick={() => navigate(view)}
       className={`relative hover:text-gray-600 transition-colors font-hand text-xl font-bold ${currentView === view || active
-        ? 'after:absolute after:w-full after:h-0.5 after:bg-black after:bottom-0 after:left-0 after:scale-x-100'
-        : 'after:absolute after:w-full after:h-0.5 after:bg-black after:bottom-0 after:left-0 after:scale-x-0 hover:after:scale-x-100 after:transition-transform'
+          ? 'after:absolute after:w-full after:h-0.5 after:bg-black after:bottom-0 after:left-0 after:scale-x-100'
+          : 'after:absolute after:w-full after:h-0.5 after:bg-black after:bottom-0 after:left-0 after:scale-x-0 hover:after:scale-x-100 after:transition-transform'
         }`}
     >
       {label}
@@ -464,7 +465,10 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen-safe flex flex-col font-sans selection:bg-highlight selection:text-black">
+    <div className="min-h-screen-safe flex flex-col font-sans selection:bg-highlight selection:text-black relative">
+      {/* Antigravity Background rendered at the very bottom, z-index managed by the component (-1) */}
+      <AntigravityBackground density={60} speed={0.5} />
+
       <StreakCelebration
         open={streakCelebrationOpen}
         onClose={closeStreakCelebration}
@@ -473,7 +477,7 @@ const App: React.FC = () => {
       />
       {/* Top Navigation */}
       {currentView !== ViewType.ADMIN && (
-        <header className="sticky top-0 z-50 w-full border-b-2 border-black bg-[#f9f7f1] px-4 md:px-6 py-3 shadow-[0_4px_0_0_rgba(0,0,0,0.1)] min-h-[96px] sm:min-h-[72px]">
+        <header className="sticky top-0 z-50 w-full border-b-2 border-black bg-[#f9f7f1] px-4 md:px-6 py-3 shadow-[0_4px_0_0_rgba(0,0,0,0.1)] min-h-[96px] sm:min-h-[72px] bg-opacity-95 backdrop-blur-sm">
           <div className="absolute top-full left-0 w-full h-2 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAiIGhlaWdodD0iMTAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHBhdGggZD0iTTAgMTAgTTEwIDAgTDIwIDEwIiBmaWxsPSJub25lIiBzdHJva2U9IiMwMDAiIHN0cm9rZS13aWR0aD0iMSIvPjwvc3ZnPg==')] opacity-10"></div>
           <div className="max-w-3xl mx-auto flex items-center justify-between gap-3 sm:gap-4 flex-nowrap">
             {/* Logo */}
@@ -693,8 +697,6 @@ const App: React.FC = () => {
         <footer className="w-full border-t-2 border-black bg-paper/90 py-4 mt-auto">
           <div className="max-w-3xl mx-auto px-4">
             <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-xs font-sans text-pencil">
-
-
               <span>纯匿名</span>
               <span>·</span>
               <span>理性吃瓜</span>
