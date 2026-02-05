@@ -9,6 +9,18 @@ export type UploadRateLimitPolicy = {
   max: number;
 };
 
+export type UploadQuotaAllowed = {
+  allowed: true;
+  retryAfterMs?: never;
+};
+
+export type UploadQuotaLimited = {
+  allowed: false;
+  retryAfterMs: number;
+};
+
+export type UploadQuotaResult = UploadQuotaAllowed | UploadQuotaLimited;
+
 type UploadRateLimitState = {
   /**
    * 最近上传时间戳（毫秒）
@@ -44,11 +56,12 @@ const saveState = (state: UploadRateLimitState) => {
 
 /**
  * 轻量前端限频（防刷）：只在本次会话内生效（sessionStorage），避免干扰正常用户。
+ *
  * 返回：
  * - allowed=true 代表允许继续上传，并会记录一次额度消耗
  * - allowed=false 代表被限流，retryAfterMs 为建议等待时间
  */
-export const consumeUploadQuota = (policy: UploadRateLimitPolicy): { allowed: true } | { allowed: false; retryAfterMs: number } => {
+export const consumeUploadQuota = (policy: UploadRateLimitPolicy): UploadQuotaResult => {
   const now = Date.now();
   const windowStart = now - policy.windowMs;
 
@@ -65,4 +78,3 @@ export const consumeUploadQuota = (policy: UploadRateLimitPolicy): { allowed: tr
   saveState({ timestamps });
   return { allowed: true };
 };
-
