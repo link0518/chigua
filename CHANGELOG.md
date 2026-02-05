@@ -2,6 +2,8 @@
 
 ### Fixed
 
+- 评论弹窗“热门评论”右上角点赞按钮支持直接点赞/取消点赞，并与评论列表状态同步 `components/CommentModal.tsx`
+
 - 修复铃铛提醒在页面切回前台/重新获得焦点时不即时刷新（仍保留 30s 轮询兜底）`App.tsx`
 - 优化移动端帖子操作栏点击间距，降低“点踩/评论”误触 `components/HomeView.tsx`
 - 修复安卓软键盘遮挡评论输入框：移动端聚焦时将输入区改为浮动层（键盘可见区居中）并锁定滚动 `components/CommentModal.tsx`

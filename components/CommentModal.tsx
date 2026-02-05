@@ -593,10 +593,21 @@ const CommentModal: React.FC<CommentModalProps> = ({
             {mostLikedComment ? '热门评论' : '暂无热门评论'}
           </div>
           {mostLikedComment && (
-            <div className="text-xs text-gray-500 font-sans flex items-center gap-1 whitespace-nowrap">
-              <ThumbsUp className="w-3.5 h-3.5" />
+            <button
+              type="button"
+              onClick={() => handleToggleLike(mostLikedComment.id)}
+              className={`text-xs font-sans flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-1 border border-gray-200 bg-white hover:bg-highlight transition-colors ${
+                mostLikedComment.viewerLiked ? 'text-blue-600' : 'text-gray-500'
+              }`}
+              aria-label="点赞热门评论"
+              title={mostLikedComment.viewerLiked ? '取消点赞' : '点赞'}
+            >
+              <ThumbsUp
+                className="w-3.5 h-3.5"
+                fill={mostLikedComment.viewerLiked ? 'currentColor' : 'none'}
+              />
               <span className="font-bold">{Number(mostLikedComment.likes || 0)}</span>
-            </div>
+            </button>
           )}
         </div>
 
