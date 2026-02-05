@@ -41,6 +41,7 @@ module.exports = {
       animation: {
         wiggle: 'wiggle 0.4s ease-in-out',
         float: 'float 3s ease-in-out infinite',
+        shimmer: 'shimmer 6s cubic-bezier(0.4, 0, 0.2, 1) infinite',
       },
       keyframes: {
         wiggle: {
@@ -50,6 +51,13 @@ module.exports = {
         float: {
           '0%, 100%': { transform: 'translateY(0)' },
           '50%': { transform: 'translateY(-5px)' },
+        },
+        shimmer: {
+          '0%': { transform: 'translateX(-200%) skewX(-20deg)', opacity: '0' },
+          '1%': { opacity: '1' },
+          '30%': { transform: 'translateX(400%) skewX(-20deg)', opacity: '1' },
+          '31%': { opacity: '0' },
+          '100%': { transform: 'translateX(400%) skewX(-20deg)', opacity: '0' },
         },
       },
     },
