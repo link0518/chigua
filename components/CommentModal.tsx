@@ -55,6 +55,38 @@ const formatCompactTime = (value?: number | null) => {
   return `${mm}/${dd}`;
 };
 
+type CommentPick = {
+  comment: Comment;
+  likes: number;
+  createdAt: number;
+};
+
+const getMostLikedComment = (items: Comment[]): Comment | null => {
+  let best: CommentPick | null = null;
+
+  const walk = (list: Comment[]) => {
+    list.forEach((item) => {
+      if (!item.deleted) {
+        const likes = Number(item.likes || 0);
+        const createdAt = Number(item.createdAt || 0);
+        if (
+          !best
+          || likes > best.likes
+          || (likes === best.likes && createdAt > best.createdAt)
+        ) {
+          best = { comment: item, likes, createdAt };
+        }
+      }
+      if (item.replies?.length) {
+        walk(item.replies);
+      }
+    });
+  };
+
+  walk(items);
+  return best?.comment || null;
+};
+
 const CommentModal: React.FC<CommentModalProps> = ({
   isOpen,
   onClose,
@@ -511,6 +543,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
   }
 
   const totalCount = countComments(comments);
+  const mostLikedComment = getMostLikedComment(comments);
   const buildLabelMap = (items: Comment[], parentLabel = '', result = new Map<string, string>()) => {
     const orderMap = buildOrderMap(items);
     items
@@ -554,14 +587,44 @@ const CommentModal: React.FC<CommentModalProps> = ({
         </button>
       </div>
 
-      {contentPreview && (
-        <div className="p-3 bg-gray-50 border border-dashed border-ink rounded-lg mb-3 max-h-28 overflow-hidden">
-          <MarkdownRenderer
-            content={contentPreview}
-            className="markdown-preview text-sm text-pencil [&_.markdown-image-link]:block [&_.markdown-image]:max-h-32 md:[&_.markdown-image]:max-h-44 [&_.markdown-image]:object-contain [&_.markdown-image]:mx-auto [&_.markdown-image]:w-auto [&_.markdown-image]:!max-w-52 md:[&_.markdown-image]:!max-w-64"
-          />
+      <div className="p-3 bg-gray-50 border border-dashed border-ink rounded-lg mb-3">
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <div className="text-xs text-gray-600 font-sans">
+            {mostLikedComment ? '热门评论' : '暂无热门评论'}
+          </div>
+          {mostLikedComment && (
+            <div className="text-xs text-gray-500 font-sans flex items-center gap-1 whitespace-nowrap">
+              <ThumbsUp className="w-3.5 h-3.5" />
+              <span className="font-bold">{Number(mostLikedComment.likes || 0)}</span>
+            </div>
+          )}
         </div>
-      )}
+
+        {mostLikedComment ? (
+          <div className="max-h-28 overflow-hidden">
+            <MarkdownRenderer
+              content={mostLikedComment.content}
+              className="markdown-preview text-sm text-pencil [&_.markdown-image-link]:block [&_.markdown-image]:max-h-32 md:[&_.markdown-image]:max-h-44 [&_.markdown-image]:object-contain [&_.markdown-image]:mx-auto [&_.markdown-image]:w-auto [&_.markdown-image]:!max-w-52 md:[&_.markdown-image]:!max-w-64"
+            />
+          </div>
+        ) : (
+          <div className="text-sm text-gray-400 font-sans">
+            还没有评论，先来抢个沙发吧
+          </div>
+        )}
+
+        {!mostLikedComment && contentPreview && (
+          <div className="mt-2 pt-2 border-t border-gray-200/70">
+            <div className="text-xs text-gray-500 font-sans mb-1">帖子详情</div>
+            <div className="max-h-20 overflow-hidden">
+              <MarkdownRenderer
+                content={contentPreview}
+                className="markdown-preview text-sm text-pencil [&_.markdown-image-link]:block [&_.markdown-image]:max-h-24 md:[&_.markdown-image]:max-h-28 [&_.markdown-image]:object-contain [&_.markdown-image]:mx-auto [&_.markdown-image]:w-auto [&_.markdown-image]:!max-w-52 md:[&_.markdown-image]:!max-w-64"
+              />
+            </div>
+          </div>
+        )}
+      </div>
 
       <div
         ref={listRef}
