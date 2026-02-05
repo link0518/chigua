@@ -10,6 +10,7 @@ import ReportModal from './ReportModal';
 import MemePicker, { useMemeInsert } from './MemePicker';
 import CommentInputModal from './CommentInputModal';
 import { useInsertAtCursor } from './useInsertAtCursor';
+import { consumeUploadQuota } from './uploadRateLimit';
 
 interface CommentModalProps {
   isOpen: boolean;
@@ -148,6 +149,13 @@ const CommentModal: React.FC<CommentModalProps> = ({
     }
     if (!file.type.startsWith('image/')) {
       showToast('只支持上传图片文件', 'warning');
+      return;
+    }
+
+    const quota = consumeUploadQuota({ windowMs: 30_000, max: 3 });
+    if (!quota.allowed) {
+      const seconds = Math.max(1, Math.ceil(quota.retryAfterMs / 1000));
+      showToast(`上传太频繁啦，请 ${seconds}s 后再试`, 'warning');
       return;
     }
 

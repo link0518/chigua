@@ -6,6 +6,7 @@ import MemePicker, { useMemeInsert } from './MemePicker';
 import { api } from '../api';
 import { useInsertAtCursor } from './useInsertAtCursor';
 import { SketchIconButton } from './SketchIconButton';
+import { consumeUploadQuota } from './uploadRateLimit';
 
 interface CommentInputModalProps {
   isOpen: boolean;
@@ -55,6 +56,13 @@ const CommentInputModal: React.FC<CommentInputModalProps> = ({
       return;
     }
     if (!file.type.startsWith('image/')) {
+      return;
+    }
+
+    const quota = consumeUploadQuota({ windowMs: 30_000, max: 3 });
+    if (!quota.allowed) {
+      const seconds = Math.max(1, Math.ceil(quota.retryAfterMs / 1000));
+      showToast(`上传太频繁啦，请 ${seconds}s 后再试`, 'warning');
       return;
     }
 

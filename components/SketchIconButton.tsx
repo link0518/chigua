@@ -1,5 +1,6 @@
 import React from 'react';
 import { roughBorderClassSm } from './SketchUI';
+import { Loader2 } from 'lucide-react';
 
 type SketchIconButtonVariant = 'default' | 'active' | 'doodle';
 
@@ -16,16 +17,25 @@ export const SketchIconButton = React.forwardRef<HTMLButtonElement, React.Button
     doodle: 'bg-white text-ink border-2 border-ink shadow-sketch hover:bg-highlight hover:-translate-y-0.5',
   };
 
+  const isDisabled = Boolean(props.disabled);
+
   return (
     <button
       type="button"
       ref={ref}
-      className={`${base} ${variants[variant]} ${className}`}
+      className={`${base} ${variants[variant]} ${isDisabled ? 'opacity-60 cursor-not-allowed hover:-translate-y-0' : ''} ${className}`}
       aria-label={label}
       title={label}
       {...props}
     >
-      {icon}
+      <span className="relative inline-flex">
+        <span className={isDisabled ? 'opacity-70' : ''}>
+          {icon}
+        </span>
+        {isDisabled ? (
+          <Loader2 className="absolute -right-2 -top-2 w-3.5 h-3.5 text-ink animate-spin" aria-hidden="true" />
+        ) : null}
+      </span>
       {iconOnly ? null : <span>{label}</span>}
     </button>
   );
