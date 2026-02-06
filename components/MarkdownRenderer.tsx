@@ -19,93 +19,91 @@ const escapeHtml = (value: unknown) => {
     .replace(/'/g, '&#39;');
 };
 
-const renderer = new marked.Renderer();
+const createRenderer = () => {
+  const renderer = new marked.Renderer();
 
-renderer.heading = function (token) {
-  const safeLevel = Math.min(Math.max(token.depth || 1, 1), 3);
-  const sizeClass = safeLevel === 1 ? 'text-2xl' : safeLevel === 2 ? 'text-xl' : 'text-lg';
-  const text = token.tokens ? this.parser.parseInline(token.tokens) : marked.parseInline(token.text || '');
-  return `<h${safeLevel} class="font-display ${sizeClass} text-ink mt-3 mb-1">${text}</h${safeLevel}>`;
-};
+  renderer.heading = function (token) {
+    const safeLevel = Math.min(Math.max(token.depth || 1, 1), 3);
+    const sizeClass = safeLevel === 1 ? 'text-2xl' : safeLevel === 2 ? 'text-xl' : 'text-lg';
+    const text = token.tokens ? this.parser.parseInline(token.tokens) : marked.parseInline(token.text || '');
+    return `<h${safeLevel} class="font-display ${sizeClass} text-ink mt-3 mb-1">${text}</h${safeLevel}>`;
+  };
 
-renderer.blockquote = function (token) {
-  const content = token.tokens ? this.parser.parse(token.tokens) : '';
-  return `<blockquote class="border-l-4 border-gray-300 pl-3 my-2 text-pencil italic">${content}</blockquote>`;
-};
+  renderer.blockquote = function (token) {
+    const content = token.tokens ? this.parser.parse(token.tokens) : '';
+    return `<blockquote class="border-l-4 border-gray-300 pl-3 my-2 text-pencil italic">${content}</blockquote>`;
+  };
 
-renderer.list = function (token) {
-  const ordered = Boolean(token.ordered);
-  const start = typeof token.start === 'number' ? token.start : 1;
-  let body = '';
-  for (const item of token.items || []) {
-    body += this.listitem(item);
-  }
-  const tag = ordered ? 'ol' : 'ul';
-  const startAttr = ordered && start !== 1 ? ` start="${start}"` : '';
-  return `<${tag}${startAttr} class="ml-5 ${ordered ? 'list-decimal' : 'list-disc'}">${body}</${tag}>`;
-};
+  renderer.list = function (token) {
+    const ordered = Boolean(token.ordered);
+    const start = typeof token.start === 'number' ? token.start : 1;
+    let body = '';
+    for (const item of token.items || []) {
+      body += this.listitem(item);
+    }
+    const tag = ordered ? 'ol' : 'ul';
+    const startAttr = ordered && start !== 1 ? ` start="${start}"` : '';
+    return `<${tag}${startAttr} class="ml-5 ${ordered ? 'list-decimal' : 'list-disc'}">${body}</${tag}>`;
+  };
 
-renderer.listitem = function (token) {
-  const content = token.tokens ? this.parser.parse(token.tokens) : marked.parseInline(token.text || '');
-  return `<li class="my-1">${content}</li>`;
-};
+  renderer.listitem = function (token) {
+    const content = token.tokens ? this.parser.parse(token.tokens) : marked.parseInline(token.text || '');
+    return `<li class="my-1">${content}</li>`;
+  };
 
-renderer.codespan = function (token) {
-  return `<code class="bg-gray-100 px-1.5 py-0.5 rounded text-sm font-mono border border-gray-200">${escapeHtml(token.text)}</code>`;
-};
+  renderer.codespan = function (token) {
+    return `<code class="bg-gray-100 px-1.5 py-0.5 rounded text-sm font-mono border border-gray-200">${escapeHtml(token.text)}</code>`;
+  };
 
-renderer.code = function (token) {
-  return `<pre class="bg-gray-100 border border-gray-200 rounded p-3 overflow-x-auto"><code class="font-mono text-sm">${escapeHtml(token.text)}</code></pre>`;
-};
+  renderer.code = function (token) {
+    return `<pre class="bg-gray-100 border border-gray-200 rounded p-3 overflow-x-auto"><code class="font-mono text-sm">${escapeHtml(token.text)}</code></pre>`;
+  };
 
-renderer.link = function (token) {
-  const href = token.href || '';
-  const safeHref = escapeHtml(href);
-  const safeTitle = token.title ? escapeHtml(token.title) : '';
-  const safeText = token.tokens ? this.parser.parseInline(token.tokens) : escapeHtml(token.text);
-  const titleAttr = safeTitle ? ` title="${safeTitle}"` : '';
-  return `<a href="${safeHref}"${titleAttr} target="_blank" rel="noopener noreferrer" class="text-blue-600 underline hover:text-blue-800">${safeText}</a>`;
-};
+  renderer.link = function (token) {
+    const href = token.href || '';
+    const safeHref = escapeHtml(href);
+    const safeTitle = token.title ? escapeHtml(token.title) : '';
+    const safeText = token.tokens ? this.parser.parseInline(token.tokens) : escapeHtml(token.text);
+    const titleAttr = safeTitle ? ` title="${safeTitle}"` : '';
+    return `<a href="${safeHref}"${titleAttr} target="_blank" rel="noopener noreferrer" class="text-blue-600 underline hover:text-blue-800">${safeText}</a>`;
+  };
 
-renderer.paragraph = function (token) {
-  const text = token.tokens ? this.parser.parseInline(token.tokens) : marked.parseInline(token.text || '');
-  return `<p class="my-2">${text}</p>`;
-};
+  renderer.paragraph = function (token) {
+    const text = token.tokens ? this.parser.parseInline(token.tokens) : marked.parseInline(token.text || '');
+    return `<p class="my-2">${text}</p>`;
+  };
 
-renderer.strong = function (token) {
-  return `<strong>${token.tokens ? this.parser.parseInline(token.tokens) : marked.parseInline(token.text || '')}</strong>`;
-};
+  renderer.strong = function (token) {
+    return `<strong>${token.tokens ? this.parser.parseInline(token.tokens) : marked.parseInline(token.text || '')}</strong>`;
+  };
 
-renderer.em = function (token) {
-  return `<em>${token.tokens ? this.parser.parseInline(token.tokens) : marked.parseInline(token.text || '')}</em>`;
-};
+  renderer.em = function (token) {
+    return `<em>${token.tokens ? this.parser.parseInline(token.tokens) : marked.parseInline(token.text || '')}</em>`;
+  };
 
-renderer.del = function (token) {
-  return `<del>${token.tokens ? this.parser.parseInline(token.tokens) : marked.parseInline(token.text || '')}</del>`;
-};
+  renderer.del = function (token) {
+    return `<del>${token.tokens ? this.parser.parseInline(token.tokens) : marked.parseInline(token.text || '')}</del>`;
+  };
 
-renderer.image = function (token) {
-  const href = token.href || '';
-  const normalizedHref = normalizeImageUrl(href);
-  if (!normalizedHref || !isAllowedImageUrl(normalizedHref)) {
-    return '';
-  }
-  const safeHref = escapeHtml(normalizedHref);
-  const altText = escapeHtml(token.text || '');
-  const titleAttr = token.title ? ` title="${escapeHtml(token.title)}"` : '';
-  if (isAllowedMemePath(normalizedHref)) {
-    return `<img src="${safeHref}" alt="${altText}"${titleAttr} class="meme-image inline-block ml-1 w-[22px] h-[22px] object-contain align-text-bottom" loading="lazy" />`;
-  }
-  return `<a href="${safeHref}" target="_blank" rel="noopener noreferrer" class="markdown-image-link inline-block">
+  renderer.image = function (token) {
+    const href = token.href || '';
+    const normalizedHref = normalizeImageUrl(href);
+    if (!normalizedHref || !isAllowedImageUrl(normalizedHref)) {
+      return '';
+    }
+    const safeHref = escapeHtml(normalizedHref);
+    const altText = escapeHtml(token.text || '');
+    const titleAttr = token.title ? ` title="${escapeHtml(token.title)}"` : '';
+    if (isAllowedMemePath(normalizedHref)) {
+      return `<img src="${safeHref}" alt="${altText}"${titleAttr} class="meme-image inline-block ml-1 w-[22px] h-[22px] object-contain align-text-bottom" loading="lazy" />`;
+    }
+    return `<a href="${safeHref}" target="_blank" rel="noopener noreferrer" class="markdown-image-link inline-block">
     <img src="${safeHref}" alt="${altText}"${titleAttr} class="markdown-image max-w-full max-h-[420px] w-auto h-auto object-contain rounded-md border border-gray-200 cursor-zoom-in bg-white" loading="lazy" />
   </a>`;
-};
+  };
 
-marked.setOptions({
-  renderer,
-  breaks: true,
-  gfm: true,
-});
+  return renderer;
+};
 
 const ALLOWED_TAGS = [
   'a',
@@ -390,7 +388,7 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, className 
     if (baseTokens?.links) {
       tokens.links = baseTokens.links;
     }
-    const rawHtml = marked.parser(tokens, { renderer, gfm: true, breaks: true });
+    const rawHtml = marked.parser(tokens, { renderer: createRenderer(), gfm: true, breaks: true });
     const purifier = getSanitizer();
     if (!purifier) {
       return '';
