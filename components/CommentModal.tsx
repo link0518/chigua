@@ -608,13 +608,13 @@ const CommentModal: React.FC<CommentModalProps> = ({
   return (
     <div
       ref={rootRef}
-      className="fixed inset-x-0 bottom-0 z-40 max-h-75vh-safe rounded-t-xl border border-gray-200 bg-white p-4 shadow-lg font-sans animate-in slide-in-from-bottom-2 duration-200 md:static md:mt-4 md:max-h-none md:rounded-xl md:shadow-sm md:animate-none"
+      className="fixed inset-x-0 bottom-0 z-40 max-h-75vh-safe rounded-t-xl border border-gray-200 bg-white p-4 shadow-lg font-sans overflow-hidden flex flex-col animate-in slide-in-from-bottom-2 duration-200 md:static md:mt-4 md:max-h-none md:rounded-xl md:shadow-sm md:animate-none"
       style={{
         paddingBottom: keyboardInset ? keyboardInset + 16 : undefined,
         bottom: undefined,
       }}
     >
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center justify-between mb-3 shrink-0">
         <div className="flex items-center gap-2">
           <h3 className="font-sans font-semibold text-lg text-ink">评论</h3>
           <span className="text-xs text-gray-500">{totalCount}</span>
@@ -628,7 +628,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
         </button>
       </div>
 
-      <div className="p-3 bg-gray-50 border border-dashed border-ink rounded-lg mb-3">
+      <div className="p-3 bg-gray-50 border border-dashed border-ink rounded-lg mb-3 shrink-0">
         <div className="flex items-center justify-between gap-2 mb-2">
           <div className="text-xs text-gray-600 font-sans">
             {mostLikedComment ? '热门评论' : '暂无热门评论'}
@@ -670,7 +670,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
 
       <div
         ref={listRef}
-        className="max-h-64 overflow-y-auto rounded-lg border border-gray-200 bg-white flex flex-col gap-3 pr-1"
+        className="flex-1 min-h-0 overflow-y-auto rounded-lg border border-gray-200 bg-white flex flex-col gap-3 pr-1"
       >
         {loading ? (
           <div className="flex flex-col gap-3 px-3 pt-3">
@@ -795,7 +795,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
         )}
       </div>
 
-      <form className="flex flex-col gap-3 mt-4" onSubmit={handleSubmit}>
+      <form className="shrink-0 flex flex-col gap-3 mt-3" onSubmit={handleSubmit}>
         {replyToId && (
           <div className="flex items-center justify-between text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
             <span>正在回复某条评论</span>
