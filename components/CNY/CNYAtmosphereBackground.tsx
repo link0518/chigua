@@ -138,11 +138,13 @@ const CNYAtmosphereBackground: React.FC<CNYAtmosphereBackgroundProps> = ({
             animationFrameRef.current = requestAnimationFrame(updateParticles);
         };
 
+        const handleMouseMove = (e: MouseEvent) => {
+            mouseRef.current = { x: e.clientX, y: e.clientY };
+        };
+
         window.addEventListener('resize', resize);
         if (interactive) {
-            window.addEventListener('mousemove', (e) => {
-                mouseRef.current = { x: e.clientX, y: e.clientY };
-            });
+            window.addEventListener('mousemove', handleMouseMove);
         }
 
         resize();
@@ -150,6 +152,9 @@ const CNYAtmosphereBackground: React.FC<CNYAtmosphereBackgroundProps> = ({
 
         return () => {
             window.removeEventListener('resize', resize);
+            if (interactive) {
+                window.removeEventListener('mousemove', handleMouseMove);
+            }
             if (animationFrameRef.current) {
                 cancelAnimationFrame(animationFrameRef.current);
             }

@@ -6,6 +6,7 @@
 - 新增环境变量示例：`.env.example` 增加 `VITE_IMGBED_BASE_URL` / `VITE_IMGBED_TOKEN`。
 - 新增春节主题能力：后端设置新增 `cny_theme_enabled`，公开/后台设置接口返回 `cnyThemeEnabled`、`cnyThemeAutoActive`、`cnyThemeActive`，并支持农历腊月十六至正月十五自动生效。
 - 新增春节视觉组件 `components/CNY/*`（灯笼、头部纹饰、红包/金币飘落），并扩展 Tailwind 与全局春节背景样式。
+- 新增春节氛围画布背景组件 `components/CNY/CNYAtmosphereBackground.tsx`，用于春节模式下的动态粒子背景。
 
 ### Changed
 
@@ -14,6 +15,7 @@
 - 图片上传轻量限频：同一浏览器会话内约 30 秒最多 3 次，超出会提示稍等再试（防刷不打扰正常使用）。
 - 后台“系统设置”增加春节皮肤开关与自动时段状态展示；前台导航栏改为春节红金样式（含 `福` 字徽标），页脚保持原始样式不变。
 - 春节掉落装饰改为红包与金币全屏随机分布，并周期性重随机，避免元素长期集中在单侧。
+- 春节背景由 `body.theme-cny` 静态纹理切换为节日画布背景渲染，默认主题背景不变。
 
 ### Fixed
 

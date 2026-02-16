@@ -500,6 +500,7 @@ const App: React.FC = () => {
       {isCnyTheme && <FallingDecorations />}
       {isCnyTheme && (
         <>
+          <CNYAtmosphereBackground density={80} speed={0.5} />
           <div className="fixed top-0 left-4 z-40 hidden md:block pointer-events-none">
             <Lantern size={78} delay={0.3} />
           </div>
@@ -736,9 +737,9 @@ const App: React.FC = () => {
 
       {/* Footer only for non-admin */}
       {currentView !== ViewType.ADMIN && (
-        <footer className="w-full border-t-2 border-black bg-paper/90 py-4 mt-auto">
+        <footer className={`w-full py-4 mt-auto transition-all ${isCnyTheme ? 'border-t border-[#FFE0B2] bg-[#FFF8E1]' : 'border-t-2 border-black bg-paper/90'}`}>
           <div className="max-w-3xl mx-auto px-4">
-            <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-xs font-sans text-pencil">
+            <div className={`flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-xs font-sans ${isCnyTheme ? 'text-[#8D6E63]' : 'text-pencil'}`}>
               <span>纯匿名</span>
               <span>·</span>
               <span>理性吃瓜</span>
