@@ -516,12 +516,12 @@ const HomeView: React.FC = () => {
             {/* Tags */}
             <div className="flex items-center gap-2">
               {currentPost.isHot && (
-                <span className="bg-alert border border-ink px-2 py-0.5 text-xs font-bold rounded-sm shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] transform -rotate-1">🔥 热门</span>
+                <span className="inline-flex items-center whitespace-nowrap bg-alert border border-ink px-2 py-0.5 text-xs font-bold rounded-sm shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] transform -rotate-1">🔥 热门</span>
               )}
               {currentPost.tags?.slice(0, 2).map((tag, i) => (
                 <span
                   key={tag}
-                  className={`border border-ink px-2 py-0.5 text-xs font-bold rounded-sm shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] ${['bg-marker-blue', 'bg-marker-green', 'bg-marker-purple', 'bg-marker-orange'][i % 4]
+                  className={`whitespace-nowrap border border-ink px-2 py-0.5 text-xs font-bold rounded-sm shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] ${['bg-marker-blue', 'bg-marker-green', 'bg-marker-purple', 'bg-marker-orange'][i % 4]
                     } transform ${i % 2 === 0 ? 'rotate-1' : '-rotate-1'}`}
                 >
                   {tag}
@@ -530,7 +530,7 @@ const HomeView: React.FC = () => {
               <button
                 type="button"
                 onClick={handleToggleFavorite}
-                className={`ml-1 flex items-center justify-center rounded-full px-2.5 py-2 border-2 border-ink transition-all shadow-sketch active:shadow-sketch-active active:translate-x-[2px] active:translate-y-[2px] ${isFavorited(currentPost.id) ? 'bg-marker-yellow hover:bg-marker-yellow/90' : 'bg-white hover:bg-highlight'}`}
+                className={`sm:ml-1 flex shrink-0 items-center justify-center rounded-full px-2.5 py-2 border-2 border-ink transition-all shadow-sketch active:shadow-sketch-active active:translate-x-[2px] active:translate-y-[2px] ${isFavorited(currentPost.id) ? 'bg-marker-yellow hover:bg-marker-yellow/90' : 'bg-white hover:bg-highlight'}`}
                 title={isFavorited(currentPost.id) ? '取消收藏' : '收藏'}
                 aria-label={isFavorited(currentPost.id) ? '取消收藏' : '收藏'}
               >

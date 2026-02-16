@@ -56,7 +56,7 @@ export const Tape: React.FC<{ className?: string }> = ({ className = '' }) => (
 );
 
 export const Badge: React.FC<{ children: React.ReactNode; color?: string }> = ({ children, color = 'bg-gray-100' }) => (
-  <span className={`${color} border border-ink px-2 py-0.5 text-xs font-bold rounded-md transform -rotate-1 inline-block shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]`}>
+  <span className={`${color} border border-ink px-2 py-0.5 text-xs font-bold rounded-md transform -rotate-1 inline-flex items-center whitespace-nowrap shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]`}>
     {children}
   </span>
 );
