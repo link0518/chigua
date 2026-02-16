@@ -19,6 +19,10 @@ import {
 } from 'lucide-react';
 import { useApp } from './store/AppContext';
 import AntigravityBackground from './components/AntigravityBackground';
+import Lantern from './components/CNY/Lantern';
+import FallingDecorations from './components/CNY/FallingDecorations';
+import HeaderDecoration from './components/CNY/HeaderDecoration';
+import CNYAtmosphereBackground from './components/CNY/CNYAtmosphereBackground';
 
 const SubmissionView = React.lazy(() => import('./components/SubmissionView'));
 const FeedView = React.lazy(() => import('./components/FeedView'));
@@ -67,7 +71,7 @@ const getPathForView = (view: ViewType) => {
 const STREAK7_LOCAL_SEEN_KEY = 'easter:streak7:seen:v1';
 
 const App: React.FC = () => {
-  const { loadSettings } = useApp();
+  const { loadSettings, state } = useApp();
   const [currentView, setCurrentView] = useState<ViewType>(() => resolveViewFromPath(window.location.pathname));
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [announcementOpen, setAnnouncementOpen] = useState(false);
@@ -86,6 +90,7 @@ const App: React.FC = () => {
   const [streakCelebrationDays, setStreakCelebrationDays] = useState(7);
   const streakCelebrationMarkedRef = useRef(false);
   const [backgroundTasksReady, setBackgroundTasksReady] = useState(false);
+  const isCnyTheme = currentView !== ViewType.ADMIN && state.settings.cnyThemeActive;
 
   useEffect(() => {
     const timer = window.setTimeout(() => setBackgroundTasksReady(true), 15000);
@@ -141,6 +146,32 @@ const App: React.FC = () => {
   useEffect(() => {
     loadSettings().catch(() => { });
   }, [loadSettings]);
+
+  useEffect(() => {
+    const refreshSettings = () => {
+      loadSettings().catch(() => { });
+    };
+    const timer = window.setInterval(refreshSettings, 5 * 60 * 1000);
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        refreshSettings();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('focus', refreshSettings);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('focus', refreshSettings);
+    };
+  }, [loadSettings]);
+
+  useEffect(() => {
+    document.body.classList.toggle('theme-cny', isCnyTheme);
+    return () => {
+      document.body.classList.remove('theme-cny');
+    };
+  }, [isCnyTheme]);
 
   useEffect(() => {
     let active = true;
@@ -433,9 +464,9 @@ const App: React.FC = () => {
   const NavItem: React.FC<{ view: ViewType; label: string; active?: boolean }> = ({ view, label, active }) => (
     <button
       onClick={() => navigate(view)}
-      className={`relative hover:text-gray-600 transition-colors font-hand text-xl font-bold ${currentView === view || active
-          ? 'after:absolute after:w-full after:h-0.5 after:bg-black after:bottom-0 after:left-0 after:scale-x-100'
-          : 'after:absolute after:w-full after:h-0.5 after:bg-black after:bottom-0 after:left-0 after:scale-x-0 hover:after:scale-x-100 after:transition-transform'
+      className={`relative transition-colors font-hand text-xl font-bold ${isCnyTheme ? 'text-cny-gold hover:text-yellow-200' : 'hover:text-gray-600'} ${currentView === view || active
+        ? `after:absolute after:w-full after:h-0.5 after:bottom-0 after:left-0 after:scale-x-100 ${isCnyTheme ? 'after:bg-cny-gold' : 'after:bg-black'}`
+        : `after:absolute after:w-full after:h-0.5 after:bottom-0 after:left-0 after:scale-x-0 hover:after:scale-x-100 after:transition-transform ${isCnyTheme ? 'after:bg-cny-gold' : 'after:bg-black'}`
         }`}
     >
       {label}
@@ -446,7 +477,7 @@ const App: React.FC = () => {
     <button
       type="button"
       onClick={onClick}
-      className="w-full flex items-center justify-between rounded-lg border-2 border-ink bg-white px-4 py-3 font-hand text-lg font-bold hover:bg-highlight transition-all"
+      className={`w-full flex items-center justify-between rounded-lg border-2 px-4 py-3 font-hand text-lg font-bold transition-all ${isCnyTheme ? 'border-cny-dark-red bg-cny-red text-cny-gold hover:bg-cny-dark-red' : 'border-ink bg-white hover:bg-highlight'}`}
     >
       <span>{label}</span>
       {dot && <span className="h-2.5 w-2.5 rounded-full bg-red-500 border border-ink" />}
@@ -466,8 +497,18 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen-safe flex flex-col font-sans selection:bg-highlight selection:text-black relative">
-      {/* Antigravity Background rendered at the very bottom, z-index managed by the component (-1) */}
-      <AntigravityBackground density={60} speed={0.5} />
+      {isCnyTheme && <FallingDecorations />}
+      {isCnyTheme && (
+        <>
+          <div className="fixed top-0 left-4 z-40 hidden md:block pointer-events-none">
+            <Lantern size={78} delay={0.3} />
+          </div>
+          <div className="fixed top-0 right-4 z-40 hidden lg:block pointer-events-none">
+            <Lantern size={72} delay={1.1} />
+          </div>
+        </>
+      )}
+      {!isCnyTheme && <AntigravityBackground density={60} speed={0.5} />}
 
       <StreakCelebration
         open={streakCelebrationOpen}
@@ -477,21 +518,22 @@ const App: React.FC = () => {
       />
       {/* Top Navigation */}
       {currentView !== ViewType.ADMIN && (
-        <header className="sticky top-0 z-50 w-full border-b-2 border-black bg-[#f9f7f1] px-4 md:px-6 py-3 shadow-[0_4px_0_0_rgba(0,0,0,0.1)] min-h-[96px] sm:min-h-[72px] bg-opacity-95 backdrop-blur-sm">
-          <div className="absolute top-full left-0 w-full h-2 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAiIGhlaWdodD0iMTAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHBhdGggZD0iTTAgMTAgTTEwIDAgTDIwIDEwIiBmaWxsPSJub25lIiBzdHJva2U9IiMwMDAiIHN0cm9rZS13aWR0aD0iMSIvPjwvc3ZnPg==')] opacity-10"></div>
-          <div className="max-w-3xl mx-auto flex items-center justify-between gap-3 sm:gap-4 flex-nowrap">
+        <header className={`sticky top-0 z-50 w-full border-b-2 px-4 md:px-6 py-3 shadow-[0_4px_0_0_rgba(0,0,0,0.1)] min-h-[96px] sm:min-h-[72px] bg-opacity-95 backdrop-blur-sm ${isCnyTheme ? 'border-cny-dark-red bg-gradient-to-r from-cny-dark-red via-cny-red to-cny-dark-red' : 'border-black bg-[#f9f7f1]'}`}>
+          {isCnyTheme && <HeaderDecoration />}
+          <div className="absolute top-full left-0 w-full h-2 z-10 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAiIGhlaWdodD0iMTAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHBhdGggZD0iTTAgMTAgTTEwIDAgTDIwIDEwIiBmaWxsPSJub25lIiBzdHJva2U9IiMwMDAiIHN0cm9rZS13aWR0aD0iMSIvPjwvc3ZnPg==')] opacity-10"></div>
+          <div className="max-w-3xl mx-auto flex items-center justify-between gap-3 sm:gap-4 flex-nowrap relative z-10">
             {/* Logo */}
             <div
               className="flex items-center gap-3 cursor-pointer group"
               onClick={() => navigate(ViewType.HOME)}
             >
-              <div className="size-10 sm:size-12 flex items-center justify-center rounded-full border-2 border-black bg-alert shadow-sketch group-hover:rotate-12 transition-transform duration-300">
-                <span className="text-black text-[22px] font-sans font-bold">瓜</span>
+              <div className={`size-10 sm:size-12 flex items-center justify-center rounded-full border-2 shadow-sketch group-hover:rotate-12 transition-transform duration-300 ${isCnyTheme ? 'border-cny-gold bg-cny-red' : 'border-black bg-alert'}`}>
+                <span className={`text-[22px] font-sans font-bold ${isCnyTheme ? 'text-cny-gold' : 'text-black'}`}>{isCnyTheme ? '福' : '瓜'}</span>
               </div>
-              <h1 className="text-black text-2xl sm:text-3xl font-display font-bold tracking-widest relative leading-none sm:leading-tight">
+              <h1 className={`text-2xl sm:text-3xl font-display font-bold tracking-widest relative leading-none sm:leading-tight ${isCnyTheme ? 'text-cny-gold' : 'text-black'}`}>
                 <span className="block sm:inline">JX3</span>
                 <span className="block sm:inline">瓜田</span>
-                <span className="absolute -bottom-1 left-0 w-full h-[6px] bg-marker-green/50 -rotate-1 rounded-full"></span>
+                <span className={`absolute -bottom-1 left-0 w-full h-[6px] -rotate-1 rounded-full ${isCnyTheme ? 'bg-cny-gold/50' : 'bg-marker-green/50'}`}></span>
               </h1>
             </div>
 
@@ -507,7 +549,7 @@ const App: React.FC = () => {
               {/* Action Button */}
               <button
                 onClick={() => navigate(ViewType.SUBMISSION)}
-                className="flex items-center justify-center rounded-full px-3 py-2 sm:px-5 sm:py-2.5 bg-black text-white hover:bg-ink/90 transition-all shadow-sketch active:shadow-sketch-active active:translate-x-[2px] active:translate-y-[2px] transform rotate-1 hover:-rotate-1"
+                className={`flex items-center justify-center rounded-full px-3 py-2 sm:px-5 sm:py-2.5 transition-all shadow-sketch active:shadow-sketch-active active:translate-x-[2px] active:translate-y-[2px] transform rotate-1 hover:-rotate-1 ${isCnyTheme ? 'bg-cny-gold text-cny-dark-red border-2 border-cny-gold hover:bg-[#ffe56d]' : 'bg-black text-white hover:bg-ink/90'}`}
               >
                 <span className="flex items-center gap-2 font-sans text-base sm:text-lg font-semibold whitespace-nowrap">
                   <Pencil className="w-5 h-5 shrink-0" />
@@ -518,7 +560,7 @@ const App: React.FC = () => {
               <div className="relative" ref={notificationRef}>
                 <button
                   onClick={() => setNotificationsOpen((prev) => !prev)}
-                  className="flex items-center justify-center rounded-full px-2.5 py-2 sm:px-3 sm:py-2.5 border-2 border-ink bg-white hover:bg-highlight transition-all shadow-sketch active:shadow-sketch-active active:translate-x-[2px] active:translate-y-[2px]"
+                  className={`flex items-center justify-center rounded-full px-2.5 py-2 sm:px-3 sm:py-2.5 border-2 transition-all shadow-sketch active:shadow-sketch-active active:translate-x-[2px] active:translate-y-[2px] ${isCnyTheme ? 'border-cny-gold bg-cny-paper text-cny-dark-red hover:bg-cny-gold/20' : 'border-ink bg-white hover:bg-highlight'}`}
                   aria-label="提醒"
                   title="提醒"
                 >
@@ -579,7 +621,7 @@ const App: React.FC = () => {
 
               <button
                 onClick={openAnnouncement}
-                className="hidden sm:flex items-center justify-center rounded-full px-2.5 py-2 sm:px-3 sm:py-2.5 border-2 border-ink bg-white hover:bg-highlight transition-all shadow-sketch active:shadow-sketch-active active:translate-x-[2px] active:translate-y-[2px]"
+                className={`hidden sm:flex items-center justify-center rounded-full px-2.5 py-2 sm:px-3 sm:py-2.5 border-2 transition-all shadow-sketch active:shadow-sketch-active active:translate-x-[2px] active:translate-y-[2px] ${isCnyTheme ? 'border-cny-gold bg-cny-paper text-cny-dark-red hover:bg-cny-gold/20' : 'border-ink bg-white hover:bg-highlight'}`}
                 aria-label="公告"
                 title="公告"
               >
@@ -593,7 +635,7 @@ const App: React.FC = () => {
 
               {/* Mobile Menu Toggle (Simplified) */}
               <button
-                className="sm:hidden ml-2 relative"
+                className={`sm:hidden ml-2 relative ${isCnyTheme ? 'text-cny-gold' : ''}`}
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
                 aria-label="打开菜单"
               >
@@ -606,7 +648,7 @@ const App: React.FC = () => {
           </div>
           {/* Mobile Nav Dropdown */}
           {mobileMenuOpen && (
-            <div className="sm:hidden absolute top-full left-0 w-full bg-paper border-b-2 border-ink shadow-xl p-4 flex flex-col gap-3 animate-in slide-in-from-top-2 z-50">
+            <div className={`sm:hidden absolute top-full left-0 w-full border-b-2 shadow-xl p-4 flex flex-col gap-3 animate-in slide-in-from-top-2 z-50 ${isCnyTheme ? 'bg-cny-paper border-cny-dark-red' : 'bg-paper border-ink'}`}>
               <MobileNavItem
                 label="最新吃瓜"
                 onClick={() => {

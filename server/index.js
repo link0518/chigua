@@ -6,6 +6,7 @@ import session from 'express-session';
 import BetterSqlite3Store from 'better-sqlite3-session-store';
 import fs from 'fs';
 import path from 'path';
+import solarlunar from 'solarlunar';
 import { spawn } from 'child_process';
 import {
   db,
@@ -66,6 +67,14 @@ if (!SESSION_SECRET) {
 }
 
 const SETTINGS_KEY_TURNSTILE_ENABLED = 'turnstile_enabled';
+const SETTINGS_KEY_CNY_THEME_ENABLED = 'cny_theme_enabled';
+const CNY_TIMEZONE = 'Asia/Shanghai';
+const CHINA_DATE_FORMATTER = new Intl.DateTimeFormat('en-CA', {
+  timeZone: CNY_TIMEZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
 
 const getSetting = (key) => {
   const row = db.prepare('SELECT value FROM app_settings WHERE key = ?').get(key);
@@ -93,10 +102,63 @@ const resolveTurnstileEnabled = () => {
   return String(stored).trim() === '1';
 };
 
+const resolveCnyThemeEnabled = () => {
+  const stored = getSetting(SETTINGS_KEY_CNY_THEME_ENABLED);
+  if (stored === null || stored === undefined) {
+    upsertSetting(SETTINGS_KEY_CNY_THEME_ENABLED, '0');
+    return false;
+  }
+  return String(stored).trim() === '1';
+};
+
+const getChinaDateParts = (input = new Date()) => {
+  const parts = CHINA_DATE_FORMATTER.formatToParts(input);
+  const year = Number(parts.find((part) => part.type === 'year')?.value || 0);
+  const month = Number(parts.find((part) => part.type === 'month')?.value || 0);
+  const day = Number(parts.find((part) => part.type === 'day')?.value || 0);
+  return { year, month, day };
+};
+
+const isCnyThemeAutoActive = (input = new Date()) => {
+  const { year, month, day } = getChinaDateParts(input);
+  if (!year || !month || !day) {
+    return false;
+  }
+  const lunarDate = solarlunar.solar2lunar(year, month, day);
+  if (!lunarDate || typeof lunarDate.lMonth !== 'number' || typeof lunarDate.lDay !== 'number') {
+    return false;
+  }
+  if (lunarDate.isLeap) {
+    return false;
+  }
+  if (lunarDate.lMonth === 12 && lunarDate.lDay >= 16) {
+    return true;
+  }
+  if (lunarDate.lMonth === 1 && lunarDate.lDay <= 15) {
+    return true;
+  }
+  return false;
+};
+
 let turnstileEnabled = resolveTurnstileEnabled();
 const setTurnstileEnabled = (enabled) => {
   turnstileEnabled = Boolean(enabled);
   upsertSetting(SETTINGS_KEY_TURNSTILE_ENABLED, turnstileEnabled ? '1' : '0');
+};
+let cnyThemeEnabled = resolveCnyThemeEnabled();
+const setCnyThemeEnabled = (enabled) => {
+  cnyThemeEnabled = Boolean(enabled);
+  upsertSetting(SETTINGS_KEY_CNY_THEME_ENABLED, cnyThemeEnabled ? '1' : '0');
+};
+
+const buildSettingsResponse = () => {
+  const cnyThemeAutoActive = isCnyThemeAutoActive();
+  return {
+    turnstileEnabled,
+    cnyThemeEnabled,
+    cnyThemeAutoActive,
+    cnyThemeActive: cnyThemeEnabled && cnyThemeAutoActive,
+  };
 };
 
 const PUBLIC_DIR = path.resolve(process.cwd(), 'public');
@@ -1028,9 +1090,7 @@ app.get('/api/access', (req, res) => {
 });
 
 app.get('/api/settings', (req, res) => {
-  return res.json({
-    turnstileEnabled,
-  });
+  return res.json(buildSettingsResponse());
 });
 
 app.get('/api/announcement', (req, res) => {
@@ -3331,26 +3391,36 @@ app.post('/api/admin/announcement/clear', requireAdmin, requireAdminCsrf, (req, 
 });
 
 app.get('/api/admin/settings', requireAdmin, (req, res) => {
-  return res.json({
-    turnstileEnabled,
-  });
+  return res.json(buildSettingsResponse());
 });
 
 app.post('/api/admin/settings', requireAdmin, requireAdminCsrf, (req, res) => {
-  const raw = req.body?.turnstileEnabled;
-  if (typeof raw !== 'boolean') {
+  const rawTurnstileEnabled = req.body?.turnstileEnabled;
+  const rawCnyThemeEnabled = req.body?.cnyThemeEnabled;
+  if (typeof rawTurnstileEnabled !== 'boolean' && typeof rawCnyThemeEnabled !== 'boolean') {
     return res.status(400).json({ error: '参数格式错误' });
   }
-  const before = turnstileEnabled;
-  setTurnstileEnabled(raw);
+  const before = {
+    turnstileEnabled,
+    cnyThemeEnabled,
+  };
+  if (typeof rawTurnstileEnabled === 'boolean') {
+    setTurnstileEnabled(rawTurnstileEnabled);
+  }
+  if (typeof rawCnyThemeEnabled === 'boolean') {
+    setCnyThemeEnabled(rawCnyThemeEnabled);
+  }
   logAdminAction(req, {
     action: 'settings_update',
     targetType: 'settings',
-    targetId: SETTINGS_KEY_TURNSTILE_ENABLED,
-    before: { turnstileEnabled: before },
-    after: { turnstileEnabled },
+    targetId: 'site_settings',
+    before,
+    after: {
+      turnstileEnabled,
+      cnyThemeEnabled,
+    },
   });
-  return res.json({ turnstileEnabled });
+  return res.json(buildSettingsResponse());
 });
 
 app.get('/api/admin/vocabulary', requireAdmin, (req, res) => {

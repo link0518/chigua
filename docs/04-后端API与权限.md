@@ -26,7 +26,7 @@
 
 - `GET /api/health`：健康检查
 - `GET /api/access`：访问控制状态（是否被封禁、过期时间等）
-- `GET /api/settings`：公开设置（如 turnstile 是否启用）
+- `GET /api/settings`：公开设置（`turnstileEnabled`、`cnyThemeEnabled`、`cnyThemeAutoActive`、`cnyThemeActive`）
 - `GET /api/announcement`：公告内容
 
 在线/通知/彩蛋：
@@ -106,7 +106,7 @@
 - `POST /api/admin/announcement`：更新公告（管理员 + CSRF）
 - `POST /api/admin/announcement/clear`：清空公告（管理员 + CSRF）
 - `GET /api/admin/settings`：获取设置（管理员）
-- `POST /api/admin/settings`：更新设置（管理员 + CSRF）
+- `POST /api/admin/settings`：更新设置（管理员 + CSRF，支持 `turnstileEnabled` 与 `cnyThemeEnabled`）
 - `GET /api/admin/vocabulary`：敏感词列表（管理员）
 - `POST /api/admin/vocabulary`：新增敏感词（管理员 + CSRF）
 - `POST /api/admin/vocabulary/:id/toggle`：启用/禁用（管理员 + CSRF）

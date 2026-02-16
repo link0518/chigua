@@ -199,9 +199,9 @@ export const api = {
     method: 'POST',
   }),
   getAdminSettings: () => apiFetch('/admin/settings'),
-  updateAdminSettings: (turnstileEnabled) => apiFetch('/admin/settings', {
+  updateAdminSettings: (settings: { turnstileEnabled?: boolean; cnyThemeEnabled?: boolean }) => apiFetch('/admin/settings', {
     method: 'POST',
-    body: JSON.stringify({ turnstileEnabled }),
+    body: JSON.stringify(settings || {}),
   }),
   getAdminVocabulary: (params = {}) => apiFetch(`/admin/vocabulary${toQuery(params)}`),
   addAdminVocabulary: (word) => apiFetch('/admin/vocabulary', {

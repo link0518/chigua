@@ -87,6 +87,9 @@ const AdminDashboard: React.FC = () => {
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsSubmitting, setSettingsSubmitting] = useState(false);
   const [turnstileEnabled, setTurnstileEnabled] = useState(true);
+  const [cnyThemeEnabled, setCnyThemeEnabled] = useState(false);
+  const [cnyThemeAutoActive, setCnyThemeAutoActive] = useState(false);
+  const [cnyThemeActive, setCnyThemeActive] = useState(false);
   const [vocabularyLoading, setVocabularyLoading] = useState(false);
   const [vocabularySubmitting, setVocabularySubmitting] = useState(false);
   const [vocabularyItems, setVocabularyItems] = useState<Array<{ id: number; word: string; enabled: boolean; updatedAt: number }>>([]);
@@ -210,6 +213,7 @@ const AdminDashboard: React.FC = () => {
 
   const pendingReports = getPendingReports();
   const processedReports = state.reports.filter(r => r.status !== 'pending');
+  const cnyThemePreviewActive = cnyThemeEnabled && cnyThemeAutoActive;
 
   // Filter reports by search query
   const filteredReports = useMemo(() => {
@@ -373,6 +377,9 @@ const AdminDashboard: React.FC = () => {
     try {
       const data = await api.getAdminSettings();
       setTurnstileEnabled(Boolean(data?.turnstileEnabled));
+      setCnyThemeEnabled(Boolean(data?.cnyThemeEnabled));
+      setCnyThemeAutoActive(Boolean(data?.cnyThemeAutoActive));
+      setCnyThemeActive(Boolean(data?.cnyThemeActive));
     } catch (error) {
       const message = error instanceof Error ? error.message : '设置加载失败';
       showToast(message, 'error');
@@ -1050,8 +1057,14 @@ const AdminDashboard: React.FC = () => {
     event.preventDefault();
     setSettingsSubmitting(true);
     try {
-      const data = await api.updateAdminSettings(turnstileEnabled);
+      const data = await api.updateAdminSettings({
+        turnstileEnabled,
+        cnyThemeEnabled,
+      });
       setTurnstileEnabled(Boolean(data?.turnstileEnabled));
+      setCnyThemeEnabled(Boolean(data?.cnyThemeEnabled));
+      setCnyThemeAutoActive(Boolean(data?.cnyThemeAutoActive));
+      setCnyThemeActive(Boolean(data?.cnyThemeActive));
       loadSettings().catch(() => {});
       showToast('设置已更新', 'success');
     } catch (error) {
@@ -1866,20 +1879,38 @@ const AdminDashboard: React.FC = () => {
                 >
                   <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
                     <div>
-                      <h3 className="font-display text-xl">Cloudflare 验证码</h3>
+                      <h3 className="font-display text-xl">站点开关</h3>
                       <p className="text-xs text-pencil font-sans">保存后立即生效，无需重启服务</p>
                     </div>
                   </div>
-                  <label className="flex items-center gap-3 text-sm font-sans">
-                    <input
-                      type="checkbox"
-                      className="w-4 h-4"
-                      checked={turnstileEnabled}
-                      onChange={(e) => setTurnstileEnabled(e.target.checked)}
-                      disabled={settingsLoading || settingsSubmitting}
-                    />
-                    <span>启用 Turnstile 验证</span>
-                  </label>
+                  <div className="space-y-4">
+                    <label className="flex items-center gap-3 text-sm font-sans">
+                      <input
+                        type="checkbox"
+                        className="w-4 h-4"
+                        checked={turnstileEnabled}
+                        onChange={(e) => setTurnstileEnabled(e.target.checked)}
+                        disabled={settingsLoading || settingsSubmitting}
+                      />
+                      <span>启用 Turnstile 验证</span>
+                    </label>
+                    <label className="flex items-center gap-3 text-sm font-sans">
+                      <input
+                        type="checkbox"
+                        className="w-4 h-4"
+                        checked={cnyThemeEnabled}
+                        onChange={(e) => setCnyThemeEnabled(e.target.checked)}
+                        disabled={settingsLoading || settingsSubmitting}
+                      />
+                      <span>启用春节皮肤（仅前台）</span>
+                    </label>
+                    <div className="rounded-lg border border-dashed border-ink/40 bg-paper px-3 py-2 text-xs text-pencil font-sans space-y-1">
+                      <p>自动时段：农历腊月十六 00:00 至 正月十五 23:59（中国时区）</p>
+                      <p>当前处于春节时段：{cnyThemeAutoActive ? '是' : '否'}</p>
+                      <p>当前前台生效状态：{cnyThemeActive ? '是' : '否'}</p>
+                      <p>本次保存后预计生效：{cnyThemePreviewActive ? '是' : '否'}</p>
+                    </div>
+                  </div>
                   <div className="flex justify-end mt-4">
                     <SketchButton
                       type="submit"

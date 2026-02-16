@@ -28,6 +28,9 @@ interface AdminSession {
 
 interface AppSettings {
   turnstileEnabled: boolean;
+  cnyThemeEnabled: boolean;
+  cnyThemeAutoActive: boolean;
+  cnyThemeActive: boolean;
 }
 
 interface AppState {
@@ -101,7 +104,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     dislikedPosts: new Set(),
     favoritedPosts: new Set(),
     adminSession: { loggedIn: false, checked: false, disabled: false, csrfToken: null },
-    settings: { turnstileEnabled: true },
+    settings: {
+      turnstileEnabled: true,
+      cnyThemeEnabled: false,
+      cnyThemeAutoActive: false,
+      cnyThemeActive: false,
+    },
   });
 
   const showToast = useCallback((message: string, type: Toast['type'] = 'info') => {
@@ -216,6 +224,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         turnstileEnabled: typeof data?.turnstileEnabled === 'boolean'
           ? data.turnstileEnabled
           : prev.settings.turnstileEnabled,
+        cnyThemeEnabled: typeof data?.cnyThemeEnabled === 'boolean'
+          ? data.cnyThemeEnabled
+          : prev.settings.cnyThemeEnabled,
+        cnyThemeAutoActive: typeof data?.cnyThemeAutoActive === 'boolean'
+          ? data.cnyThemeAutoActive
+          : prev.settings.cnyThemeAutoActive,
+        cnyThemeActive: typeof data?.cnyThemeActive === 'boolean'
+          ? data.cnyThemeActive
+          : (
+            (typeof data?.cnyThemeEnabled === 'boolean' ? data.cnyThemeEnabled : prev.settings.cnyThemeEnabled)
+            && (typeof data?.cnyThemeAutoActive === 'boolean' ? data.cnyThemeAutoActive : prev.settings.cnyThemeAutoActive)
+          ),
       },
     }));
   }, []);

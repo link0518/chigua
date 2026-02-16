@@ -13,6 +13,15 @@ body {
   background-position: -1px -1px;
 }
 
+body.theme-cny {
+  background-color: #fff8e1;
+  background-image:
+    radial-gradient(#d32f2f 1px, transparent 1px),
+    radial-gradient(#d32f2f 1px, transparent 1px);
+  background-position: 0 0, 25px 25px;
+  background-size: 50px 50px;
+}
+
 .min-h-screen-safe {
   min-height: 100vh;
 }
@@ -207,6 +216,21 @@ body {
     transform: translateY(-18px) scale(1.4);
     opacity: 0;
   }
+}
+
+@keyframes swing {
+  0%,
+  100% {
+    transform: rotate(-5deg);
+  }
+  50% {
+    transform: rotate(5deg);
+  }
+}
+
+.animate-swing {
+  animation: swing 3s ease-in-out infinite;
+  transform-origin: top center;
 }
 
 @media (prefers-reduced-motion: reduce) {

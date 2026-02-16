@@ -94,7 +94,12 @@ permissions 常见值（见服务端/前端映射）：
 - `value`
 - `updated_at`
 
-目前至少包含 `turnstile_enabled`（见 `server/index.js`）。
+目前至少包含：
+
+- `turnstile_enabled`
+- `cny_theme_enabled`
+
+春节皮肤是否实际生效由后端按农历窗口动态计算（腊月十六至正月十五）。
 
 ### 1.9 vocabulary_words（敏感词）
 
