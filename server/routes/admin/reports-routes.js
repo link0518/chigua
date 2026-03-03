@@ -106,12 +106,18 @@ export const registerAdminReportsRoutes = (app, deps) => {
     }
 
     const banOptions = action === 'ban' ? resolveBanOptions(req) : null;
+    const deleteComment = action === 'ban'
+      && (req.body?.deleteComment === true
+        || req.body?.deleteComment === 'true'
+        || req.body?.deleteComment === 1
+        || req.body?.deleteComment === '1');
     const result = moderationService.executeReportAction({
       req,
       reportId,
       action,
       reason,
       banOptions,
+      deleteComment,
     });
 
     if (!result) {

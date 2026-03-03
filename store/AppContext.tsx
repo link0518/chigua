@@ -58,7 +58,7 @@ interface AppContextType {
   deletePost: (postId: string) => void;
   reportPost: (postId: string, reason: string) => Promise<void>;
   reportComment: (commentId: string, reason: string) => Promise<void>;
-  handleReport: (reportId: string, action: 'ignore' | 'delete' | 'ban', reason?: string, options?: { permissions?: string[]; expiresAt?: number | null }) => Promise<void>;
+  handleReport: (reportId: string, action: 'ignore' | 'delete' | 'ban', reason?: string, options?: { permissions?: string[]; expiresAt?: number | null; deleteComment?: boolean }) => Promise<void>;
   showToast: (message: string, type?: Toast['type']) => void;
   removeToast: (id: string) => void;
   isLiked: (postId: string) => boolean;
@@ -450,7 +450,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     await api.reportComment(commentId, reason);
   }, []);
 
-  const handleReport = useCallback(async (reportId: string, action: 'ignore' | 'delete' | 'ban', reason = '', options?: { permissions?: string[]; expiresAt?: number | null }) => {
+  const handleReport = useCallback(async (reportId: string, action: 'ignore' | 'delete' | 'ban', reason = '', options?: { permissions?: string[]; expiresAt?: number | null; deleteComment?: boolean }) => {
     const report = state.reports.find((item) => item.id === reportId);
     await api.handleReport(reportId, action, reason, options || {});
     if (action !== 'ignore' && report?.targetId && (report?.targetType || 'post') === 'post') {

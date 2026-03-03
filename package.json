@@ -14,7 +14,8 @@
     "prebuild": "node scripts/generate-meme-manifest.mjs",
     "build": "vite build",
     "preview": "vite preview",
-    "perf:budget": "node scripts/perf-budget.mjs"
+    "perf:budget": "node scripts/perf-budget.mjs",
+    "test:server": "node --experimental-test-isolation=none --test server/tests/admin-moderation-service.test.js"
   },
   "dependencies": {
     "agentation": "^1.3.2",

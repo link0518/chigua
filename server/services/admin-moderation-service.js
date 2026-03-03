@@ -123,7 +123,7 @@ export const createAdminModerationService = ({
       return { ok: true };
     },
 
-    executeReportAction({ req, reportId, action, reason, banOptions, now = Date.now() }) {
+    executeReportAction({ req, reportId, action, reason, banOptions, deleteComment = false, now = Date.now() }) {
       const report = repository.getReportById(reportId);
       if (!report) {
         return null;
@@ -134,11 +134,12 @@ export const createAdminModerationService = ({
 
       let targetIdentity = null;
       if (action === 'delete' || action === 'ban') {
-        if (report.target_type === 'comment' && report.comment_id) {
+        const isCommentTarget = report.target_type === 'comment' && report.comment_id;
+        if (isCommentTarget) {
           const commentRow = repository.getCommentById(report.comment_id);
           if (commentRow) {
-            const removedCount = commentRow.deleted === 1 ? 0 : 1;
-            if (removedCount > 0) {
+            const shouldDeleteReportedComment = action === 'delete' || (action === 'ban' && deleteComment);
+            if (shouldDeleteReportedComment && commentRow.deleted !== 1) {
               repository.softDeleteComment(report.comment_id, now);
               repository.decrementPostComments(report.post_id);
             }

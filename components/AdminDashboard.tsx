@@ -14,6 +14,16 @@ import MarkdownRenderer from './MarkdownRenderer';
 type AdminView = 'overview' | 'reports' | 'processed' | 'posts' | 'compose' | 'bans' | 'audit' | 'feedback' | 'announcement' | 'settings';
 type PostStatusFilter = 'all' | 'active' | 'deleted';
 type PostSort = 'time' | 'hot' | 'reports';
+type ReportAction = 'ignore' | 'delete' | 'ban';
+type ReportConfirmModalState = {
+  isOpen: boolean;
+  reportId: string;
+  action: ReportAction;
+  content: string;
+  reason: string;
+  targetType: Report['targetType'];
+  deleteComment: boolean;
+};
 
 const WEEK_DAYS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
 const POST_PAGE_SIZE = 10;
@@ -36,6 +46,15 @@ const BAN_DURATION_OPTIONS = [
 ];
 
 const ADMIN_COMPOSE_INCLUDE_DEVELOPER_STORAGE_KEY = 'admin_compose_include_developer';
+const EMPTY_REPORT_CONFIRM_MODAL: ReportConfirmModalState = {
+  isOpen: false,
+  reportId: '',
+  action: 'ignore',
+  content: '',
+  reason: '',
+  targetType: 'post',
+  deleteComment: false,
+};
 
 const StatCard: React.FC<{ title: string; value: string; trend: string; trendUp: boolean; icon: React.ReactNode; color?: string; valueClassName?: string }> = ({ title, value, trend, trendUp, icon, color = 'bg-white', valueClassName = '' }) => (
   <div className={`${color} p-6 border-2 border-ink shadow-sketch relative overflow-hidden group hover:-translate-y-1 transition-transform duration-200 sticky-curl ${roughBorderClassSm}`}>
@@ -120,6 +139,10 @@ const AdminDashboard: React.FC = () => {
   const [banCustomUntil, setBanCustomUntil] = useState('');
   const [banPermissions, setBanPermissions] = useState<string[]>(['post', 'comment', 'like', 'view', 'site']);
   const [banSearch, setBanSearch] = useState('');
+  const [manualBanType, setManualBanType] = useState<'ip' | 'fingerprint'>('ip');
+  const [manualBanValue, setManualBanValue] = useState('');
+  const [manualBanReason, setManualBanReason] = useState('');
+  const [manualBanSubmitting, setManualBanSubmitting] = useState(false);
   const [auditLogs, setAuditLogs] = useState<AdminAuditLog[]>([]);
   const [auditSearch, setAuditSearch] = useState('');
   const [auditPage, setAuditPage] = useState(1);
@@ -140,13 +163,7 @@ const AdminDashboard: React.FC = () => {
     content: string;
     reason: string;
   }>({ isOpen: false, feedbackId: '', action: 'delete', content: '', reason: '' });
-  const [confirmModal, setConfirmModal] = useState<{
-    isOpen: boolean;
-    reportId: string;
-    action: 'ignore' | 'delete' | 'ban';
-    content: string;
-    reason: string;
-  }>({ isOpen: false, reportId: '', action: 'ignore', content: '', reason: '' });
+  const [confirmModal, setConfirmModal] = useState<ReportConfirmModalState>({ ...EMPTY_REPORT_CONFIRM_MODAL });
   const [postConfirmModal, setPostConfirmModal] = useState<{
     isOpen: boolean;
     postId: string;
@@ -485,32 +502,55 @@ const AdminDashboard: React.FC = () => {
     setSelectedReports(new Set());
   }, [currentView, searchQuery, state.reports]);
 
-  const handleAction = (reportId: string, action: 'ignore' | 'delete' | 'ban', content: string) => {
-    setConfirmModal({ isOpen: true, reportId, action, content, reason: '' });
+  const handleAction = (reportId: string, action: ReportAction, content: string, targetType: Report['targetType']) => {
+    setConfirmModal({
+      isOpen: true,
+      reportId,
+      action,
+      content,
+      reason: '',
+      targetType,
+      deleteComment: false,
+    });
   };
 
   const confirmAction = async () => {
-    const { reportId, action, reason } = confirmModal;
+    const { reportId, action, reason, targetType, deleteComment } = confirmModal;
     try {
-      await handleReport(reportId, action, reason, action === 'ban' ? buildBanOptions() : undefined);
+      const options = action === 'ban'
+        ? {
+          ...buildBanOptions(),
+          ...(targetType === 'comment' ? { deleteComment } : {}),
+        }
+        : undefined;
+      await handleReport(reportId, action, reason, options);
+      const banMessage = targetType === 'comment'
+        ? (deleteComment ? '已封禁用户并删除被举报评论' : '已封禁用户，保留被举报评论')
+        : '已封禁用户并删除内容';
       const messages = {
         ignore: '已忽略该举报',
         delete: '已删除该内容',
-        ban: '已封禁用户并删除内容',
+        ban: banMessage,
       };
       showToast(messages[action], action === 'ignore' ? 'info' : 'success');
-      setConfirmModal({ isOpen: false, reportId: '', action: 'ignore', content: '', reason: '' });
+      setConfirmModal({ ...EMPTY_REPORT_CONFIRM_MODAL });
     } catch (error) {
       const message = error instanceof Error ? error.message : '处理失败，请稍后重试';
       showToast(message, 'error');
     }
   };
 
-  const getActionLabel = (action: 'ignore' | 'delete' | 'ban') => {
+  const getActionLabel = (action: ReportAction, targetType: Report['targetType'], deleteComment = false) => {
     switch (action) {
-      case 'ignore': return '忽略该举报';
-      case 'delete': return '删除该内容';
-      case 'ban': return '封禁用户并删除';
+      case 'ignore':
+        return '忽略该举报';
+      case 'delete':
+        return '删除该内容';
+      case 'ban':
+        if (targetType === 'comment') {
+          return deleteComment ? '封禁用户并删除被举报评论' : '封禁用户（保留被举报评论）';
+        }
+        return '封禁用户并删除内容';
     }
   };
 
@@ -945,6 +985,28 @@ const AdminDashboard: React.FC = () => {
     } catch (error) {
       const message = error instanceof Error ? error.message : '解封失败';
       showToast(message, 'error');
+    }
+  };
+
+  const handleManualBan = async () => {
+    const value = manualBanValue.trim();
+    if (!value) {
+      showToast(manualBanType === 'ip' ? '请输入要封禁的 IP' : '请输入要封禁的指纹', 'warning');
+      return;
+    }
+    setManualBanSubmitting(true);
+    try {
+      await api.handleAdminBan('ban', manualBanType, value, manualBanReason.trim(), buildBanOptions());
+      showToast(manualBanType === 'ip' ? '已封禁指定 IP' : '已封禁指定指纹', 'success');
+      setManualBanValue('');
+      setManualBanReason('');
+      await fetchBans();
+      await loadStats();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '封禁失败';
+      showToast(message, 'error');
+    } finally {
+      setManualBanSubmitting(false);
     }
   };
 
@@ -2184,6 +2246,43 @@ const AdminDashboard: React.FC = () => {
                   </div>
                 </div>
 
+                <div className="bg-white border-2 border-ink rounded-lg p-4 shadow-sketch-sm mb-4 flex flex-col gap-3">
+                  <p className="text-sm font-bold text-ink font-sans">手动封禁</p>
+                  <div className="grid grid-cols-1 md:grid-cols-[120px_1fr] gap-2">
+                    <select
+                      value={manualBanType}
+                      onChange={(e) => setManualBanType(e.target.value as 'ip' | 'fingerprint')}
+                      className="h-9 border-2 border-gray-200 rounded-lg px-2 text-xs font-sans focus:border-ink outline-none"
+                    >
+                      <option value="ip">IP</option>
+                      <option value="fingerprint">指纹</option>
+                    </select>
+                    <input
+                      value={manualBanValue}
+                      onChange={(e) => setManualBanValue(e.target.value)}
+                      placeholder={manualBanType === 'ip' ? '输入需要封禁的 IP' : '输入需要封禁的指纹'}
+                      className="h-9 border-2 border-gray-200 rounded-lg px-3 text-xs font-sans focus:border-ink outline-none"
+                    />
+                  </div>
+                  <textarea
+                    value={manualBanReason}
+                    onChange={(e) => setManualBanReason(e.target.value)}
+                    className="w-full h-16 resize-none border-2 border-gray-200 rounded-lg p-2 text-xs font-sans focus:border-ink outline-none"
+                    placeholder="封禁理由（可选）"
+                  />
+                  {renderBanOptions()}
+                  <div className="flex justify-end">
+                    <SketchButton
+                      variant="primary"
+                      className="h-9 px-4 text-xs text-white"
+                      onClick={handleManualBan}
+                      disabled={manualBanSubmitting}
+                    >
+                      {manualBanSubmitting ? '封禁中...' : '添加封禁'}
+                    </SketchButton>
+                  </div>
+                </div>
+
                 {banLoading ? (
                   <div className="text-center py-16 bg-white border-2 border-ink rounded-lg">
                     <span className="text-6xl mb-4 block">⏳</span>
@@ -2390,12 +2489,12 @@ const AdminDashboard: React.FC = () => {
       {/* Confirm Modal */}
       <Modal
         isOpen={confirmModal.isOpen}
-        onClose={() => setConfirmModal({ isOpen: false, reportId: '', action: 'ignore', content: '', reason: '' })}
+        onClose={() => setConfirmModal({ ...EMPTY_REPORT_CONFIRM_MODAL })}
         title="确认操作"
       >
         <div className="flex flex-col gap-4">
           <p className="font-hand text-lg text-ink">
-            确定要 <strong className="text-red-600">{getActionLabel(confirmModal.action)}</strong> 吗？
+            确定要 <strong className="text-red-600">{getActionLabel(confirmModal.action, confirmModal.targetType, confirmModal.deleteComment)}</strong> 吗？
           </p>
           <div className="p-3 bg-gray-50 border border-dashed border-ink rounded-lg">
             <p className="text-sm text-pencil font-sans line-clamp-2">"{confirmModal.content}"</p>
@@ -2409,12 +2508,23 @@ const AdminDashboard: React.FC = () => {
               placeholder="填写理由便于审计追溯"
             />
           </div>
+          {confirmModal.action === 'ban' && confirmModal.targetType === 'comment' && (
+            <label className="flex items-center gap-2 text-sm font-sans text-pencil">
+              <input
+                type="checkbox"
+                className="accent-black"
+                checked={confirmModal.deleteComment}
+                onChange={(e) => setConfirmModal((prev) => ({ ...prev, deleteComment: e.target.checked }))}
+              />
+              <span>同时删除被举报评论</span>
+            </label>
+          )}
           {confirmModal.action === 'ban' && renderBanOptions()}
           <div className="flex flex-col sm:flex-row gap-3 mt-2">
             <SketchButton
               variant="secondary"
               className="flex-1"
-              onClick={() => setConfirmModal({ isOpen: false, reportId: '', action: 'ignore', content: '', reason: '' })}
+              onClick={() => setConfirmModal({ ...EMPTY_REPORT_CONFIRM_MODAL })}
             >
               取消
             </SketchButton>
@@ -2789,7 +2899,7 @@ const AdminDashboard: React.FC = () => {
 // Separate ReportCard component
 const ReportCard: React.FC<{
   report: Report;
-  onAction: (id: string, action: 'ignore' | 'delete' | 'ban', content: string) => void;
+  onAction: (id: string, action: ReportAction, content: string, targetType: Report['targetType']) => void;
   onDetail?: (report: Report) => void;
   showStatus?: boolean;
   selectable?: boolean;
@@ -2875,21 +2985,21 @@ const ReportCard: React.FC<{
             <SketchButton
               variant="secondary"
               className="h-10 px-3 text-xs flex items-center gap-1"
-              onClick={() => onAction(report.id, 'ignore', report.contentSnippet)}
+              onClick={() => onAction(report.id, 'ignore', report.contentSnippet, report.targetType)}
             >
               <EyeOff size={14} /> 忽略
             </SketchButton>
             <SketchButton
               variant="danger"
               className="h-10 px-3 text-xs flex items-center gap-1"
-              onClick={() => onAction(report.id, 'delete', report.contentSnippet)}
+              onClick={() => onAction(report.id, 'delete', report.contentSnippet, report.targetType)}
             >
               <Trash2 size={14} /> 删除
             </SketchButton>
             <SketchButton
               variant="primary"
               className="h-10 px-3 text-xs flex items-center gap-1 text-white"
-              onClick={() => onAction(report.id, 'ban', report.contentSnippet)}
+              onClick={() => onAction(report.id, 'ban', report.contentSnippet, report.targetType)}
             >
               <Ban size={14} /> 封禁
             </SketchButton>

@@ -1,4 +1,16 @@
-## [Unreleased]
+﻿## [Unreleased]
+
+### Changed
+
+- 后端管理高风险接口完成 service/repository 下沉：帖子批量处置、举报处置、封禁/解封逻辑从路由中抽离到可复用服务层。
+- server/routes/admin/posts-routes.js、server/routes/admin/reports-routes.js、server/routes/admin/bans-routes.js 改为调用统一 moderation service，保持原有接口行为与返回结构。
+
+### Added
+
+- 新增 server/repositories/moderation-repository.js，集中管理高风险接口涉及的数据库访问。
+- 新增 server/services/admin-moderation-service.js，统一封装批量处置、举报处置、封禁解封等业务编排。
+- 新增回归测试 server/tests/admin-moderation-service.test.js，覆盖帖子批量封禁、举报封禁、封禁解封、举报批量处置四个关键场景。
+- 新增脚本 npm run test:server，用于执行服务层最小回归测试。
 
 ### Added
 
@@ -63,3 +75,5 @@
 - 修复后台概览“总访问量”误用本周访问量的问题（改为全量累计）
 - 修复搜索页点击“搜索”会触发重复请求的问题
 - 修复表情包弹窗在评论区内被压缩/裁切导致无法展示的问题
+
+
