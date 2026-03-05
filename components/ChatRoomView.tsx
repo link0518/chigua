@@ -6,6 +6,7 @@ import type { ChatMessage, ChatOnlineUser, ChatRoomConfig } from '../types';
 import { useApp } from '../store/AppContext';
 import MarkdownRenderer from './MarkdownRenderer';
 import MemePicker, { useMemeInsert } from './MemePicker';
+import ReportModal from './ReportModal';
 import { SketchButton, SketchCard } from './SketchUI';
 import { SketchIconButton } from './SketchIconButton';
 import { consumeUploadQuota } from './uploadRateLimit';
@@ -116,6 +117,7 @@ const ChatRoomView: React.FC<ChatRoomViewProps> = ({ onExitToFeed }) => {
   const [memeOpen, setMemeOpen] = useState(false);
   const [mutedUntil, setMutedUntil] = useState<number | null>(null);
   const [mutedReason, setMutedReason] = useState<string | null>(null);
+  const [muteActive, setMuteActive] = useState(false);
   const [lobbyOnlineCount, setLobbyOnlineCount] = useState(0);
   const [replyTarget, setReplyTarget] = useState<ChatMessage | null>(null);
   const [unreadAttentionIds, setUnreadAttentionIds] = useState<number[]>([]);
@@ -123,7 +125,11 @@ const ChatRoomView: React.FC<ChatRoomViewProps> = ({ onExitToFeed }) => {
   const [adminAnonymous, setAdminAnonymous] = useState(false);
   const [adminHiddenInOnline, setAdminHiddenInOnline] = useState(false);
   const [adminActionBusyKey, setAdminActionBusyKey] = useState('');
-  const [reportBusyMessageId, setReportBusyMessageId] = useState<number | null>(null);
+  const [reportModal, setReportModal] = useState<{ isOpen: boolean; messageId: number; content: string }>({
+    isOpen: false,
+    messageId: 0,
+    content: '',
+  });
   const [chatConfig, setChatConfig] = useState<ChatRoomConfig>(DEFAULT_CHAT_CONFIG);
 
   const wsRef = useRef<WebSocket | null>(null);
@@ -171,6 +177,25 @@ const ChatRoomView: React.FC<ChatRoomViewProps> = ({ onExitToFeed }) => {
   useEffect(() => {
     chatConfigRef.current = chatConfig;
   }, [chatConfig]);
+
+  useEffect(() => {
+    if (typeof mutedUntil !== 'number') {
+      return;
+    }
+    const remainingMs = mutedUntil - Date.now();
+    if (remainingMs <= 0) {
+      setMutedUntil(null);
+      setMutedReason(null);
+      setMuteActive(false);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setMutedUntil(null);
+      setMutedReason(null);
+      setMuteActive(false);
+    }, remainingMs + 100);
+    return () => window.clearTimeout(timer);
+  }, [mutedUntil]);
 
   const applyAdminState = useCallback((adminState: Partial<ChatAdminState> | null | undefined) => {
     if (!adminState || !adminState.isAdmin) {
@@ -349,14 +374,21 @@ const ChatRoomView: React.FC<ChatRoomViewProps> = ({ onExitToFeed }) => {
 
   const applyJoinedPayload = useCallback((payload: any) => {
     shouldAutoScrollRef.current = true;
+    const nextMutedUntil = typeof payload?.mutedUntil === 'number' ? payload.mutedUntil : null;
+    const nextMutedReason = payload?.mutedReason ? String(payload.mutedReason) : null;
     setNickname(String(payload?.nickname || '匿名'));
     setSelfSessionId(String(payload?.sessionId || ''));
     setOnlineCount(Number(payload?.onlineCount || 0));
     setOnlineUsers(Array.isArray(payload?.users) ? payload.users : []);
     setMessages(Array.isArray(payload?.history) ? payload.history : []);
     setUnreadAttentionIds([]);
-    setMutedUntil(typeof payload?.mutedUntil === 'number' ? payload.mutedUntil : null);
-    setMutedReason(payload?.mutedReason ? String(payload.mutedReason) : null);
+    setMutedUntil(nextMutedUntil);
+    setMutedReason(nextMutedReason);
+    setMuteActive(
+      typeof payload?.muteActive === 'boolean'
+        ? payload.muteActive
+        : (typeof nextMutedUntil === 'number' || Boolean(nextMutedReason))
+    );
     setChatConfig(normalizeChatConfig(payload?.chatConfig));
     applyAdminState(payload?.adminState);
     setStatus('online');
@@ -399,13 +431,11 @@ const ChatRoomView: React.FC<ChatRoomViewProps> = ({ onExitToFeed }) => {
 
     if (packet.event === 'chat.message.new') {
       const incoming = payload as ChatMessage;
-      const existing = messagesRef.current;
       const nearBottom = isMessageListNearBottom();
       const isSelfIncoming = isSelfMessage(incoming);
       const shouldAutoScroll = nearBottom || isSelfIncoming;
       shouldAutoScrollRef.current = shouldAutoScroll;
 
-      let insertedNewMessage = false;
       setMessages((prev) => {
         if (prev.some((item) => item.id === incoming.id)) {
           return prev;
@@ -418,13 +448,11 @@ const ChatRoomView: React.FC<ChatRoomViewProps> = ({ onExitToFeed }) => {
           next[pendingIdx] = { ...incoming, pending: false };
           return next;
         }
-        insertedNewMessage = true;
+        if (shouldAttentionForIncoming(incoming, prev) && !shouldAutoScroll) {
+          setUnreadAttentionIds((ids) => (ids.includes(incoming.id) ? ids : [...ids, incoming.id]));
+        }
         return [...prev, incoming];
       });
-
-      if (insertedNewMessage && shouldAttentionForIncoming(incoming, existing) && !shouldAutoScroll) {
-        setUnreadAttentionIds((prev) => (prev.includes(incoming.id) ? prev : [...prev, incoming.id]));
-      }
       return;
     }
 
@@ -462,7 +490,16 @@ const ChatRoomView: React.FC<ChatRoomViewProps> = ({ onExitToFeed }) => {
       const reason = payload?.reason ? String(payload.reason) : null;
       setMutedUntil(until);
       setMutedReason(reason);
+      setMuteActive(true);
       showToast(reason ? `你已被禁言：${reason}` : '你已被禁言', 'warning');
+      return;
+    }
+
+    if (packet.event === 'chat.unmuted') {
+      setMutedUntil(null);
+      setMutedReason(null);
+      setMuteActive(false);
+      showToast('你已被解除禁言', 'success');
       return;
     }
 
@@ -477,6 +514,10 @@ const ChatRoomView: React.FC<ChatRoomViewProps> = ({ onExitToFeed }) => {
       setMessages([]);
       setUnreadAttentionIds([]);
       setReplyTarget(null);
+      setReportModal({ isOpen: false, messageId: 0, content: '' });
+      setMutedUntil(null);
+      setMutedReason(null);
+      setMuteActive(false);
       showToast(payload?.message ? String(payload.message) : '你已被管理员移出聊天室', 'warning');
       return;
     }
@@ -492,6 +533,10 @@ const ChatRoomView: React.FC<ChatRoomViewProps> = ({ onExitToFeed }) => {
       setMessages([]);
       setUnreadAttentionIds([]);
       setReplyTarget(null);
+      setReportModal({ isOpen: false, messageId: 0, content: '' });
+      setMutedUntil(null);
+      setMutedReason(null);
+      setMuteActive(false);
       showToast(payload?.message ? String(payload.message) : '账号已被封禁，无法进入聊天室', 'error');
       return;
     }
@@ -508,6 +553,10 @@ const ChatRoomView: React.FC<ChatRoomViewProps> = ({ onExitToFeed }) => {
       setMessages([]);
       setUnreadAttentionIds([]);
       setReplyTarget(null);
+      setReportModal({ isOpen: false, messageId: 0, content: '' });
+      setMutedUntil(null);
+      setMutedReason(null);
+      setMuteActive(false);
       setChatConfig((prev) => ({ ...prev, chatEnabled: false }));
       showToast(payload?.message ? String(payload.message) : '聊天室已关闭', 'warning');
       onExitToFeed?.();
@@ -578,6 +627,7 @@ const ChatRoomView: React.FC<ChatRoomViewProps> = ({ onExitToFeed }) => {
     setEntered(true);
     setMutedUntil(null);
     setMutedReason(null);
+    setMuteActive(false);
     lastSendAtRef.current = 0;
     refreshAdminSession()
       .catch(() => false)
@@ -603,9 +653,10 @@ const ChatRoomView: React.FC<ChatRoomViewProps> = ({ onExitToFeed }) => {
     setMessages([]);
     setUnreadAttentionIds([]);
     setAdminActionBusyKey('');
-    setReportBusyMessageId(null);
+    setReportModal({ isOpen: false, messageId: 0, content: '' });
     setMutedUntil(null);
     setMutedReason(null);
+    setMuteActive(false);
     lastSendAtRef.current = 0;
     setInput('');
     setReplyTarget(null);
@@ -775,7 +826,7 @@ const ChatRoomView: React.FC<ChatRoomViewProps> = ({ onExitToFeed }) => {
     ).catch(() => { });
   }, [canManageMessages, runAdminMessageAction, selfSessionId, showToast]);
 
-  const handleReportMessage = useCallback(async (item: ChatMessage) => {
+  const handleReportMessage = useCallback((item: ChatMessage) => {
     if (canManageMessages || item.deleted || item.id <= 0) {
       return;
     }
@@ -783,35 +834,15 @@ const ChatRoomView: React.FC<ChatRoomViewProps> = ({ onExitToFeed }) => {
       showToast('不能举报自己的消息', 'warning');
       return;
     }
-    if (reportBusyMessageId) {
+    if (reportModal.isOpen) {
       return;
     }
-
-    const reasonInput = window.prompt('请输入举报理由（最多 200 字）', '');
-    if (reasonInput === null) {
-      return;
-    }
-    const reason = reasonInput.trim();
-    if (!reason) {
-      showToast('举报理由不能为空', 'warning');
-      return;
-    }
-    if (reason.length > 200) {
-      showToast('举报理由不能超过 200 字', 'warning');
-      return;
-    }
-
-    setReportBusyMessageId(item.id);
-    try {
-      await api.reportChatMessage(item.id, reason);
-      showToast('举报已提交，管理员会尽快处理', 'success');
-    } catch (error) {
-      const message = error instanceof Error ? error.message : '举报失败，请稍后重试';
-      showToast(message, 'error');
-    } finally {
-      setReportBusyMessageId(null);
-    }
-  }, [canManageMessages, isSelfMessage, reportBusyMessageId, showToast]);
+    setReportModal({
+      isOpen: true,
+      messageId: item.id,
+      content: buildMessagePreview(item),
+    });
+  }, [canManageMessages, isSelfMessage, reportModal.isOpen, showToast]);
 
   const handlePickUpload = () => {
     if (!entered || status !== 'online' || uploading) {
@@ -867,7 +898,7 @@ const ChatRoomView: React.FC<ChatRoomViewProps> = ({ onExitToFeed }) => {
       showToast('当前仅管理员可以发言', 'warning');
       return;
     }
-    if (mutedUntil || mutedReason) {
+    if (isMuteActive) {
       showToast(mutedReason ? `你正在禁言中：${mutedReason}` : '你正在禁言中', 'warning');
       return;
     }
@@ -967,6 +998,15 @@ const ChatRoomView: React.FC<ChatRoomViewProps> = ({ onExitToFeed }) => {
   const sendIntervalSeconds = useMemo(() => {
     return Math.max(0, Math.trunc((chatConfig.messageIntervalMs || 0) / 1000));
   }, [chatConfig.messageIntervalMs]);
+  const isMuteActive = useMemo(() => {
+    if (!muteActive) {
+      return false;
+    }
+    if (typeof mutedUntil === 'number') {
+      return mutedUntil > Date.now();
+    }
+    return true;
+  }, [muteActive, mutedUntil]);
   const chatRuleBlocked = !chatConfig.chatEnabled || chatConfig.muteAll || (chatConfig.adminOnly && !isAdminUser);
 
   const statusLabel = useMemo(() => {
@@ -1093,7 +1133,7 @@ const ChatRoomView: React.FC<ChatRoomViewProps> = ({ onExitToFeed }) => {
             当前仅管理员可以发言。
           </div>
         )}
-        {(mutedUntil || mutedReason) && (
+        {isMuteActive && (
           <div className="mt-3 border border-amber-400 bg-amber-50 text-amber-700 rounded-lg px-3 py-2 text-sm font-sans">
             你已被禁言。{formatMutedUntil(mutedUntil)}{mutedReason ? `，原因：${mutedReason}` : ''}
           </div>
@@ -1153,13 +1193,10 @@ const ChatRoomView: React.FC<ChatRoomViewProps> = ({ onExitToFeed }) => {
                         <button
                           type="button"
                           className="inline-flex items-center gap-1 text-sky-600 hover:text-sky-700 disabled:text-gray-300"
-                          disabled={reportBusyMessageId === item.id}
-                          onClick={() => {
-                            handleReportMessage(item).catch(() => { });
-                          }}
+                          onClick={() => handleReportMessage(item)}
                         >
                           <Flag className="w-3 h-3" />
-                          {reportBusyMessageId === item.id ? '举报中' : '举报'}
+                          举报
                         </button>
                       )}
                       {canManageMessages && !item.deleted && (
@@ -1246,10 +1283,10 @@ const ChatRoomView: React.FC<ChatRoomViewProps> = ({ onExitToFeed }) => {
                 handleSend();
               }
             }}
-            placeholder={chatRuleBlocked ? (!chatConfig.chatEnabled ? '聊天室已关闭，暂时无法发言' : (chatConfig.muteAll ? '聊天室已开启全体禁言，暂时无法发言' : '当前仅管理员可发言')) : (mutedUntil || mutedReason ? '你正在禁言中，暂时无法发言' : '输入消息（支持 Markdown、表情短码、图片）')}
+            placeholder={chatRuleBlocked ? (!chatConfig.chatEnabled ? '聊天室已关闭，暂时无法发言' : (chatConfig.muteAll ? '聊天室已开启全体禁言，暂时无法发言' : '当前仅管理员可发言')) : (isMuteActive ? '你正在禁言中，暂时无法发言' : '输入消息（支持 Markdown、表情短码、图片）')}
             className="w-full min-h-[96px] resize-none border-2 border-gray-200 rounded-lg p-3 text-sm font-sans focus:border-ink outline-none"
             maxLength={textMaxLength}
-            disabled={Boolean(mutedUntil || mutedReason) || status !== 'online' || chatRuleBlocked}
+            disabled={isMuteActive || status !== 'online' || chatRuleBlocked}
           />
 
           <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -1268,7 +1305,7 @@ const ChatRoomView: React.FC<ChatRoomViewProps> = ({ onExitToFeed }) => {
             />
             <SketchIconButton
               onClick={handlePickUpload}
-                disabled={uploading || status !== 'online' || Boolean(mutedUntil || mutedReason) || chatRuleBlocked}
+                disabled={uploading || status !== 'online' || isMuteActive || chatRuleBlocked}
               label={uploading ? '上传中' : '上传图片'}
               icon={<Image className="w-4 h-4" />}
               variant="doodle"
@@ -1279,7 +1316,7 @@ const ChatRoomView: React.FC<ChatRoomViewProps> = ({ onExitToFeed }) => {
               <SketchIconButton
                 ref={memeButtonRef}
                 onClick={() => setMemeOpen((prev) => !prev)}
-                disabled={status !== 'online' || Boolean(mutedUntil || mutedReason) || chatRuleBlocked}
+                disabled={status !== 'online' || isMuteActive || chatRuleBlocked}
                 label="表情"
                 icon={<Smile className="w-4 h-4" />}
                 variant={memeOpen ? 'active' : 'doodle'}
@@ -1309,7 +1346,7 @@ const ChatRoomView: React.FC<ChatRoomViewProps> = ({ onExitToFeed }) => {
             </span>
             <SketchButton
               className="h-10 px-4 text-sm flex items-center gap-1"
-              disabled={status !== 'online' || !input.trim() || input.trim().length > textMaxLength || Boolean(mutedUntil || mutedReason) || chatRuleBlocked}
+              disabled={status !== 'online' || !input.trim() || input.trim().length > textMaxLength || isMuteActive || chatRuleBlocked}
               onClick={handleSend}
             >
               <Send className="w-4 h-4" />
@@ -1344,8 +1381,17 @@ const ChatRoomView: React.FC<ChatRoomViewProps> = ({ onExitToFeed }) => {
           )}
         </div>
       </aside>
+
+      <ReportModal
+        isOpen={reportModal.isOpen}
+        onClose={() => setReportModal({ isOpen: false, messageId: 0, content: '' })}
+        targetType="chat"
+        chatMessageId={reportModal.messageId}
+        contentPreview={reportModal.content.substring(0, 80)}
+      />
     </div>
   );
 };
 
 export default ChatRoomView;
+

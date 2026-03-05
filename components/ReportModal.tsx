@@ -7,9 +7,10 @@ import { useApp } from '../store/AppContext';
 interface ReportModalProps {
   isOpen: boolean;
   onClose: () => void;
-  postId: string;
+  postId?: string;
   commentId?: string;
-  targetType?: 'post' | 'comment';
+  chatMessageId?: number;
+  targetType?: 'post' | 'comment' | 'chat';
   contentPreview?: string;
 }
 
@@ -26,10 +27,11 @@ const ReportModal: React.FC<ReportModalProps> = ({
   onClose,
   postId,
   commentId,
+  chatMessageId,
   targetType = 'post',
   contentPreview,
 }) => {
-  const { reportPost, reportComment, showToast } = useApp();
+  const { reportPost, reportComment, reportChatMessage, showToast } = useApp();
   const [selectedReason, setSelectedReason] = useState<string>('');
   const [customReason, setCustomReason] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -46,7 +48,15 @@ const ReportModal: React.FC<ReportModalProps> = ({
           throw new Error('评论不存在');
         }
         await reportComment(commentId, reason);
+      } else if (targetType === 'chat') {
+        if (!chatMessageId || chatMessageId <= 0) {
+          throw new Error('消息不存在');
+        }
+        await reportChatMessage(chatMessageId, reason);
       } else {
+        if (!postId) {
+          throw new Error('帖子不存在');
+        }
         await reportPost(postId, reason);
       }
       setSelectedReason('');

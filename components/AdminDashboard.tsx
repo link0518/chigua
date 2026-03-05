@@ -10,11 +10,12 @@ import { useApp } from '../store/AppContext';
 import Modal from './Modal';
 import { api } from '../api';
 import MarkdownRenderer from './MarkdownRenderer';
+import AdminChatPanel from './AdminChatPanel';
 
-type AdminView = 'overview' | 'reports' | 'processed' | 'posts' | 'compose' | 'bans' | 'audit' | 'feedback' | 'announcement' | 'settings';
+type AdminView = 'overview' | 'reports' | 'processed' | 'posts' | 'compose' | 'bans' | 'audit' | 'feedback' | 'announcement' | 'settings' | 'chat';
 type PostStatusFilter = 'all' | 'active' | 'deleted';
 type PostSort = 'time' | 'hot' | 'reports';
-type ReportAction = 'ignore' | 'delete' | 'ban';
+type ReportAction = 'ignore' | 'delete' | 'mute' | 'ban';
 type ReportConfirmModalState = {
   isOpen: boolean;
   reportId: string;
@@ -23,6 +24,7 @@ type ReportConfirmModalState = {
   reason: string;
   targetType: Report['targetType'];
   deleteComment: boolean;
+  deleteChatMessage: boolean;
 };
 
 const WEEK_DAYS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
@@ -36,6 +38,7 @@ const BAN_PERMISSION_LABELS: Record<string, string> = {
   like: '点赞',
   view: '查看',
   site: '禁止进入网站',
+  chat: '聊天室',
 };
 const BAN_DURATION_OPTIONS = [
   { id: '1h', label: '1 小时', ms: 60 * 60 * 1000 },
@@ -54,6 +57,7 @@ const EMPTY_REPORT_CONFIRM_MODAL: ReportConfirmModalState = {
   reason: '',
   targetType: 'post',
   deleteComment: false,
+  deleteChatMessage: false,
 };
 
 const StatCard: React.FC<{ title: string; value: string; trend: string; trendUp: boolean; icon: React.ReactNode; color?: string; valueClassName?: string }> = ({ title, value, trend, trendUp, icon, color = 'bg-white', valueClassName = '' }) => (
@@ -137,7 +141,7 @@ const AdminDashboard: React.FC = () => {
   const [banLoading, setBanLoading] = useState(false);
   const [banDuration, setBanDuration] = useState<'1h' | '1d' | '7d' | 'forever' | 'custom'>('7d');
   const [banCustomUntil, setBanCustomUntil] = useState('');
-  const [banPermissions, setBanPermissions] = useState<string[]>(['post', 'comment', 'like', 'view', 'site']);
+  const [banPermissions, setBanPermissions] = useState<string[]>(['post', 'comment', 'like', 'view', 'site', 'chat']);
   const [banSearch, setBanSearch] = useState('');
   const [manualBanType, setManualBanType] = useState<'ip' | 'fingerprint'>('ip');
   const [manualBanValue, setManualBanValue] = useState('');
@@ -511,25 +515,30 @@ const AdminDashboard: React.FC = () => {
       reason: '',
       targetType,
       deleteComment: false,
+      deleteChatMessage: false,
     });
   };
 
   const confirmAction = async () => {
-    const { reportId, action, reason, targetType, deleteComment } = confirmModal;
+    const { reportId, action, reason, targetType, deleteComment, deleteChatMessage } = confirmModal;
     try {
       const options = action === 'ban'
         ? {
           ...buildBanOptions(),
           ...(targetType === 'comment' ? { deleteComment } : {}),
+          ...(targetType === 'chat' ? { deleteChatMessage } : {}),
         }
         : undefined;
       await handleReport(reportId, action, reason, options);
       const banMessage = targetType === 'comment'
         ? (deleteComment ? '已封禁用户并删除被举报评论' : '已封禁用户，保留被举报评论')
+        : targetType === 'chat'
+          ? (deleteChatMessage ? '已封禁用户并删除被举报发言' : '已封禁用户，保留被举报发言')
         : '已封禁用户并删除内容';
       const messages = {
         ignore: '已忽略该举报',
         delete: '已删除该内容',
+        mute: '已禁言用户',
         ban: banMessage,
       };
       showToast(messages[action], action === 'ignore' ? 'info' : 'success');
@@ -540,15 +549,25 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
-  const getActionLabel = (action: ReportAction, targetType: Report['targetType'], deleteComment = false) => {
+  const getActionLabel = (
+    action: ReportAction,
+    targetType: Report['targetType'],
+    deleteComment = false,
+    deleteChatMessage = false
+  ) => {
     switch (action) {
       case 'ignore':
         return '忽略该举报';
       case 'delete':
         return '删除该内容';
+      case 'mute':
+        return '禁言用户';
       case 'ban':
         if (targetType === 'comment') {
           return deleteComment ? '封禁用户并删除被举报评论' : '封禁用户（保留被举报评论）';
+        }
+        if (targetType === 'chat') {
+          return deleteChatMessage ? '封禁用户并删除被举报发言' : '封禁用户（保留被举报发言）';
         }
         return '封禁用户并删除内容';
     }
@@ -1286,6 +1305,7 @@ const AdminDashboard: React.FC = () => {
               <NavItem view="announcement" icon={<Bell size={18} />} label="公告发布" />
               <NavItem view="settings" icon={<Settings size={18} />} label="系统设置" />
               <NavItem view="feedback" icon={<MessageSquare size={18} />} label="留言管理" badge={feedbackUnreadCount} />
+              <NavItem view="chat" icon={<MessageSquare size={18} />} label="聊天室管理" />
               <NavItem view="reports" icon={<Flag size={18} />} label="待处理举报" badge={pendingReports.length} />
               <NavItem view="processed" icon={<Gavel size={18} />} label="已处理" />
               <NavItem view="bans" icon={<Shield size={18} />} label="封禁管理" />
@@ -1324,6 +1344,7 @@ const AdminDashboard: React.FC = () => {
                 {currentView === 'announcement' && <><Bell /> 公告发布</>}
                 {currentView === 'settings' && <><Settings /> 系统设置</>}
                 {currentView === 'feedback' && <><MessageSquare /> 留言管理</>}
+                {currentView === 'chat' && <><MessageSquare /> 聊天室管理</>}
                 {currentView === 'reports' && <><Flag /> 待处理举报</>}
                 {currentView === 'processed' && <><Gavel /> 已处理</>}
                 {currentView === 'bans' && <><Shield /> 封禁管理</>}
@@ -1400,6 +1421,7 @@ const AdminDashboard: React.FC = () => {
                   <NavItem view="announcement" icon={<Bell size={18} />} label="公告发布" onSelect={() => setMobileNavOpen(false)} />
                   <NavItem view="settings" icon={<Settings size={18} />} label="系统设置" onSelect={() => setMobileNavOpen(false)} />
                   <NavItem view="feedback" icon={<MessageSquare size={18} />} label="留言管理" badge={feedbackUnreadCount} onSelect={() => setMobileNavOpen(false)} />
+                  <NavItem view="chat" icon={<MessageSquare size={18} />} label="聊天室管理" onSelect={() => setMobileNavOpen(false)} />
                   <NavItem view="reports" icon={<Flag size={18} />} label="待处理举报" badge={pendingReports.length} onSelect={() => setMobileNavOpen(false)} />
                   <NavItem view="processed" icon={<Gavel size={18} />} label="已处理" onSelect={() => setMobileNavOpen(false)} />
                   <NavItem view="bans" icon={<Shield size={18} />} label="封禁管理" onSelect={() => setMobileNavOpen(false)} />
@@ -2228,6 +2250,11 @@ const AdminDashboard: React.FC = () => {
               </section>
             )}
 
+            {/* Chat View */}
+            {currentView === 'chat' && (
+              <AdminChatPanel showToast={showToast} />
+            )}
+
             {/* Bans View */}
             {currentView === 'bans' && (
               <section>
@@ -2494,7 +2521,7 @@ const AdminDashboard: React.FC = () => {
       >
         <div className="flex flex-col gap-4">
           <p className="font-hand text-lg text-ink">
-            确定要 <strong className="text-red-600">{getActionLabel(confirmModal.action, confirmModal.targetType, confirmModal.deleteComment)}</strong> 吗？
+            确定要 <strong className="text-red-600">{getActionLabel(confirmModal.action, confirmModal.targetType, confirmModal.deleteComment, confirmModal.deleteChatMessage)}</strong> 吗？
           </p>
           <div className="p-3 bg-gray-50 border border-dashed border-ink rounded-lg">
             <p className="text-sm text-pencil font-sans line-clamp-2">"{confirmModal.content}"</p>
@@ -2508,15 +2535,19 @@ const AdminDashboard: React.FC = () => {
               placeholder="填写理由便于审计追溯"
             />
           </div>
-          {confirmModal.action === 'ban' && confirmModal.targetType === 'comment' && (
+          {confirmModal.action === 'ban' && (confirmModal.targetType === 'comment' || confirmModal.targetType === 'chat') && (
             <label className="flex items-center gap-2 text-sm font-sans text-pencil">
               <input
                 type="checkbox"
                 className="accent-black"
-                checked={confirmModal.deleteComment}
-                onChange={(e) => setConfirmModal((prev) => ({ ...prev, deleteComment: e.target.checked }))}
+                checked={confirmModal.targetType === 'comment' ? confirmModal.deleteComment : confirmModal.deleteChatMessage}
+                onChange={(e) => setConfirmModal((prev) => (
+                  prev.targetType === 'comment'
+                    ? { ...prev, deleteComment: e.target.checked }
+                    : { ...prev, deleteChatMessage: e.target.checked }
+                ))}
               />
-              <span>同时删除被举报评论</span>
+              <span>{confirmModal.targetType === 'comment' ? '同时删除被举报评论' : '同时删除被举报发言'}</span>
             </label>
           )}
           {confirmModal.action === 'ban' && renderBanOptions()}
@@ -2529,11 +2560,11 @@ const AdminDashboard: React.FC = () => {
               取消
             </SketchButton>
             <SketchButton
-              variant={confirmModal.action === 'ignore' ? 'secondary' : 'danger'}
+              variant={confirmModal.action === 'ignore' ? 'secondary' : confirmModal.action === 'mute' ? 'primary' : 'danger'}
               className="flex-1"
               onClick={confirmAction}
             >
-              确认{confirmModal.action === 'ban' ? '封禁' : confirmModal.action === 'delete' ? '删除' : '忽略'}
+              确认{confirmModal.action === 'ban' ? '封禁' : confirmModal.action === 'delete' ? '删除' : confirmModal.action === 'mute' ? '禁言' : '忽略'}
             </SketchButton>
           </div>
         </div>
@@ -2860,7 +2891,7 @@ const AdminDashboard: React.FC = () => {
         <div className="flex flex-col gap-4">
           <div className="text-xs text-pencil font-sans">
             <p>举报 ID：{reportDetail.report?.id}</p>
-            <p>类型：{reportDetail.report?.targetType === 'comment' ? '评论举报' : '帖子举报'}</p>
+            <p>类型：{reportDetail.report?.targetType === 'comment' ? '评论举报' : reportDetail.report?.targetType === 'chat' ? '聊天室发言举报' : '帖子举报'}</p>
             <p>原因：{reportDetail.report?.reason}</p>
             <p className="break-words">标识：{formatIdentity(reportDetail.report?.targetIp, reportDetail.report?.targetFingerprint)}</p>
           </div>
@@ -2950,6 +2981,11 @@ const ReportCard: React.FC<{
                 评论举报
               </span>
             )}
+            {report.targetType === 'chat' && (
+              <span className="text-xs flex items-center gap-1 border border-ink px-2 py-0.5 rounded font-bold font-sans bg-cyan-50 text-cyan-700">
+                聊天室发言举报
+              </span>
+            )}
             {showStatus && (
               <span className={`text-xs flex items-center gap-1 border border-ink px-2 py-0.5 rounded font-bold font-sans ${report.status === 'resolved' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
                 }`}>
@@ -2996,6 +3032,15 @@ const ReportCard: React.FC<{
             >
               <Trash2 size={14} /> 删除
             </SketchButton>
+            {report.targetType === 'chat' && (
+              <SketchButton
+                variant="secondary"
+                className="h-10 px-3 text-xs flex items-center gap-1"
+                onClick={() => onAction(report.id, 'mute', report.contentSnippet, report.targetType)}
+              >
+                <MessageSquare size={14} /> 禁言
+              </SketchButton>
+            )}
             <SketchButton
               variant="primary"
               className="h-10 px-3 text-xs flex items-center gap-1 text-white"

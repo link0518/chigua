@@ -1,7 +1,10 @@
-﻿import bcrypt from 'bcryptjs';
+import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
+import cookie from 'cookie';
 import compression from 'compression';
 import express from 'express';
+import http from 'http';
+import signature from 'cookie-signature';
 import session from 'express-session';
 import BetterSqlite3Store from 'better-sqlite3-session-store';
 import fs from 'fs';
@@ -14,6 +17,7 @@ import { registerPublicPostsRoutes } from './routes/public/posts-routes.js';
 import { registerPublicCommentsRoutes } from './routes/public/comments-routes.js';
 import { registerPublicReportsRoutes } from './routes/public/reports-routes.js';
 import { registerPublicSystemRoutes } from './routes/public/system-routes.js';
+import { registerPublicChatRoutes } from './routes/public/chat-routes.js';
 import { registerAdminAuthRoutes } from './routes/admin/auth-routes.js';
 import { registerAdminAnnouncementRoutes } from './routes/admin/announcement-routes.js';
 import { registerAdminReportsRoutes } from './routes/admin/reports-routes.js';
@@ -24,6 +28,8 @@ import { registerAdminBansRoutes } from './routes/admin/bans-routes.js';
 import { registerAdminAuditRoutes } from './routes/admin/audit-routes.js';
 import { registerAdminVocabularyRoutes } from './routes/admin/vocabulary-routes.js';
 import { registerAdminStatsRoutes } from './routes/admin/stats-routes.js';
+import { registerAdminChatRoutes } from './routes/admin/chat-routes.js';
+import { createChatRealtimeService } from './chat-realtime-service.js';
 import {
   db,
   formatDateKey,
@@ -55,6 +61,7 @@ if (!sessionSecretConfigured) {
 }
 
 const app = express();
+const httpServer = http.createServer(app);
 const {
   getTurnstileEnabled,
   getCnyThemeEnabled,
@@ -204,6 +211,7 @@ const sessionStore = new SqliteStore({
     intervalMs: 15 * 60 * 1000,
   },
 });
+const SESSION_COOKIE_NAME = 'connect.sid';
 
 app.use(
   session({
@@ -218,6 +226,44 @@ app.use(
     },
   })
 );
+
+const parseSessionIdFromRequest = (request) => {
+  const cookieHeader = String(request?.headers?.cookie || '').trim();
+  if (!cookieHeader) {
+    return '';
+  }
+  const parsedCookies = cookie.parse(cookieHeader);
+  const rawValue = String(parsedCookies?.[SESSION_COOKIE_NAME] || '').trim();
+  if (!rawValue) {
+    return '';
+  }
+  if (!rawValue.startsWith('s:')) {
+    return rawValue;
+  }
+  const unsigned = signature.unsign(rawValue.slice(2), sessionSecret);
+  return unsigned || '';
+};
+
+const getAdminFromRequest = (request) => {
+  const sessionId = parseSessionIdFromRequest(request);
+  if (!sessionId) {
+    return Promise.resolve(null);
+  }
+  return new Promise((resolve) => {
+    sessionStore.get(sessionId, (error, sessionData) => {
+      if (error || !sessionData?.admin) {
+        resolve(null);
+        return;
+      }
+      const admin = sessionData.admin;
+      resolve({
+        id: typeof admin.id === 'number' ? admin.id : null,
+        username: String(admin.username || ''),
+        role: String(admin.role || ''),
+      });
+    });
+  });
+};
 
 const ensureAdminUser = () => {
   if (!adminEnabled) {
@@ -345,28 +391,87 @@ const importVocabularyFromFiles = () => {
   return { added, total: items.length };
 };
 
-const containsSensitiveWord = (text) => {
-  const stripUrlsForSensitiveCheck = (value) => {
-    const input = String(value || '');
-    if (!input) return '';
+const stripUrlsForSensitiveCheck = (value) => {
+  const input = String(value || '');
+  if (!input) return '';
 
-    // 避免图床/链接域名触发误判（例如域名包含被词库命中的子串）。
-    return input
-      .replace(/\bhttps?:\/\/[^\s)]+/gi, '')
-      .replace(/\/meme\/[^\s)]+/gi, '')
-      .replace(/\[:[^\]\n]{1,40}:\]/g, '')
-      .replace(/\b(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/[^\s]*)?/gi, '');
-  };
+  // 避免图床/链接域名触发误判（例如域名包含被词库命中的子串）。
+  return input
+    .replace(/\bhttps?:\/\/[^\s)]+/gi, '')
+    .replace(/\/meme\/[^\s)]+/gi, '')
+    .replace(/\[:[^\]\n]{1,40}:\]/g, '')
+    .replace(/\b(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/[^\s]*)?/gi, '');
+};
 
-  const normalizedText = normalizeText(stripUrlsForSensitiveCheck(text));
-  if (!normalizedText) {
-    return false;
+const sensitiveWordSegmenter = typeof Intl !== 'undefined' && typeof Intl.Segmenter === 'function'
+  ? new Intl.Segmenter('zh-CN', { granularity: 'word' })
+  : null;
+
+const tokenizeSensitiveText = (value) => {
+  const input = String(value || '');
+  if (!input) {
+    return [];
   }
-  const words = loadVocabulary();
+
+  if (sensitiveWordSegmenter) {
+    const tokens = [];
+    for (const segment of sensitiveWordSegmenter.segment(input)) {
+      if (segment?.isWordLike === false) {
+        continue;
+      }
+      const normalized = normalizeText(segment?.segment || '');
+      if (normalized) {
+        tokens.push(normalized);
+      }
+    }
+    if (tokens.length) {
+      return tokens;
+    }
+  }
+
+  return input
+    .split(/[^\p{L}\p{N}]+/u)
+    .map((item) => normalizeText(item))
+    .filter(Boolean);
+};
+
+const containsSensitiveWord = (text) => {
+  const words = loadVocabulary().filter(Boolean);
   if (!words.length) {
     return false;
   }
-  return words.some((word) => normalizedText.includes(word));
+
+  const tokens = tokenizeSensitiveText(stripUrlsForSensitiveCheck(text));
+  if (!tokens.length) {
+    return false;
+  }
+
+  const maxWordLength = words.reduce((max, word) => Math.max(max, word.length), 0);
+  if (maxWordLength <= 0) {
+    return false;
+  }
+
+  for (const token of tokens) {
+    for (const word of words) {
+      if (token.includes(word)) {
+        return true;
+      }
+    }
+  }
+
+  const candidates = new Set();
+  for (let i = 0; i < tokens.length; i += 1) {
+    let merged = '';
+    for (let j = i; j < tokens.length; j += 1) {
+      merged += tokens[j];
+      if (merged.length > maxWordLength) {
+        break;
+      }
+      candidates.add(merged);
+    }
+  }
+
+  return words.some((word) => candidates.has(word));
 };
 
 const RATE_LIMITS = {
@@ -402,17 +507,29 @@ const getOnlineCount = () => {
 };
 
 const normalizeIp = (value) => {
-  const raw = String(value || '').trim();
+  let raw = String(value || '').trim();
   if (!raw) return '';
-  const first = raw.split(',')[0].trim();
-  if (!first) return '';
-  if (first.startsWith('::ffff:')) {
-    return first.slice(7);
+  if (raw.includes(',')) {
+    raw = raw.split(',')[0].trim();
   }
-  if (first.includes('.') && first.includes(':')) {
-    return first.replace(/:\d+$/, '');
+  if (!raw) return '';
+  raw = raw.replace(/^for=/i, '').trim();
+  raw = raw.replace(/^"+|"+$/g, '').trim();
+  if (!raw || raw.toLowerCase() === 'unknown') return '';
+  if (raw.startsWith('[')) {
+    const end = raw.indexOf(']');
+    if (end > 1) {
+      raw = raw.slice(1, end);
+    }
   }
-  return first;
+  raw = raw.replace(/%[0-9a-z_.-]+$/i, '');
+  if (raw.startsWith('::ffff:')) {
+    return raw.slice(7);
+  }
+  if (raw.includes('.') && raw.includes(':')) {
+    return raw.replace(/:\d+$/, '');
+  }
+  return raw;
 };
 
 const isValidIpv4 = (value) => {
@@ -436,12 +553,38 @@ const getHeaderIp = (headerValue) => {
   return ipv4 || candidates[0] || '';
 };
 
+const getForwardedHeaderIp = (headerValue) => {
+  const raw = Array.isArray(headerValue) ? headerValue.join(',') : String(headerValue || '');
+  if (!raw.trim()) return '';
+  const parts = raw.split(',');
+  const candidates = parts
+    .map((part) => {
+      const forToken = String(part || '')
+        .split(';')
+        .map((token) => token.trim())
+        .find((token) => /^for=/i.test(token));
+      if (!forToken) return '';
+      const parsed = forToken.split('=').slice(1).join('=').trim();
+      return normalizeIp(parsed);
+    })
+    .filter(Boolean);
+  const ipv4 = candidates.find((ip) => isValidIpv4(ip));
+  return ipv4 || candidates[0] || '';
+};
+
 const getClientIp = (req) => {
-  const cfIp = getHeaderIp(req.headers['cf-connecting-ip']);
+  const headers = req?.headers || {};
+  const cfIp = getHeaderIp(headers['cf-connecting-ip']);
   if (cfIp) return cfIp;
-  const trueClientIp = getHeaderIp(req.headers['true-client-ip']);
+  const trueClientIp = getHeaderIp(headers['true-client-ip']);
   if (trueClientIp) return trueClientIp;
-  const forwarded = getHeaderIp(req.headers['x-forwarded-for']);
+  const realIp = getHeaderIp(headers['x-real-ip']);
+  if (realIp) return realIp;
+  const clientIp = getHeaderIp(headers['x-client-ip']);
+  if (clientIp) return clientIp;
+  const forwardedFor = getHeaderIp(headers['x-forwarded-for']);
+  if (forwardedFor) return forwardedFor;
+  const forwarded = getForwardedHeaderIp(headers.forwarded);
   if (forwarded) return forwarded;
   return normalizeIp(req.socket?.remoteAddress) || normalizeIp(req.ip) || 'unknown';
 };
@@ -637,7 +780,7 @@ const enforceRateLimit = (req, res, action, fingerprint) => {
   return true;
 };
 
-const BAN_PERMISSIONS = ['post', 'comment', 'like', 'view', 'site'];
+const BAN_PERMISSIONS = ['post', 'comment', 'like', 'view', 'site', 'chat'];
 
 const parsePermissions = (value) => {
   if (!value) {
@@ -966,6 +1109,19 @@ const buildCommentTree = (rows) => {
 };
 
 const hotScoreSql = '(views_count * 0.2 + likes_count * 3 + comments_count * 2)';
+const chatRealtime = createChatRealtimeService({
+  server: httpServer,
+  db,
+  hashFingerprint,
+  getClientIp,
+  containsSensitiveWord,
+  isBannedFor,
+  upsertBan,
+  BAN_PERMISSIONS,
+  logAdminAction,
+  getAdminFromRequest,
+  adminNickname: '闰土',
+});
 
 registerPublicSystemRoutes(app, {
   db,
@@ -979,6 +1135,17 @@ registerPublicSystemRoutes(app, {
   FEEDBACK_LIMIT_MS,
   crypto,
 });
+registerPublicChatRoutes(app, {
+  db,
+  requireFingerprint,
+  checkBanFor,
+  enforceRateLimit,
+  getClientIp,
+  incrementDailyStat,
+  formatDateKey,
+  crypto,
+  chatRealtime,
+});
 
 registerPublicSiteRoutes(app, {
   getClientIp,
@@ -987,6 +1154,7 @@ registerPublicSiteRoutes(app, {
   mergePermissions,
   buildSettingsResponse,
   getAnnouncement,
+  chatRealtime,
 });
 registerPublicPostsRoutes(app, {
   db,
@@ -1046,6 +1214,7 @@ registerAdminReportsRoutes(app, {
   resolveBanOptions,
   upsertBan,
   BAN_PERMISSIONS,
+  chatRealtime,
 });
 
 registerAdminPostsRoutes(app, {
@@ -1088,6 +1257,12 @@ registerAdminBansRoutes(app, {
   upsertBan,
   BAN_PERMISSIONS,
   logAdminAction,
+});
+registerAdminChatRoutes(app, {
+  db,
+  requireAdmin,
+  requireAdminCsrf,
+  chatRealtime,
 });
 registerAdminAuditRoutes(app, {
   db,
@@ -1157,7 +1332,7 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: '服务器错误' });
 });
 
-app.listen(PORT, () => {
+httpServer.listen(PORT, () => {
   console.log(`API server running on ${PORT}`);
 });
 

@@ -52,6 +52,11 @@ export default defineConfig(({ mode }) => {
             target: `http://localhost:${apiPort}`,
             changeOrigin: true,
           },
+          '^/ws/': {
+            target: `ws://localhost:${apiPort}`,
+            ws: true,
+            changeOrigin: true,
+          },
         },
       },
       plugins: [react()],

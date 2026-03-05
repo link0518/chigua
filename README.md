@@ -1,6 +1,6 @@
 # 吃瓜社（GossipSketch）
 
-一个以“匿名吃瓜 / 发帖 / 评论 / 举报 / 后台审核”为核心的轻量社区项目：前端使用 Vite + React + TypeScript，后端使用 Express + SQLite（better-sqlite3），同仓库内同时提供前端与后端。
+一个以“匿名吃瓜 / 发帖 / 评论 / 举报 / 在线聊天室 / 后台审核”为核心的轻量社区项目：前端使用 Vite + React + TypeScript，后端使用 Express + SQLite（better-sqlite3），同仓库内同时提供前端与后端。
 
 > 说明：仓库历史 `README.md` 曾出现编码异常（非 UTF-8）。当前版本为 UTF-8 文档，方便后续维护与检索。
 
@@ -74,9 +74,10 @@ npm run dev:full
 - `App.tsx`：顶层布局与“轻路由”（基于 `window.location.pathname`）
 - `api.ts`：前端 API 封装（统一前缀 `/api`、指纹与 CSRF 处理）
 - `components/`：页面与通用组件（含后台 UI：`AdminGate`/`AdminDashboard`）
+- `components/ChatRoomView.tsx`：匿名聊天室前端页面（单聊天室入口）
 - `store/AppContext.tsx`：全局状态与业务动作（调用 `api.ts`）
 - `types.ts`：共享类型定义
-- `server/`：后端（路由、鉴权、SQLite、管理逻辑）
+- `server/`：后端（路由、鉴权、SQLite、管理逻辑，含 `chat-realtime-service.js` WebSocket 实时服务）
 - `server/data/app.db`：SQLite 数据库文件（运行后生成）
 - `Vocabulary/`：敏感词库文本文件（服务端加载）
 - `scripts/`：构建/性能等脚本
@@ -98,4 +99,3 @@ npm run dev:full
 5. `docs/05-后台管理功能.md`
 6. `docs/06-部署与运维.md`
 7. `docs/07-变更记录与文档更新流程.md`
-

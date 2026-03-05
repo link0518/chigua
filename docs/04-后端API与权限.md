@@ -18,7 +18,7 @@
 
 ### 1.4 指纹（X-Client-Fingerprint）
 
-后端依赖指纹做频控/风控与通知投递。前端会按路径选择性附带 `X-Client-Fingerprint`（见 `api.ts` 的 `shouldAttachFingerprint()`）。
+后端依赖指纹做频控/风控、通知投递与聊天室身份识别。前端会按路径选择性附带 `X-Client-Fingerprint`（见 `api.ts` 的 `shouldAttachFingerprint()`）。
 
 ## 2. 公共 API（无需管理员）
 
@@ -26,7 +26,7 @@
 
 - `GET /api/health`：健康检查
 - `GET /api/access`：访问控制状态（是否被封禁、过期时间等）
-- `GET /api/settings`：公开设置（`turnstileEnabled`、`cnyThemeEnabled`、`cnyThemeAutoActive`、`cnyThemeActive`）
+- `GET /api/settings`：公开设置（`turnstileEnabled`、`cnyThemeEnabled`、`cnyThemeAutoActive`、`cnyThemeActive`、`chatEnabled`）
 - `GET /api/announcement`：公告内容
 
 在线/通知/彩蛋：
@@ -36,6 +36,14 @@
 - `POST /api/notifications/read`：标记通知已读
 - `GET /api/easter-eggs/streak7`：查询“连续登录 7 天”状态
 - `POST /api/easter-eggs/streak7/seen`：标记彩蛋已看过
+
+聊天室（单房间）：
+
+- `GET /api/chat/online`：获取当前在线人数与在线用户（按人去重）
+- `GET /api/chat/history`：拉取历史消息（分页）
+- `POST /api/chat/messages/:id/report`：举报聊天室消息
+- `WS /ws/chat`：聊天室实时链路（join/send/leave、在线广播、消息广播、管理事件推送）
+- 关闭聊天室时：`GET /api/chat/online` / `GET /api/chat/history` / `POST /api/chat/messages/:id/report` 会返回 `503`
 
 反馈：
 
@@ -72,7 +80,8 @@
 举报处置：
 
 - `GET /api/reports`：获取待处理举报（管理员）
-- `POST /api/reports/:id/action`：处理举报（ignore/delete/ban 等）（管理员 + CSRF）
+- `POST /api/reports/:id/action`：处理举报（ignore/delete/mute/ban 等）（管理员 + CSRF）
+- 说明：聊天室发言举报支持 `mute`（禁言）；执行 `ban` 时可通过 `deleteChatMessage` 选择是否删除被举报消息。
 - `POST /api/admin/reports/batch`：批量处理举报（管理员 + CSRF）
 
 帖子管理：
@@ -94,6 +103,20 @@
 - `POST /api/admin/feedback/:id/action`：处理反馈（读/删/封禁等）（管理员 + CSRF）
 - `GET /api/admin/bans`：封禁列表（管理员）
 - `POST /api/admin/bans/action`：封禁/解封（管理员 + CSRF）
+
+聊天室管理：
+
+- `GET /api/admin/chat/config`：获取聊天室配置（管理员）
+- `POST /api/admin/chat/config`：更新聊天室配置（管理员 + CSRF）
+- `GET /api/admin/chat/online`：后台查看在线用户（含指纹哈希）
+- `GET /api/admin/chat/messages`：后台查看聊天消息（可含已删除）
+- `GET /api/admin/chat/mutes`：后台查看禁言列表
+- `POST /api/admin/chat/messages/:id/delete`：删除聊天消息（管理员 + CSRF）
+- `POST /api/admin/chat/users/:fingerprint/mute`：禁言用户（管理员 + CSRF）
+- `POST /api/admin/chat/users/:fingerprint/unmute`：解除禁言（管理员 + CSRF）
+- `POST /api/admin/chat/users/:fingerprint/kick`：踢出在线用户（管理员 + CSRF）
+- `POST /api/admin/chat/users/:fingerprint/ban`：封禁用户（聊天室级或站点级，管理员 + CSRF）
+- `POST /api/admin/chat/users/:fingerprint/unban`：解除封禁（管理员 + CSRF）
 
 审计/统计：
 
@@ -122,5 +145,4 @@
 
 ## 4. 权限/限流补充说明
 
-服务端存在按行为的频控配置（例如评论频控）；封禁权限会影响发帖/评论/点赞/浏览/访问站点等（具体以后端判断为准）。
-
+服务端存在按行为的频控配置（例如评论频控）；封禁权限会影响发帖/评论/点赞/浏览/访问站点/聊天室等（具体以后端判断为准）。

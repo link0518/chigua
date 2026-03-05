@@ -29,6 +29,7 @@ const FeedView = React.lazy(() => import('./components/FeedView'));
 const SearchView = React.lazy(() => import('./components/SearchView'));
 const AdminGate = React.lazy(() => import('./components/AdminGate'));
 const FavoritesView = React.lazy(() => import('./components/FavoritesView'));
+const ChatRoomView = React.lazy(() => import('./components/ChatRoomView'));
 
 const normalizePath = (path: string) => {
   if (!path || path === '/') {
@@ -49,6 +50,9 @@ const resolveViewFromPath = (path: string) => {
   if (normalized === '/favorites') {
     return ViewType.FAVORITES;
   }
+  if (normalized === '/chat') {
+    return ViewType.CHAT;
+  }
   if (normalized === '/' || /^\/post\/[^/]+$/.test(normalized)) {
     return ViewType.HOME;
   }
@@ -64,6 +68,9 @@ const getPathForView = (view: ViewType) => {
   }
   if (view === ViewType.FAVORITES) {
     return '/favorites';
+  }
+  if (view === ViewType.CHAT) {
+    return '/chat';
   }
   return '/';
 };
@@ -90,6 +97,9 @@ const App: React.FC = () => {
   const [streakCelebrationDays, setStreakCelebrationDays] = useState(7);
   const streakCelebrationMarkedRef = useRef(false);
   const [backgroundTasksReady, setBackgroundTasksReady] = useState(false);
+  const chatEnabled = state.settings.chatEnabled;
+  const isChatView = currentView === ViewType.CHAT;
+  const showSiteChrome = currentView !== ViewType.ADMIN && !isChatView;
   const isCnyTheme = currentView !== ViewType.ADMIN && state.settings.cnyThemeActive;
 
   useEffect(() => {
@@ -172,6 +182,19 @@ const App: React.FC = () => {
       document.body.classList.remove('theme-cny');
     };
   }, [isCnyTheme]);
+
+  useEffect(() => {
+    if (chatEnabled) {
+      return;
+    }
+    if (currentView !== ViewType.CHAT) {
+      return;
+    }
+    setCurrentView(ViewType.HOME);
+    if (window.location.pathname !== '/') {
+      window.history.replaceState({}, '', '/');
+    }
+  }, [chatEnabled, currentView]);
 
   useEffect(() => {
     let active = true;
@@ -286,6 +309,9 @@ const App: React.FC = () => {
   }, []);
 
   const navigate = useCallback((view: ViewType) => {
+    if (view === ViewType.CHAT && !chatEnabled) {
+      return;
+    }
     const targetPath = getPathForView(view);
     if (view === ViewType.HOME && currentView === ViewType.HOME) {
       window.dispatchEvent(new CustomEvent('home:refresh'));
@@ -295,7 +321,7 @@ const App: React.FC = () => {
     if (window.location.pathname !== targetPath) {
       window.history.pushState({}, '', targetPath);
     }
-  }, [currentView]);
+  }, [chatEnabled, currentView]);
 
   useEffect(() => {
     if (!backgroundTasksReady) {
@@ -427,6 +453,11 @@ const App: React.FC = () => {
         return <SearchView />;
       case ViewType.FAVORITES:
         return <FavoritesView />;
+      case ViewType.CHAT:
+        if (!chatEnabled) {
+          return <HomeView />;
+        }
+        return <ChatRoomView onExitToFeed={() => navigate(ViewType.HOME)} />;
       case ViewType.ADMIN:
         return (
           <React.Suspense
@@ -518,7 +549,7 @@ const App: React.FC = () => {
         subtitle="彩纸礼花送给你～"
       />
       {/* Top Navigation */}
-      {currentView !== ViewType.ADMIN && (
+      {showSiteChrome && (
         <header className={`sticky top-0 z-50 w-full border-b-2 px-4 md:px-6 py-3 shadow-[0_4px_0_0_rgba(0,0,0,0.1)] min-h-[96px] sm:min-h-[72px] bg-opacity-95 backdrop-blur-sm ${isCnyTheme ? 'border-cny-dark-red bg-gradient-to-r from-cny-dark-red via-cny-red to-cny-dark-red' : 'border-black bg-[#f9f7f1]'}`}>
           {isCnyTheme && <HeaderDecoration />}
           <div className="absolute top-full left-0 w-full h-2 z-10 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAiIGhlaWdodD0iMTAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHBhdGggZD0iTTAgMTAgTTEwIDAgTDIwIDEwIiBmaWxsPSJub25lIiBzdHJva2U9IiMwMDAiIHN0cm9rZS13aWR0aD0iMSIvPjwvc3ZnPg==')] opacity-10"></div>
@@ -647,6 +678,17 @@ const App: React.FC = () => {
               </button>
             </div>
           </div>
+          {chatEnabled && (
+            <button
+              onClick={() => navigate(ViewType.CHAT)}
+              className={`hidden sm:flex absolute right-4 md:right-6 top-1/2 -translate-y-1/2 items-center justify-center rounded-full px-3 py-2 sm:px-4 sm:py-2.5 border-2 transition-all shadow-sketch active:shadow-sketch-active active:translate-x-[2px] active:translate-y-[2px] z-20 ${isCnyTheme ? 'border-cny-gold bg-cny-paper text-cny-dark-red hover:bg-cny-gold/20' : 'border-ink bg-white hover:bg-highlight'}`}
+            >
+              <span className="flex items-center gap-2 font-sans text-sm sm:text-base font-semibold whitespace-nowrap">
+                <MessageCircle className="w-4 h-4 shrink-0" />
+                <span className="leading-none">{'\u804a\u5929\u5ba4'}</span>
+              </span>
+            </button>
+          )}
           {/* Mobile Nav Dropdown */}
           {mobileMenuOpen && (
             <div className={`sm:hidden absolute top-full left-0 w-full border-b-2 shadow-xl p-4 flex flex-col gap-3 animate-in slide-in-from-top-2 z-50 ${isCnyTheme ? 'bg-cny-paper border-cny-dark-red' : 'bg-paper border-ink'}`}>
@@ -678,6 +720,15 @@ const App: React.FC = () => {
                   setMobileMenuOpen(false);
                 }}
               />
+              {chatEnabled && (
+                <MobileNavItem
+                  label="聊天室"
+                  onClick={() => {
+                    navigate(ViewType.CHAT);
+                    setMobileMenuOpen(false);
+                  }}
+                />
+              )}
               <MobileNavItem
                 label="公告"
                 dot={announcementUnread}
@@ -736,7 +787,7 @@ const App: React.FC = () => {
       </Modal>
 
       {/* Footer only for non-admin */}
-      {currentView !== ViewType.ADMIN && (
+      {showSiteChrome && (
         <footer className={`w-full py-4 mt-auto transition-all ${isCnyTheme ? 'border-t border-[#FFE0B2] bg-[#FFF8E1]' : 'border-t-2 border-black bg-paper/90'}`}>
           <div className="max-w-3xl mx-auto px-4">
             <div className={`flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-xs font-sans ${isCnyTheme ? 'text-[#8D6E63]' : 'text-pencil'}`}>

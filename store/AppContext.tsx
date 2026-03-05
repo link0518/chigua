@@ -27,6 +27,7 @@ interface AdminSession {
 }
 
 interface AppSettings {
+  chatEnabled: boolean;
   turnstileEnabled: boolean;
   cnyThemeEnabled: boolean;
   cnyThemeAutoActive: boolean;
@@ -58,7 +59,8 @@ interface AppContextType {
   deletePost: (postId: string) => void;
   reportPost: (postId: string, reason: string) => Promise<void>;
   reportComment: (commentId: string, reason: string) => Promise<void>;
-  handleReport: (reportId: string, action: 'ignore' | 'delete' | 'ban', reason?: string, options?: { permissions?: string[]; expiresAt?: number | null; deleteComment?: boolean }) => Promise<void>;
+  reportChatMessage: (messageId: number, reason: string) => Promise<void>;
+  handleReport: (reportId: string, action: 'ignore' | 'delete' | 'mute' | 'ban', reason?: string, options?: { permissions?: string[]; expiresAt?: number | null; deleteComment?: boolean; deleteChatMessage?: boolean }) => Promise<void>;
   showToast: (message: string, type?: Toast['type']) => void;
   removeToast: (id: string) => void;
   isLiked: (postId: string) => boolean;
@@ -105,6 +107,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     favoritedPosts: new Set(),
     adminSession: { loggedIn: false, checked: false, disabled: false, csrfToken: null },
     settings: {
+      chatEnabled: true,
       turnstileEnabled: true,
       cnyThemeEnabled: false,
       cnyThemeAutoActive: false,
@@ -221,6 +224,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setState((prev) => ({
       ...prev,
       settings: {
+        chatEnabled: typeof data?.chatEnabled === 'boolean'
+          ? data.chatEnabled
+          : prev.settings.chatEnabled,
         turnstileEnabled: typeof data?.turnstileEnabled === 'boolean'
           ? data.turnstileEnabled
           : prev.settings.turnstileEnabled,
@@ -450,10 +456,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     await api.reportComment(commentId, reason);
   }, []);
 
-  const handleReport = useCallback(async (reportId: string, action: 'ignore' | 'delete' | 'ban', reason = '', options?: { permissions?: string[]; expiresAt?: number | null; deleteComment?: boolean }) => {
+  const reportChatMessage = useCallback(async (messageId: number, reason: string) => {
+    await api.reportChatMessage(messageId, reason);
+  }, []);
+
+  const handleReport = useCallback(async (reportId: string, action: 'ignore' | 'delete' | 'mute' | 'ban', reason = '', options?: { permissions?: string[]; expiresAt?: number | null; deleteComment?: boolean; deleteChatMessage?: boolean }) => {
     const report = state.reports.find((item) => item.id === reportId);
     await api.handleReport(reportId, action, reason, options || {});
-    if (action !== 'ignore' && report?.targetId && (report?.targetType || 'post') === 'post') {
+    if ((action === 'delete' || action === 'ban') && report?.targetId && (report?.targetType || 'post') === 'post') {
       deletePost(report.targetId);
     }
     await loadReports();
@@ -502,6 +512,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       deletePost,
       reportPost,
       reportComment,
+      reportChatMessage,
       handleReport,
       showToast,
       removeToast,
@@ -532,6 +543,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       deletePost,
       reportPost,
       reportComment,
+      reportChatMessage,
       handleReport,
       showToast,
       removeToast,

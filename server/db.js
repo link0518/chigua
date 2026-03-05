@@ -104,8 +104,7 @@ CREATE TABLE IF NOT EXISTS reports (
   action TEXT,
   resolved_at INTEGER,
   fingerprint TEXT,
-  reporter_ip TEXT,
-  FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
+  reporter_ip TEXT
 );
 
 CREATE TABLE IF NOT EXISTS report_sessions (
@@ -257,6 +256,53 @@ CREATE TABLE IF NOT EXISTS easter_egg_seen (
   PRIMARY KEY (fingerprint, egg_key)
 );
 
+CREATE TABLE IF NOT EXISTS chat_sessions (
+  id TEXT PRIMARY KEY,
+  fingerprint_hash TEXT NOT NULL,
+  nickname TEXT NOT NULL,
+  joined_at INTEGER NOT NULL,
+  left_at INTEGER,
+  left_reason TEXT,
+  connection_count_peak INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS chat_messages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id TEXT NOT NULL,
+  fingerprint_hash TEXT NOT NULL,
+  ip_snapshot TEXT,
+  nickname_snapshot TEXT NOT NULL,
+  is_admin INTEGER NOT NULL DEFAULT 0,
+  admin_anonymous INTEGER NOT NULL DEFAULT 0,
+  msg_type TEXT NOT NULL,
+  text_content TEXT,
+  image_url TEXT,
+  sticker_shortcode TEXT,
+  reply_to_message_id INTEGER,
+  reply_to_nickname TEXT,
+  reply_preview TEXT,
+  client_msg_id TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  deleted INTEGER NOT NULL DEFAULT 0,
+  deleted_at INTEGER,
+  deleted_by_admin_id INTEGER,
+  delete_reason TEXT
+);
+
+CREATE TABLE IF NOT EXISTS chat_mutes (
+  fingerprint_hash TEXT PRIMARY KEY,
+  muted_until INTEGER,
+  reason TEXT,
+  created_at INTEGER NOT NULL,
+  created_by_admin_id INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS chat_ban_sync (
+  fingerprint_hash TEXT PRIMARY KEY,
+  ip TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_posts_created_at ON posts(created_at);
 CREATE INDEX IF NOT EXISTS idx_posts_deleted ON posts(deleted);
 CREATE INDEX IF NOT EXISTS idx_post_reactions_fingerprint_post_id ON post_reactions_fingerprint(post_id);
@@ -278,6 +324,14 @@ CREATE INDEX IF NOT EXISTS idx_notifications_recipient_read_at ON notifications(
 CREATE INDEX IF NOT EXISTS idx_fingerprint_login_days_fingerprint_date ON fingerprint_login_days(fingerprint, date DESC);
 CREATE INDEX IF NOT EXISTS idx_vocabulary_enabled ON vocabulary_words(enabled);
 CREATE INDEX IF NOT EXISTS idx_vocabulary_updated_at ON vocabulary_words(updated_at);
+CREATE INDEX IF NOT EXISTS idx_chat_sessions_fingerprint_active ON chat_sessions(fingerprint_hash, left_at);
+CREATE INDEX IF NOT EXISTS idx_chat_sessions_joined_at ON chat_sessions(joined_at DESC);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_session_created_at ON chat_messages(session_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_created_at ON chat_messages(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_deleted_created_at ON chat_messages(deleted, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_chat_mutes_muted_until ON chat_mutes(muted_until);
+CREATE INDEX IF NOT EXISTS idx_chat_ban_sync_updated_at ON chat_ban_sync(updated_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_messages_fingerprint_client_msg_id ON chat_messages(fingerprint_hash, client_msg_id);
 `);
 
 const ensureColumn = (table, column, definition) => {
@@ -307,6 +361,82 @@ ensureColumn('banned_fingerprints', 'expires_at', 'INTEGER');
 ensureColumn('banned_fingerprints', 'permissions', 'TEXT');
 ensureColumn('banned_fingerprints', 'reason', 'TEXT');
 ensureColumn('feedback_messages', 'fingerprint', 'TEXT');
+ensureColumn('chat_messages', 'reply_to_message_id', 'INTEGER');
+ensureColumn('chat_messages', 'reply_to_nickname', 'TEXT');
+ensureColumn('chat_messages', 'reply_preview', 'TEXT');
+ensureColumn('chat_messages', 'is_admin', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('chat_messages', 'admin_anonymous', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('chat_messages', 'ip_snapshot', 'TEXT');
+
+const migrateReportsTableForChatTargets = () => {
+  const tableSqlRow = db
+    .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'reports'")
+    .get();
+  const tableSql = String(tableSqlRow?.sql || '');
+  const hasPostForeignKey = /foreign key\s*\(\s*post_id\s*\)\s*references\s+posts/i.test(tableSql);
+  if (!hasPostForeignKey) {
+    return;
+  }
+
+  const migrate = db.transaction(() => {
+    db.exec('DROP TABLE IF EXISTS reports_migrated;');
+    db.exec(`
+      CREATE TABLE reports_migrated (
+        id TEXT PRIMARY KEY,
+        post_id TEXT NOT NULL,
+        comment_id TEXT,
+        target_type TEXT NOT NULL DEFAULT 'post',
+        reason TEXT NOT NULL,
+        content_snippet TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        risk_level TEXT NOT NULL DEFAULT 'low',
+        action TEXT,
+        resolved_at INTEGER,
+        fingerprint TEXT,
+        reporter_ip TEXT
+      );
+    `);
+    db.exec(`
+      INSERT INTO reports_migrated (
+        id,
+        post_id,
+        comment_id,
+        target_type,
+        reason,
+        content_snippet,
+        created_at,
+        status,
+        risk_level,
+        action,
+        resolved_at,
+        fingerprint,
+        reporter_ip
+      )
+      SELECT
+        id,
+        post_id,
+        comment_id,
+        target_type,
+        reason,
+        content_snippet,
+        created_at,
+        status,
+        risk_level,
+        action,
+        resolved_at,
+        fingerprint,
+        reporter_ip
+      FROM reports;
+    `);
+    db.exec('DROP TABLE reports;');
+    db.exec('ALTER TABLE reports_migrated RENAME TO reports;');
+  });
+  migrate();
+  db.exec('CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status);');
+};
+
+migrateReportsTableForChatTargets();
 
 const hasColumn = (table, column) => {
   const columns = db.prepare(`PRAGMA table_info(${table})`).all();

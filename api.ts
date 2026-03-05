@@ -43,6 +43,10 @@ const shouldAttachFingerprint = (path: string, options: RequestInit) => {
     return true;
   }
 
+  if (cleanPath.startsWith('/chat')) {
+    return true;
+  }
+
   if (cleanPath.startsWith('/admin')) {
     return true;
   }
@@ -138,6 +142,12 @@ export const api = {
   }),
   getNotifications: (params = {}) => apiFetch(`/notifications${toQuery(params)}`),
   readNotifications: () => apiFetch('/notifications/read', { method: 'POST' }),
+  getChatOnline: () => apiFetch('/chat/online'),
+  getChatHistory: (params = {}) => apiFetch(`/chat/history${toQuery(params)}`),
+  reportChatMessage: (messageId, reason) => apiFetch(`/chat/messages/${messageId}/report`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  }),
   getStreak7Status: () => apiFetch('/easter-eggs/streak7'),
   markStreak7Seen: () => apiFetch('/easter-eggs/streak7/seen', { method: 'POST' }),
   createFeedback: (content, email, wechat = '', qq = '', turnstileToken) => apiFetch('/feedback', {
@@ -147,7 +157,7 @@ export const api = {
   getReports: (status?: string, search?: string) => apiFetch(`/reports${toQuery({ status, search })}`),
   handleReport: (reportId, action, reason = '', options = {}) => apiFetch(`/reports/${reportId}/action`, {
     method: 'POST',
-    body: JSON.stringify({ action, reason, ...options }),
+    body: JSON.stringify({ action: String(action || '').trim().toLowerCase(), reason, ...options }),
   }),
   getAdminPosts: (params = {}) => apiFetch(`/admin/posts${toQuery(params)}`),
   createAdminPost: (content, tags = [], options = {}) => apiFetch('/admin/posts', {
@@ -184,6 +194,42 @@ export const api = {
   handleAdminBan: (action, type, value, reason = '', options = {}) => apiFetch('/admin/bans/action', {
     method: 'POST',
     body: JSON.stringify({ action, type, value, reason, ...options }),
+  }),
+  getAdminChatOnline: () => apiFetch('/admin/chat/online'),
+  getAdminChatConfig: () => apiFetch('/admin/chat/config'),
+  updateAdminChatConfig: (config = {}) => apiFetch('/admin/chat/config', {
+    method: 'POST',
+    body: JSON.stringify(config || {}),
+  }),
+  getAdminChatMessages: (params = {}) => apiFetch(`/admin/chat/messages${toQuery(params)}`),
+  getAdminChatMutes: () => apiFetch('/admin/chat/mutes'),
+  deleteAdminChatMessage: (messageId, reason = '') => apiFetch(`/admin/chat/messages/${messageId}/delete`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  }),
+  muteAdminChatUser: (fingerprintHash, options = {}) => apiFetch(`/admin/chat/users/${encodeURIComponent(fingerprintHash)}/mute`, {
+    method: 'POST',
+    body: JSON.stringify(options || {}),
+  }),
+  muteAdminChatSession: (sessionId, options = {}) => apiFetch(`/admin/chat/sessions/${encodeURIComponent(sessionId)}/mute`, {
+    method: 'POST',
+    body: JSON.stringify(options || {}),
+  }),
+  unmuteAdminChatUser: (fingerprintHash, reason = '') => apiFetch(`/admin/chat/users/${encodeURIComponent(fingerprintHash)}/unmute`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  }),
+  kickAdminChatUser: (fingerprintHash, reason = '') => apiFetch(`/admin/chat/users/${encodeURIComponent(fingerprintHash)}/kick`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  }),
+  banAdminChatUser: (fingerprintHash, options = {}) => apiFetch(`/admin/chat/users/${encodeURIComponent(fingerprintHash)}/ban`, {
+    method: 'POST',
+    body: JSON.stringify(options || {}),
+  }),
+  unbanAdminChatUser: (fingerprintHash, reason = '') => apiFetch(`/admin/chat/users/${encodeURIComponent(fingerprintHash)}/unban`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
   }),
   sendHeartbeat: () => apiFetch('/online/heartbeat', { method: 'POST' }),
   getAccessStatus: () => apiFetch('/access'),

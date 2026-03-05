@@ -4,6 +4,7 @@ export enum ViewType {
   FEED = 'FEED',
   SEARCH = 'SEARCH',
   FAVORITES = 'FAVORITES',
+  CHAT = 'CHAT',
   ADMIN = 'ADMIN',
   NOT_FOUND = 'NOT_FOUND'
 }
@@ -29,7 +30,7 @@ export interface Post {
 export interface Report {
   id: string;
   targetId: string;
-  targetType: 'post' | 'comment';
+  targetType: 'post' | 'comment' | 'chat';
   postId?: string;
   reason: string;
   contentSnippet: string;
@@ -146,4 +147,58 @@ export interface FeedbackMessage {
 export interface ChartDataPoint {
   name: string;
   value: number;
+}
+
+export interface ChatReplyRef {
+  id: number;
+  nickname: string;
+  preview: string;
+}
+
+export interface ChatMessage {
+  id: number;
+  sessionId: string;
+  nickname: string;
+  isAdmin?: boolean;
+  type: 'text' | 'image' | 'sticker';
+  content: string;
+  imageUrl?: string;
+  stickerCode?: string;
+  clientMsgId?: string;
+  createdAt: number;
+  deleted?: boolean;
+  deletedAt?: number | null;
+  deleteReason?: string | null;
+  pending?: boolean;
+  replyTo?: ChatReplyRef | null;
+}
+
+export interface ChatOnlineUser {
+  nickname: string;
+  isAdmin?: boolean;
+  joinedAt: number;
+  lastActiveAt: number;
+  connections: number;
+}
+
+export interface AdminChatOnlineUser extends ChatOnlineUser {
+  fingerprintHash: string;
+  sessionId: string;
+  hiddenInOnline?: boolean;
+}
+
+export interface ChatMuteEntry {
+  fingerprintHash: string;
+  mutedUntil: number | null;
+  reason: string | null;
+  createdAt: number;
+  createdByAdminId: number | null;
+}
+
+export interface ChatRoomConfig {
+  chatEnabled: boolean;
+  muteAll: boolean;
+  adminOnly: boolean;
+  messageIntervalMs: number;
+  maxTextLength: number;
 }

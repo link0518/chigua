@@ -158,7 +158,8 @@ export const registerAdminChatRoutes = (app, deps) => {
       return res.status(400).json({ error: '指纹不能为空' });
     }
     const reason = String(req.body?.reason || '').trim();
-    const payload = chatRealtime.unbanByAdmin({ req, fingerprintHash, reason });
+    const ip = String(req.body?.ip || '').trim();
+    const payload = chatRealtime.unbanByAdmin({ req, fingerprintHash, reason, ip });
     return res.json(payload);
   });
 };

@@ -2,11 +2,25 @@
 
 ### Changed
 
+- 新增单聊天室入口 `/chat`，前端支持匿名实时聊天、在线人数/用户列表（按人去重）、退出重进随机“侠士编号”。
+- 后端新增 WebSocket 实时服务（`/ws/chat`），支持消息广播、在线状态广播、断线重连与心跳清理。
+- 聊天室管理新增规则配置：支持聊天室开关、全体禁言、仅管理员发言、发言频率与单条最大字数限制。
+- 关闭聊天室时，前台聊天室入口同步关闭；在线连接收到 `chat.closed` 后退出并停止重连。
+- 封禁权限扩展 `chat`，可对聊天室进行独立封禁，不影响既有帖子/评论权限模型。
 - 后端管理高风险接口完成 service/repository 下沉：帖子批量处置、举报处置、封禁/解封逻辑从路由中抽离到可复用服务层。
 - server/routes/admin/posts-routes.js、server/routes/admin/reports-routes.js、server/routes/admin/bans-routes.js 改为调用统一 moderation service，保持原有接口行为与返回结构。
 
 ### Added
 
+- 新增聊天室数据表：`chat_sessions`、`chat_messages`、`chat_mutes`（含消息去重与删除字段）。
+- 新增公共聊天室接口：`GET /api/chat/online`、`GET /api/chat/history`。
+- 新增聊天室配置接口：`GET /api/admin/chat/config`、`POST /api/admin/chat/config`。
+- 新增 `GET /api/settings` 字段 `chatEnabled`，用于前台聊天室入口显隐控制。
+- 聊天室关闭时，`/api/chat/online`、`/api/chat/history`、`/api/chat/messages/:id/report` 统一返回 `503`。
+- 新增后台聊天室管理接口：在线用户、消息删除、禁言/解禁、踢出、封禁/解封。
+- 新增前端聊天室页面 `components/ChatRoomView.tsx`，复用现有表情包与图床上传能力。
+- 新增后台聊天室管理面板 `components/AdminChatPanel.tsx` 并接入 `AdminDashboard`。
+- 文档更新：`README.md`、`docs/03-数据模型(SQLite).md`、`docs/04-后端API与权限.md`、`docs/05-后台管理功能.md`。
 - 新增 server/repositories/moderation-repository.js，集中管理高风险接口涉及的数据库访问。
 - 新增 server/services/admin-moderation-service.js，统一封装批量处置、举报处置、封禁解封等业务编排。
 - 新增回归测试 server/tests/admin-moderation-service.test.js，覆盖帖子批量封禁、举报封禁、封禁解封、举报批量处置四个关键场景。
