@@ -19,10 +19,11 @@ const PostItem: React.FC<{
   onComment: () => void;
   onShare: () => void;
   onReport: () => void;
+  onTagClick: (tag: string) => void;
   isLiked: boolean;
   isDisliked: boolean;
   isFavorited: boolean;
-}> = ({ post, rank, onLike, onDislike, onFavorite, onComment, onShare, onReport, isLiked, isDisliked, isFavorited }) => {
+}> = ({ post, rank, onLike, onDislike, onFavorite, onComment, onShare, onReport, onTagClick, isLiked, isDisliked, isFavorited }) => {
   const isDeveloperPost = post.author === 'admin';
   return (
     <div className={`relative group ${rank ? 'mb-10' : 'mb-6'} z-0`}>
@@ -40,8 +41,15 @@ const PostItem: React.FC<{
         {/* Header Tags */}
         <div className="flex gap-2 mb-3 flex-wrap">
           {post.isHot && <Badge color="bg-highlight">🔥 热门</Badge>}
-          {post.tags?.map(tag => (
-             <Badge key={tag}>{tag}</Badge>
+          {post.tags?.slice(0, 2).map(tag => (
+             <button
+              type="button"
+              key={tag}
+              className="inline-flex"
+              onClick={() => onTagClick(tag)}
+            >
+              <Badge>#{tag}</Badge>
+            </button>
           ))}
         </div>
 
@@ -207,6 +215,20 @@ const FeedView: React.FC = () => {
     }
   };
 
+  const handleTagClick = (tag: string) => {
+    const normalized = String(tag || '').trim();
+    if (!normalized) {
+      return;
+    }
+    const params = new URLSearchParams();
+    params.set('tag', normalized);
+    const targetPath = `/search?${params.toString()}`;
+    if (window.location.pathname + window.location.search !== targetPath) {
+      window.history.pushState({}, '', targetPath);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    }
+  };
+
   return (
     <div className="max-w-2xl mx-auto px-4 pb-20 pt-6">
       <div className="text-center mb-10 relative">
@@ -263,6 +285,7 @@ const FeedView: React.FC = () => {
               onComment={() => handleComment(post.id, post.content)}
               onShare={() => handleShare(post.id)}
               onReport={() => handleReport(post.id, post.content)}
+              onTagClick={handleTagClick}
               isLiked={isLiked(post.id)}
               isDisliked={isDisliked(post.id)}
               isFavorited={isFavorited(post.id)}

@@ -19,7 +19,55 @@
     createNotification,
     trimPreview,
     crypto,
+    getDefaultPostTags,
   } = deps;
+
+  const MAX_POST_TAGS = 2;
+  const MAX_TAG_LENGTH = 6;
+  const MAX_DEFAULT_TAGS = 50;
+
+  const normalizeTag = (value) => String(value || '')
+    .trim()
+    .replace(/^#+/, '')
+    .replace(/\s+/g, ' ');
+
+  const sanitizeTagList = (input, maxCount = MAX_POST_TAGS) => {
+    const source = Array.isArray(input) ? input : [];
+    const unique = new Set();
+    const result = [];
+    for (const item of source) {
+      const normalized = normalizeTag(item);
+      if (!normalized) {
+        continue;
+      }
+      if (normalized.length > MAX_TAG_LENGTH) {
+        continue;
+      }
+      const key = normalized.toLowerCase();
+      if (unique.has(key)) {
+        continue;
+      }
+      unique.add(key);
+      result.push(normalized);
+      if (result.length >= maxCount) {
+        break;
+      }
+    }
+    return result;
+  };
+
+  const sanitizeTags = (input) => sanitizeTagList(input, MAX_POST_TAGS);
+
+  const escapeLike = (value) => String(value).replace(/[\\%_]/g, (match) => `\\${match}`);
+  const parsePositiveInt = (value, fallback) => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) {
+      return fallback;
+    }
+    const normalized = Math.floor(parsed);
+    return normalized >= 1 ? normalized : fallback;
+  };
+  const buildJsonTagLikePattern = (value) => `%${escapeLike(JSON.stringify(String(value || '')))}%`;
 
 app.get('/api/posts/home', (req, res) => {
   if (!checkBanFor(req, res, 'view', '你已被限制浏览')) {
@@ -117,36 +165,105 @@ app.get('/api/posts/feed', (req, res) => {
   res.json({ items: posts, total: posts.length });
 });
 
+app.get('/api/posts/tags', (req, res) => {
+  if (!checkBanFor(req, res, 'view', '你已被限制浏览')) {
+    return;
+  }
+
+  const limit = Math.min(Math.max(Number(req.query.limit || 50), 1), 200);
+  const defaultTags = sanitizeTagList(getDefaultPostTags?.() || [], MAX_DEFAULT_TAGS).slice(0, limit);
+  if (defaultTags.length === 0) {
+    return res.json({ items: [] });
+  }
+  const defaultTagKeys = new Set(defaultTags.map((tag) => tag.toLowerCase()));
+  const counter = new Map(defaultTags.map((tag) => [tag.toLowerCase(), 0]));
+  const rows = db
+    .prepare(
+      `
+      SELECT tags
+      FROM posts
+      WHERE deleted = 0
+        AND tags IS NOT NULL
+        AND tags != ''
+      ORDER BY created_at DESC
+      LIMIT 5000
+      `
+    )
+    .all();
+  for (const row of rows) {
+    let parsed = [];
+    try {
+      parsed = JSON.parse(String(row.tags || '[]'));
+    } catch {
+      parsed = [];
+    }
+    if (!Array.isArray(parsed)) {
+      continue;
+    }
+    for (const rawTag of sanitizeTagList(parsed, MAX_DEFAULT_TAGS)) {
+      const key = normalizeTag(rawTag).toLowerCase();
+      if (!key || !defaultTagKeys.has(key)) {
+        continue;
+      }
+      counter.set(key, Number(counter.get(key) || 0) + 1);
+    }
+  }
+
+  const items = defaultTags.map((tag) => ({
+    name: tag,
+    count: Number(counter.get(tag.toLowerCase()) || 0),
+  }));
+
+  return res.json({ items });
+});
+
 app.get('/api/posts/search', (req, res) => {
   if (!checkBanFor(req, res, 'view', '你已被限制浏览')) {
     return;
   }
   const keywordRaw = String(req.query.q || '').trim();
-  const page = Math.max(Number(req.query.page || 1), 1);
-  const limit = Math.min(Math.max(Number(req.query.limit || 20), 1), 50);
+  const tag = normalizeTag(req.query.tag || '');
+  const page = parsePositiveInt(req.query.page, 1);
+  const limit = Math.min(parsePositiveInt(req.query.limit, 20), 50);
   const offset = (page - 1) * limit;
   const dateKey = formatDateKey();
   trackDailyVisit(dateKey, req.sessionID);
   const viewerFingerprint = getOptionalFingerprint(req);
 
-  if (!keywordRaw) {
+  if (!keywordRaw && !tag) {
     return res.json({ items: [], total: 0, page, limit });
   }
 
-  // 仅做内容关键字搜索：把 LIKE 的通配符当作字面量，避免用户输入 %/_ 导致意外匹配。
-  const escapeLike = (value) => String(value).replace(/[\\%_]/g, (match) => `\\${match}`);
-  const keyword = `%${escapeLike(keywordRaw)}%`;
+  // 标签/关键字搜索：把 LIKE 的通配符当作字面量，避免用户输入 %/_ 导致意外匹配。
+  const conditions = ['posts.deleted = 0'];
+  const params = [];
+  if (keywordRaw) {
+    const keyword = `%${escapeLike(keywordRaw)}%`;
+    const keywordAsTag = normalizeTag(keywordRaw);
+    if (keywordAsTag) {
+      conditions.push("(posts.content LIKE ? ESCAPE '\\' OR posts.tags LIKE ? ESCAPE '\\')");
+      params.push(keyword, buildJsonTagLikePattern(keywordAsTag));
+    } else {
+      conditions.push("posts.content LIKE ? ESCAPE '\\'");
+      params.push(keyword);
+    }
+  }
+  if (tag) {
+    const tagKeyword = buildJsonTagLikePattern(tag);
+    conditions.push("posts.tags LIKE ? ESCAPE '\\'");
+    params.push(tagKeyword);
+  }
+  const whereClause = `WHERE ${conditions.join(' AND ')}`;
 
   const total = db
     .prepare(
       `
         SELECT COUNT(1) AS count
         FROM posts
-        WHERE deleted = 0
-          AND content LIKE ? ESCAPE '\\'
+        ${whereClause}
       `
     )
-    .get(keyword)?.count ?? 0;
+    .get(...params)?.count ?? 0;
 
   const rows = db
     .prepare(
@@ -161,13 +278,12 @@ app.get('/api/posts/search', (req, res) => {
         LEFT JOIN post_favorites pf
           ON pf.post_id = posts.id
           AND pf.fingerprint = ?
-        WHERE posts.deleted = 0
-          AND posts.content LIKE ? ESCAPE '\\'
+        ${whereClause}
         ORDER BY posts.created_at DESC
         LIMIT ? OFFSET ?
       `
     )
-    .all(viewerFingerprint, viewerFingerprint, keyword, limit, offset);
+    .all(viewerFingerprint, viewerFingerprint, ...params, limit, offset);
 
   const items = rows.map((row) => mapPostRow(row, row.hot_score >= 20));
   return res.json({ items, total, page, limit });
@@ -175,7 +291,7 @@ app.get('/api/posts/search', (req, res) => {
 
 app.post('/api/posts', async (req, res) => {
   const content = String(req.body?.content || '').trim();
-  const tags = Array.isArray(req.body?.tags) ? req.body.tags : [];
+  const tags = sanitizeTags(req.body?.tags);
 
   if (!content) {
     return res.status(400).json({ error: '内容不能为空' });

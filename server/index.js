@@ -65,9 +65,11 @@ const httpServer = http.createServer(app);
 const {
   getTurnstileEnabled,
   getCnyThemeEnabled,
+  getDefaultPostTags,
   buildSettingsResponse,
   setTurnstileEnabled,
   setCnyThemeEnabled,
+  setDefaultPostTags,
 } = createSiteSettingsService({ db, turnstileSecretKey: TURNSTILE_SECRET_KEY });
 
 const PUBLIC_DIR = path.resolve(process.cwd(), 'public');
@@ -1176,6 +1178,7 @@ registerPublicPostsRoutes(app, {
   createNotification,
   trimPreview,
   crypto,
+  getDefaultPostTags,
 });
 
 registerPublicCommentsRoutes(app, {
@@ -1292,8 +1295,10 @@ registerAdminSettingsRoutes(app, {
   buildSettingsResponse,
   setTurnstileEnabled,
   setCnyThemeEnabled,
+  setDefaultPostTags,
   getTurnstileEnabled,
   getCnyThemeEnabled,
+  getDefaultPostTags,
   logAdminAction,
 });
 

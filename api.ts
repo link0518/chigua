@@ -115,7 +115,8 @@ export const api = {
   getHomePosts: (limit, offset = 0) => apiFetch(`/posts/home${toQuery({ limit, offset })}`),
   getPostById: (postId) => apiFetch(`/posts/${postId}`),
   getFeedPosts: (filter, search) => apiFetch(`/posts/feed${toQuery({ filter, search })}`),
-  searchPosts: (q, page = 1, limit = 20) => apiFetch(`/posts/search${toQuery({ q, page, limit })}`),
+  getPostTags: (limit = 50) => apiFetch(`/posts/tags${toQuery({ limit })}`),
+  searchPosts: (q, page = 1, limit = 20, options: { tag?: string } = {}) => apiFetch(`/posts/search${toQuery({ q, page, limit, tag: options.tag })}`),
   createPost: (content, tags = [], turnstileToken) => apiFetch('/posts', {
     method: 'POST',
     body: JSON.stringify({ content, tags, turnstileToken }),
@@ -245,7 +246,7 @@ export const api = {
     method: 'POST',
   }),
   getAdminSettings: () => apiFetch('/admin/settings'),
-  updateAdminSettings: (settings: { turnstileEnabled?: boolean; cnyThemeEnabled?: boolean }) => apiFetch('/admin/settings', {
+  updateAdminSettings: (settings: { turnstileEnabled?: boolean; cnyThemeEnabled?: boolean; defaultPostTags?: string[] }) => apiFetch('/admin/settings', {
     method: 'POST',
     body: JSON.stringify(settings || {}),
   }),

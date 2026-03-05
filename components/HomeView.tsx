@@ -249,6 +249,20 @@ const HomeView: React.FC = () => {
     }
   };
 
+  const openTagSearch = (tag: string) => {
+    const normalized = String(tag || '').trim();
+    if (!normalized) {
+      return;
+    }
+    const params = new URLSearchParams();
+    params.set('tag', normalized);
+    const targetPath = `/search?${params.toString()}`;
+    if (window.location.pathname + window.location.search !== targetPath) {
+      window.history.pushState({}, '', targetPath);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    }
+  };
+
   const handleToggleFavorite = async () => {
     if (!currentPost?.id) {
       return;
@@ -495,7 +509,7 @@ const HomeView: React.FC = () => {
         <div className="relative flex flex-col gap-4 rounded-lg border-2 border-black bg-white p-8 doodle-border !rounded-lg hover:-translate-y-1 transition-transform duration-200 shadow-paper">
 
           {/* Header */}
-          <div className="flex items-center justify-between mb-2">
+          <div className="flex items-start justify-between gap-3 mb-2">
             <div className="flex items-center gap-3">
               {currentPost.author === 'admin' ? (
                 <DeveloperMiniCard timestamp={currentPost.timestamp} size="md" />
@@ -513,24 +527,15 @@ const HomeView: React.FC = () => {
                 </>
               )}
             </div>
-            {/* Tags */}
-            <div className="flex items-center gap-2">
+            {/* Status + Favorite */}
+            <div className="flex items-center gap-2 shrink-0">
               {currentPost.isHot && (
                 <span className="inline-flex items-center whitespace-nowrap bg-alert border border-ink px-2 py-0.5 text-xs font-bold rounded-sm shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] transform -rotate-1">🔥 热门</span>
               )}
-              {currentPost.tags?.slice(0, 2).map((tag, i) => (
-                <span
-                  key={tag}
-                  className={`whitespace-nowrap border border-ink px-2 py-0.5 text-xs font-bold rounded-sm shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] ${['bg-marker-blue', 'bg-marker-green', 'bg-marker-purple', 'bg-marker-orange'][i % 4]
-                    } transform ${i % 2 === 0 ? 'rotate-1' : '-rotate-1'}`}
-                >
-                  {tag}
-                </span>
-              ))}
               <button
                 type="button"
                 onClick={handleToggleFavorite}
-                className={`sm:ml-1 flex shrink-0 items-center justify-center rounded-full px-2.5 py-2 border-2 border-ink transition-all shadow-sketch active:shadow-sketch-active active:translate-x-[2px] active:translate-y-[2px] ${isFavorited(currentPost.id) ? 'bg-marker-yellow hover:bg-marker-yellow/90' : 'bg-white hover:bg-highlight'}`}
+                className={`flex shrink-0 items-center justify-center rounded-full px-2.5 py-2 border-2 border-ink transition-all shadow-sketch active:shadow-sketch-active active:translate-x-[2px] active:translate-y-[2px] ${isFavorited(currentPost.id) ? 'bg-marker-yellow hover:bg-marker-yellow/90' : 'bg-white hover:bg-highlight'}`}
                 title={isFavorited(currentPost.id) ? '取消收藏' : '收藏'}
                 aria-label={isFavorited(currentPost.id) ? '取消收藏' : '收藏'}
               >
@@ -538,6 +543,21 @@ const HomeView: React.FC = () => {
               </button>
             </div>
           </div>
+          {currentPost.tags?.length ? (
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              {currentPost.tags.slice(0, 2).map((tag, i) => (
+                <button
+                  type="button"
+                  key={tag}
+                  onClick={() => openTagSearch(tag)}
+                  className={`whitespace-nowrap border border-ink px-2 py-0.5 text-xs font-bold rounded-sm shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] ${['bg-marker-blue', 'bg-marker-green', 'bg-marker-purple', 'bg-marker-orange'][i % 4]
+                    } transform ${i % 2 === 0 ? 'rotate-1' : '-rotate-1'} hover:opacity-80`}
+                >
+                  #{tag}
+                </button>
+              ))}
+            </div>
+          ) : null}
 
           {/* Body - Markdown Rendered */}
           <div className="text-black text-lg leading-relaxed font-sans py-2">

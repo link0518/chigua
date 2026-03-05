@@ -31,9 +31,40 @@ export const registerAdminPostsRoutes = (app, deps) => {
     logAdminAction,
   });
 
+  const MAX_POST_TAGS = 2;
+  const MAX_TAG_LENGTH = 6;
+  const normalizeTag = (value) => String(value || '')
+    .trim()
+    .replace(/^#+/, '')
+    .replace(/\s+/g, ' ');
+  const sanitizeTags = (input) => {
+    const source = Array.isArray(input) ? input : [];
+    const seen = new Set();
+    const result = [];
+    for (const item of source) {
+      const normalized = normalizeTag(item);
+      if (!normalized) {
+        continue;
+      }
+      if (normalized.length > MAX_TAG_LENGTH) {
+        continue;
+      }
+      const key = normalized.toLowerCase();
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      result.push(normalized);
+      if (result.length >= MAX_POST_TAGS) {
+        break;
+      }
+    }
+    return result;
+  };
+
 app.post('/api/admin/posts', requireAdmin, requireAdminCsrf, (req, res) => {
   const content = String(req.body?.content || '').trim();
-  const tags = Array.isArray(req.body?.tags) ? req.body.tags : [];
+  const tags = sanitizeTags(req.body?.tags);
   const reason = String(req.body?.reason || '').trim();
   const includeDeveloper = Boolean(req.body?.includeDeveloper);
 

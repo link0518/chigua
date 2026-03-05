@@ -32,6 +32,8 @@ const POST_PAGE_SIZE = 10;
 const AUDIT_PAGE_SIZE = 12;
 const FEEDBACK_PAGE_SIZE = 8;
 const VOCABULARY_PAGE_SIZE = 20;
+const MAX_DEFAULT_POST_TAGS = 50;
+const MAX_TAG_LENGTH = 6;
 const BAN_PERMISSION_LABELS: Record<string, string> = {
   post: '发帖',
   comment: '回帖',
@@ -59,6 +61,46 @@ const EMPTY_REPORT_CONFIRM_MODAL: ReportConfirmModalState = {
   deleteComment: false,
   deleteChatMessage: false,
 };
+
+const normalizeTag = (value: string) => String(value || '')
+  .trim()
+  .replace(/^#+/, '')
+  .replace(/\s+/g, ' ');
+
+const sanitizeTagArray = (input: unknown, maxCount = MAX_DEFAULT_POST_TAGS) => {
+  const source = Array.isArray(input) ? input : [];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const item of source) {
+    const normalized = normalizeTag(String(item || ''));
+    if (!normalized) {
+      continue;
+    }
+    if (normalized.length > MAX_TAG_LENGTH) {
+      continue;
+    }
+    const key = normalized.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    result.push(normalized);
+    if (result.length >= maxCount) {
+      break;
+    }
+  }
+  return result;
+};
+
+const parseDefaultPostTagsInput = (value: string) => {
+  const parts = String(value || '')
+    .split(/[\r\n,，、;；|]+/g)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return sanitizeTagArray(parts, MAX_DEFAULT_POST_TAGS);
+};
+
+const formatDefaultPostTagsInput = (tags: unknown) => sanitizeTagArray(tags, MAX_DEFAULT_POST_TAGS).join('\n');
 
 const StatCard: React.FC<{ title: string; value: string; trend: string; trendUp: boolean; icon: React.ReactNode; color?: string; valueClassName?: string }> = ({ title, value, trend, trendUp, icon, color = 'bg-white', valueClassName = '' }) => (
   <div className={`${color} p-6 border-2 border-ink shadow-sketch relative overflow-hidden group hover:-translate-y-1 transition-transform duration-200 sticky-curl ${roughBorderClassSm}`}>
@@ -113,6 +155,7 @@ const AdminDashboard: React.FC = () => {
   const [cnyThemeEnabled, setCnyThemeEnabled] = useState(false);
   const [cnyThemeAutoActive, setCnyThemeAutoActive] = useState(false);
   const [cnyThemeActive, setCnyThemeActive] = useState(false);
+  const [defaultPostTagsInput, setDefaultPostTagsInput] = useState('');
   const [vocabularyLoading, setVocabularyLoading] = useState(false);
   const [vocabularySubmitting, setVocabularySubmitting] = useState(false);
   const [vocabularyItems, setVocabularyItems] = useState<Array<{ id: number; word: string; enabled: boolean; updatedAt: number }>>([]);
@@ -235,6 +278,10 @@ const AdminDashboard: React.FC = () => {
   const pendingReports = getPendingReports();
   const processedReports = state.reports.filter(r => r.status !== 'pending');
   const cnyThemePreviewActive = cnyThemeEnabled && cnyThemeAutoActive;
+  const parsedDefaultPostTags = useMemo(
+    () => parseDefaultPostTagsInput(defaultPostTagsInput),
+    [defaultPostTagsInput]
+  );
 
   // Filter reports by search query
   const filteredReports = useMemo(() => {
@@ -401,6 +448,7 @@ const AdminDashboard: React.FC = () => {
       setCnyThemeEnabled(Boolean(data?.cnyThemeEnabled));
       setCnyThemeAutoActive(Boolean(data?.cnyThemeAutoActive));
       setCnyThemeActive(Boolean(data?.cnyThemeActive));
+      setDefaultPostTagsInput(formatDefaultPostTagsInput(data?.defaultPostTags));
     } catch (error) {
       const message = error instanceof Error ? error.message : '设置加载失败';
       showToast(message, 'error');
@@ -1136,16 +1184,24 @@ const AdminDashboard: React.FC = () => {
 
   const handleSettingsSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
+    const rawDefaultTags = defaultPostTagsInput.trim();
+    const defaultPostTags = parseDefaultPostTagsInput(defaultPostTagsInput);
+    if (rawDefaultTags && defaultPostTags.length === 0) {
+      showToast(`默认标签格式无效，请用逗号或换行分隔，并确保每个标签不超过${MAX_TAG_LENGTH}字`, 'warning');
+      return;
+    }
     setSettingsSubmitting(true);
     try {
       const data = await api.updateAdminSettings({
         turnstileEnabled,
         cnyThemeEnabled,
+        defaultPostTags,
       });
       setTurnstileEnabled(Boolean(data?.turnstileEnabled));
       setCnyThemeEnabled(Boolean(data?.cnyThemeEnabled));
       setCnyThemeAutoActive(Boolean(data?.cnyThemeAutoActive));
       setCnyThemeActive(Boolean(data?.cnyThemeActive));
+      setDefaultPostTagsInput(formatDefaultPostTagsInput(data?.defaultPostTags));
       loadSettings().catch(() => {});
       showToast('设置已更新', 'success');
     } catch (error) {
@@ -1988,6 +2044,21 @@ const AdminDashboard: React.FC = () => {
                       />
                       <span>启用春节皮肤（仅前台）</span>
                     </label>
+                    <div className="space-y-2">
+                      <label className="text-sm font-sans font-bold text-ink block">默认帖子标签</label>
+                      <textarea
+                        value={defaultPostTagsInput}
+                        onChange={(e) => setDefaultPostTagsInput(e.target.value)}
+                        placeholder={`每行一个标签，或用逗号/分号分隔；每个标签最多${MAX_TAG_LENGTH}字`}
+                        rows={4}
+                        className="w-full bg-transparent border-2 border-gray-200 rounded-lg outline-none font-sans text-sm text-ink placeholder:text-pencil/40 px-3 py-2 focus:border-ink transition-colors resize-y"
+                        disabled={settingsLoading || settingsSubmitting}
+                      />
+                      <div className="text-xs text-pencil font-sans space-y-1">
+                        <p>投稿页会展示这些默认标签，用户仍可自行创建新标签。</p>
+                        <p>当前有效：{parsedDefaultPostTags.length}/{MAX_DEFAULT_POST_TAGS}，超长标签与重复标签会自动过滤。</p>
+                      </div>
+                    </div>
                     <div className="rounded-lg border border-dashed border-ink/40 bg-paper px-3 py-2 text-xs text-pencil font-sans space-y-1">
                       <p>自动时段：农历腊月十六 00:00 至 正月十五 23:59（中国时区）</p>
                       <p>当前处于春节时段：{cnyThemeAutoActive ? '是' : '否'}</p>
