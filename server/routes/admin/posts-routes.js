@@ -6,7 +6,6 @@ export const registerAdminPostsRoutes = (app, deps) => {
     db,
     requireAdmin,
     requireAdminCsrf,
-    containsSensitiveWord,
     getClientIp,
     checkBanFor,
     crypto,
@@ -76,10 +75,6 @@ app.post('/api/admin/posts', requireAdmin, requireAdminCsrf, (req, res) => {
     return res.status(400).json({ error: '内容超过字数限制' });
   }
 
-  if (containsSensitiveWord(content)) {
-    return res.status(400).json({ error: '内容包含敏感词，请修改后再提交' });
-  }
-
   const clientIp = getClientIp(req);
   if (!checkBanFor(req, res, 'post', '账号已被封禁，无法投稿')) {
     return;
@@ -139,10 +134,6 @@ app.post('/api/admin/posts/:id/edit', requireAdmin, requireAdminCsrf, (req, res)
 
   if (content.length > 2000) {
     return res.status(400).json({ error: '内容超过字数限制' });
-  }
-
-  if (containsSensitiveWord(content)) {
-    return res.status(400).json({ error: '内容包含敏感词，请修改后再提交' });
   }
 
   const existing = db.prepare('SELECT id, content, deleted FROM posts WHERE id = ?').get(postId);

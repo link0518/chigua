@@ -25,6 +25,9 @@
   const MAX_POST_TAGS = 2;
   const MAX_TAG_LENGTH = 6;
   const MAX_DEFAULT_TAGS = 50;
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const MAX_SEARCH_RANGE_DAYS = 7;
+  const DATE_INPUT_RE = /^\d{4}-\d{2}-\d{2}$/;
 
   const normalizeTag = (value) => String(value || '')
     .trim()
@@ -68,6 +71,55 @@
     return normalized >= 1 ? normalized : fallback;
   };
   const buildJsonTagLikePattern = (value) => `%${escapeLike(JSON.stringify(String(value || '')))}%`;
+  const parseDateInput = (value) => {
+    const normalized = String(value || '').trim();
+    if (!DATE_INPUT_RE.test(normalized)) {
+      return null;
+    }
+    const [year, month, day] = normalized.split('-').map((part) => Number(part));
+    const date = new Date(year, month - 1, day);
+    if (
+      date.getFullYear() !== year
+      || date.getMonth() !== month - 1
+      || date.getDate() !== day
+    ) {
+      return null;
+    }
+    return date;
+  };
+  const resolveSearchDateRange = (startValue, endValue) => {
+    const startDateRaw = String(startValue || '').trim();
+    const endDateRaw = String(endValue || '').trim();
+    if (!startDateRaw && !endDateRaw) {
+      return { hasRange: false, startAt: null, endAt: null };
+    }
+    if (!startDateRaw || !endDateRaw) {
+      return { error: '请完整选择开始和结束日期' };
+    }
+
+    const startDate = parseDateInput(startDateRaw);
+    const endDate = parseDateInput(endDateRaw);
+    if (!startDate || !endDate) {
+      return { error: '日期格式无效' };
+    }
+
+    const startAt = startOfDay(startDate);
+    const endAt = startOfDay(endDate);
+    if (endAt < startAt) {
+      return { error: '结束日期不能早于开始日期' };
+    }
+
+    const diffDays = Math.round((endAt - startAt) / DAY_MS);
+    if (diffDays >= MAX_SEARCH_RANGE_DAYS) {
+      return { error: `时间范围最多 ${MAX_SEARCH_RANGE_DAYS} 天` };
+    }
+
+    return {
+      hasRange: true,
+      startAt,
+      endAt: endAt + DAY_MS,
+    };
+  };
 
 app.get('/api/posts/home', (req, res) => {
   if (!checkBanFor(req, res, 'view', '你已被限制浏览')) {
@@ -223,6 +275,7 @@ app.get('/api/posts/search', (req, res) => {
   }
   const keywordRaw = String(req.query.q || '').trim();
   const tag = normalizeTag(req.query.tag || '');
+  const dateRange = resolveSearchDateRange(req.query.startDate, req.query.endDate);
   const page = parsePositiveInt(req.query.page, 1);
   const limit = Math.min(parsePositiveInt(req.query.limit, 20), 50);
   const offset = (page - 1) * limit;
@@ -230,7 +283,11 @@ app.get('/api/posts/search', (req, res) => {
   trackDailyVisit(dateKey, req.sessionID);
   const viewerFingerprint = getOptionalFingerprint(req);
 
-  if (!keywordRaw && !tag) {
+  if (dateRange.error) {
+    return res.status(400).json({ error: dateRange.error });
+  }
+
+  if (!keywordRaw && !tag && !dateRange.hasRange) {
     return res.json({ items: [], total: 0, page, limit });
   }
 
@@ -252,6 +309,10 @@ app.get('/api/posts/search', (req, res) => {
     const tagKeyword = buildJsonTagLikePattern(tag);
     conditions.push("posts.tags LIKE ? ESCAPE '\\'");
     params.push(tagKeyword);
+  }
+  if (dateRange.hasRange) {
+    conditions.push('posts.created_at >= ? AND posts.created_at < ?');
+    params.push(dateRange.startAt, dateRange.endAt);
   }
   const whereClause = `WHERE ${conditions.join(' AND ')}`;
 

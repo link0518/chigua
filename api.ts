@@ -116,7 +116,19 @@ export const api = {
   getPostById: (postId) => apiFetch(`/posts/${postId}`),
   getFeedPosts: (filter, search) => apiFetch(`/posts/feed${toQuery({ filter, search })}`),
   getPostTags: (limit = 50) => apiFetch(`/posts/tags${toQuery({ limit })}`),
-  searchPosts: (q, page = 1, limit = 20, options: { tag?: string } = {}) => apiFetch(`/posts/search${toQuery({ q, page, limit, tag: options.tag })}`),
+  searchPosts: (
+    q,
+    page = 1,
+    limit = 20,
+    options: { tag?: string; startDate?: string; endDate?: string } = {}
+  ) => apiFetch(`/posts/search${toQuery({
+    q,
+    page,
+    limit,
+    tag: options.tag,
+    startDate: options.startDate,
+    endDate: options.endDate,
+  })}`),
   createPost: (content, tags = [], turnstileToken) => apiFetch('/posts', {
     method: 'POST',
     body: JSON.stringify({ content, tags, turnstileToken }),
