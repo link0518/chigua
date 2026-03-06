@@ -258,7 +258,12 @@ export const api = {
     method: 'POST',
   }),
   getAdminSettings: () => apiFetch('/admin/settings'),
-  updateAdminSettings: (settings: { turnstileEnabled?: boolean; cnyThemeEnabled?: boolean; defaultPostTags?: string[] }) => apiFetch('/admin/settings', {
+  updateAdminSettings: (settings: {
+    turnstileEnabled?: boolean;
+    cnyThemeEnabled?: boolean;
+    defaultPostTags?: string[];
+    rateLimits?: Partial<Record<'post' | 'comment' | 'report' | 'feedback', { limit?: number; windowMs?: number }>>;
+  }) => apiFetch('/admin/settings', {
     method: 'POST',
     body: JSON.stringify(settings || {}),
   }),

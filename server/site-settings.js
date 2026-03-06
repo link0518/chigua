@@ -3,8 +3,18 @@ import solarlunar from 'solarlunar';
 const SETTINGS_KEY_TURNSTILE_ENABLED = 'turnstile_enabled';
 const SETTINGS_KEY_CNY_THEME_ENABLED = 'cny_theme_enabled';
 const SETTINGS_KEY_DEFAULT_POST_TAGS = 'default_post_tags';
+const SETTINGS_KEY_RATE_LIMITS = 'rate_limits';
 const POST_TAG_MAX_LENGTH = 6;
 const MAX_DEFAULT_POST_TAGS = 50;
+const RATE_LIMIT_MAX_COUNT = 1000;
+const RATE_LIMIT_MAX_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+const DEFAULT_RATE_LIMITS = Object.freeze({
+  post: { limit: 2, windowMs: 30 * 60 * 1000 },
+  comment: { limit: 1, windowMs: 10 * 1000 },
+  report: { limit: 1, windowMs: 60 * 1000 },
+  feedback: { limit: 1, windowMs: 60 * 60 * 1000 },
+});
+const RATE_LIMIT_ACTIONS = Object.freeze(Object.keys(DEFAULT_RATE_LIMITS));
 const CNY_TIMEZONE = 'Asia/Shanghai';
 const CHINA_DATE_FORMATTER = new Intl.DateTimeFormat('en-CA', {
   timeZone: CNY_TIMEZONE,
@@ -75,6 +85,51 @@ export const createSiteSettingsService = ({ db, turnstileSecretKey }) => {
     return result;
   };
 
+  const toSafeInt = (value, fallback) => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) {
+      return fallback;
+    }
+    return Math.trunc(parsed);
+  };
+
+  const sanitizeRateLimitItem = (input, fallback) => {
+    const source = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
+    const limit = Math.min(
+      Math.max(toSafeInt(source.limit, fallback.limit), 1),
+      RATE_LIMIT_MAX_COUNT
+    );
+    const windowMs = Math.min(
+      Math.max(toSafeInt(source.windowMs, fallback.windowMs), 1000),
+      RATE_LIMIT_MAX_WINDOW_MS
+    );
+    return { limit, windowMs };
+  };
+
+  const sanitizeRateLimits = (input) => {
+    let source = input;
+    if (typeof source === 'string') {
+      const raw = source.trim();
+      if (!raw) {
+        source = {};
+      } else {
+        try {
+          source = JSON.parse(raw);
+        } catch {
+          source = {};
+        }
+      }
+    }
+    if (!source || typeof source !== 'object' || Array.isArray(source)) {
+      source = {};
+    }
+    const result = {};
+    for (const action of RATE_LIMIT_ACTIONS) {
+      result[action] = sanitizeRateLimitItem(source[action], DEFAULT_RATE_LIMITS[action]);
+    }
+    return result;
+  };
+
   const getSetting = (key) => {
     const row = db.prepare('SELECT value FROM app_settings WHERE key = ?').get(key);
     return row?.value ?? null;
@@ -120,6 +175,16 @@ export const createSiteSettingsService = ({ db, turnstileSecretKey }) => {
     return normalized;
   };
 
+  const resolveRateLimits = () => {
+    const stored = getSetting(SETTINGS_KEY_RATE_LIMITS);
+    if (stored === null || stored === undefined) {
+      const initial = sanitizeRateLimits(DEFAULT_RATE_LIMITS);
+      upsertSetting(SETTINGS_KEY_RATE_LIMITS, JSON.stringify(initial));
+      return initial;
+    }
+    return sanitizeRateLimits(stored);
+  };
+
   const getChinaDateParts = (input = new Date()) => {
     const parts = CHINA_DATE_FORMATTER.formatToParts(input);
     const year = Number(parts.find((part) => part.type === 'year')?.value || 0);
@@ -152,6 +217,7 @@ export const createSiteSettingsService = ({ db, turnstileSecretKey }) => {
   let turnstileEnabled = resolveTurnstileEnabled();
   let cnyThemeEnabled = resolveCnyThemeEnabled();
   let defaultPostTags = resolveDefaultPostTags();
+  let rateLimits = resolveRateLimits();
 
   const setTurnstileEnabled = (enabled) => {
     turnstileEnabled = Boolean(enabled);
@@ -168,9 +234,23 @@ export const createSiteSettingsService = ({ db, turnstileSecretKey }) => {
     upsertSetting(SETTINGS_KEY_DEFAULT_POST_TAGS, JSON.stringify(defaultPostTags));
   };
 
+  const setRateLimits = (limits) => {
+    rateLimits = sanitizeRateLimits(limits);
+    upsertSetting(SETTINGS_KEY_RATE_LIMITS, JSON.stringify(rateLimits));
+  };
+
   const getTurnstileEnabled = () => turnstileEnabled;
   const getCnyThemeEnabled = () => cnyThemeEnabled;
   const getDefaultPostTags = () => [...defaultPostTags];
+  const getRateLimits = () => sanitizeRateLimits(rateLimits);
+  const getRateLimitConfig = (action) => {
+    const key = String(action || '').trim();
+    if (!RATE_LIMIT_ACTIONS.includes(key)) {
+      return null;
+    }
+    const config = rateLimits[key];
+    return config ? { ...config } : null;
+  };
 
   const buildSettingsResponse = () => {
     const cnyThemeAutoActive = isCnyThemeAutoActive();
@@ -187,9 +267,12 @@ export const createSiteSettingsService = ({ db, turnstileSecretKey }) => {
     getTurnstileEnabled,
     getCnyThemeEnabled,
     getDefaultPostTags,
+    getRateLimits,
+    getRateLimitConfig,
     buildSettingsResponse,
     setTurnstileEnabled,
     setCnyThemeEnabled,
     setDefaultPostTags,
+    setRateLimits,
   };
 };

@@ -1,5 +1,14 @@
 ﻿## [Unreleased]
 
+### Changed
+
+- 后台系统设置新增发帖、评论、举报、留言的限流配置，支持直接调整次数与时间窗口；涉及 `server/site-settings.js`、`server/routes/admin/settings-routes.js`、`components/AdminDashboard.tsx`、`api.ts`。
+
+### Fixed
+
+- 修复移动端点击标签进入搜索页后，长标签与长链接可能导致导航栏下方内容超宽、页面可横向滑动的问题；涉及 `components/SearchView.tsx`、`components/HomeView.tsx`、`components/FeedView.tsx`、`components/SketchUI.tsx`、`App.tsx`。
+- 统一 Markdown 链接与正文的换行策略，避免链接换行过碎，并保持评论区与帖子正文的浏览体验一致；涉及 `components/MarkdownRenderer.tsx`、`index.css`、`components/CommentModal.tsx`。
+
 ### Added
 
 - 新增帖子标签能力：发帖支持选择默认标签、为当前帖子新增标签，并限制每帖最多 2 个标签。

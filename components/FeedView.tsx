@@ -29,7 +29,7 @@ const PostItem: React.FC<{
     <div className={`relative group ${rank ? 'mb-10' : 'mb-6'} z-0`}>
       {/* Rank Badge */}
       {rank && rank <= 3 && (
-        <div className="absolute -left-3 md:-left-6 -top-4 z-10 transition-transform group-hover:scale-110 duration-200">
+        <div className="absolute left-2 sm:-left-3 md:-left-6 -top-4 z-10 transition-transform group-hover:scale-110 duration-200">
            <div className={`w-12 h-12 md:w-14 md:h-14 flex items-center justify-center font-display text-2xl md:text-3xl text-ink border-2 border-ink rounded-full shadow-md ${rank === 1 ? 'bg-alert rotate-[-12deg]' : rank === 2 ? 'bg-white rotate-6' : 'bg-highlight rotate-[-3deg]'}`}>
              {rank}
            </div>
@@ -45,10 +45,10 @@ const PostItem: React.FC<{
              <button
               type="button"
               key={tag}
-              className="inline-flex"
+              className="inline-flex min-w-0 max-w-full text-left"
               onClick={() => onTagClick(tag)}
             >
-              <Badge>#{tag}</Badge>
+              <Badge allowWrap className="max-w-full text-left">#{tag}</Badge>
             </button>
           ))}
         </div>

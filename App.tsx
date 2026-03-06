@@ -527,7 +527,7 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen-safe flex flex-col font-sans selection:bg-highlight selection:text-black relative">
+    <div className="min-h-screen-safe flex flex-col font-sans selection:bg-highlight selection:text-black relative overflow-x-hidden">
       {isCnyTheme && <FallingDecorations />}
       {isCnyTheme && (
         <>

@@ -70,6 +70,9 @@ const {
   setTurnstileEnabled,
   setCnyThemeEnabled,
   setDefaultPostTags,
+  getRateLimits,
+  getRateLimitConfig,
+  setRateLimits,
 } = createSiteSettingsService({ db, turnstileSecretKey: TURNSTILE_SECRET_KEY });
 
 const PUBLIC_DIR = path.resolve(process.cwd(), 'public');
@@ -476,12 +479,12 @@ const containsSensitiveWord = (text) => {
   return words.some((word) => candidates.has(word));
 };
 
-const RATE_LIMITS = {
-  post: { limit: 2, windowMs: 30 * 60 * 1000, message: '发帖过于频繁，请稍后再试' },
-  comment: { limit: 1, windowMs: 10 * 1000, message: '评论过于频繁，请稍后再试' },
-  report: { limit: 1, windowMs: 60 * 1000, message: '举报过于频繁，请稍后再试' },
+const RATE_LIMIT_ERROR_MESSAGES = {
+  post: '发帖过于频繁，请稍后再试',
+  comment: '评论过于频繁，请稍后再试',
+  report: '举报过于频繁，请稍后再试',
+  feedback: '留言过于频繁，请稍后再试',
 };
-const FEEDBACK_LIMIT_MS = 60 * 60 * 1000;
 const ONLINE_WINDOW_MS = 2 * 60 * 1000;
 const onlineSessions = new Map();
 
@@ -763,7 +766,7 @@ const allowRate = (key, limit, windowMs) => {
 };
 
 const enforceRateLimit = (req, res, action, fingerprint) => {
-  const config = RATE_LIMITS[action];
+  const config = getRateLimitConfig(action);
   if (!config) {
     return true;
   }
@@ -776,7 +779,7 @@ const enforceRateLimit = (req, res, action, fingerprint) => {
   const allowedByIp = allowRate(ipKey, config.limit, config.windowMs);
   const allowedByFingerprint = fingerprintKey ? allowRate(fingerprintKey, config.limit, config.windowMs) : true;
   if (!allowedBySession || !allowedByIp || !allowedByFingerprint) {
-    res.status(429).json({ error: config.message });
+    res.status(429).json({ error: RATE_LIMIT_ERROR_MESSAGES[action] || '请求过于频繁，请稍后再试' });
     return false;
   }
   return true;
@@ -1134,7 +1137,7 @@ registerPublicSystemRoutes(app, {
   formatDateKey,
   verifyTurnstile,
   getClientIp,
-  FEEDBACK_LIMIT_MS,
+  getRateLimitConfig,
   crypto,
 });
 registerPublicChatRoutes(app, {
@@ -1296,9 +1299,11 @@ registerAdminSettingsRoutes(app, {
   setTurnstileEnabled,
   setCnyThemeEnabled,
   setDefaultPostTags,
+  setRateLimits,
   getTurnstileEnabled,
   getCnyThemeEnabled,
   getDefaultPostTags,
+  getRateLimits,
   logAdminAction,
 });
 

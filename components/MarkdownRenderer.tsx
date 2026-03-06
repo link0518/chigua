@@ -414,7 +414,7 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, className 
 
   return (
     <div
-      className={`markdown-content leading-relaxed ${className}`}
+      className={`markdown-content min-w-0 max-w-full leading-relaxed ${className}`}
       dangerouslySetInnerHTML={{ __html: rendered }}
       onClick={handleLinkClick}
     />

@@ -303,7 +303,7 @@ const SearchView: React.FC = () => {
   };
 
   return (
-    <div className="max-w-2xl mx-auto px-4 pb-20 pt-6">
+    <div className="max-w-2xl mx-auto min-w-0 px-4 pb-20 pt-6">
       <div className="text-center mb-10 relative">
         <h2 className="font-display text-4xl inline-block relative z-10">
           搜索帖子
@@ -373,12 +373,12 @@ const SearchView: React.FC = () => {
         </div>
 
         {(tagFilter || hasDateRange) && (
-          <div className="mt-3 flex items-center justify-center gap-2 flex-wrap">
+          <div className="mt-3 flex min-w-0 flex-wrap items-center justify-center gap-2">
             {tagFilter && (
               <button
                 type="button"
                 onClick={clearTagFilter}
-                className="inline-flex items-center gap-1 px-3 py-1 border border-ink rounded-full bg-highlight text-xs font-bold text-ink"
+                className="inline-flex min-w-0 max-w-full flex-wrap items-center justify-center gap-1 break-all rounded-full border border-ink bg-highlight px-3 py-1 text-left text-xs font-bold text-ink"
               >
                 标签 #{tagFilter} · 清除
               </button>
@@ -396,7 +396,7 @@ const SearchView: React.FC = () => {
         )}
 
         {searchActive && (
-          <div className="mt-4 text-sm text-pencil">
+          <div className="mt-4 break-all text-sm text-pencil">
             {query ? `关键词“${query}” ` : ''}
             {tagFilter ? `标签 #${tagFilter} ` : ''}
             {hasDateRange ? `时间 ${startDate} 至 ${endDate} ` : ''}
@@ -422,17 +422,17 @@ const SearchView: React.FC = () => {
           </div>
         ) : (
           items.map((post) => (
-            <div key={post.id} className="bg-white border-2 border-ink p-5 rounded-lg shadow-sketch hover:shadow-sketch-hover transition-all">
-              <div className="flex gap-2 mb-2 flex-wrap">
+            <div key={post.id} className="min-w-0 rounded-lg border-2 border-ink bg-white p-5 shadow-sketch transition-all hover:shadow-sketch-hover">
+              <div className="mb-2 flex min-w-0 flex-wrap gap-2">
                 {post.isHot && <Badge color="bg-highlight">热门</Badge>}
                 {(post.tags || []).slice(0, 2).map((tag) => (
                   <button
                     type="button"
                     key={tag}
                     onClick={() => handleTagSearch(tag)}
-                    className="inline-flex"
+                    className="inline-flex min-w-0 max-w-full text-left"
                   >
-                    <Badge>#{tag}</Badge>
+                    <Badge allowWrap className="max-w-full text-left">#{tag}</Badge>
                   </button>
                 ))}
               </div>
@@ -442,13 +442,13 @@ const SearchView: React.FC = () => {
                 onClick={() => openPost(post.id)}
                 className="w-full text-left"
               >
-                <div className="text-ink font-sans text-base leading-relaxed line-clamp-4">
+                <div className="line-clamp-4 break-all text-base leading-relaxed text-ink font-sans">
                   {post.content}
                 </div>
               </button>
 
-              <div className="mt-3 flex items-center justify-between text-xs text-pencil font-sans">
-                <div className="flex items-center gap-2">
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-pencil font-sans">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
                   <span>{post.timestamp}</span>
                   <span>·</span>
                   <span>赞 {post.likes}</span>

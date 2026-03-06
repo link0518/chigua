@@ -8,7 +8,7 @@
     formatDateKey,
     verifyTurnstile,
     getClientIp,
-    FEEDBACK_LIMIT_MS,
+    getRateLimitConfig,
     crypto,
   } = deps;
 
@@ -197,35 +197,38 @@
     }
 
     const now = Date.now();
-    let lastCreatedAt = 0;
+    const feedbackRateLimit = getRateLimitConfig?.('feedback');
+    const feedbackLimit = typeof feedbackRateLimit?.limit === 'number'
+      ? feedbackRateLimit.limit
+      : 1;
+    const feedbackWindowMs = typeof feedbackRateLimit?.windowMs === 'number'
+      ? feedbackRateLimit.windowMs
+      : 60 * 60 * 1000;
+    const feedbackWindowStart = now - feedbackWindowMs;
     if (req.sessionID) {
-      const lastBySession = db
-        .prepare('SELECT created_at FROM feedback_messages WHERE session_id = ? ORDER BY created_at DESC LIMIT 1')
-        .get(req.sessionID);
-      if (lastBySession?.created_at) {
-        lastCreatedAt = Math.max(lastCreatedAt, lastBySession.created_at);
+      const sessionCount = db
+        .prepare('SELECT COUNT(1) AS count FROM feedback_messages WHERE session_id = ? AND created_at >= ?')
+        .get(req.sessionID, feedbackWindowStart)?.count ?? 0;
+      if (sessionCount >= feedbackLimit) {
+        return res.status(429).json({ error: '留言过于频繁，请稍后再试' });
       }
     }
     if (clientIp) {
-      const lastByIp = db
-        .prepare('SELECT created_at FROM feedback_messages WHERE ip = ? ORDER BY created_at DESC LIMIT 1')
-        .get(clientIp);
-      if (lastByIp?.created_at) {
-        lastCreatedAt = Math.max(lastCreatedAt, lastByIp.created_at);
+      const ipCount = db
+        .prepare('SELECT COUNT(1) AS count FROM feedback_messages WHERE ip = ? AND created_at >= ?')
+        .get(clientIp, feedbackWindowStart)?.count ?? 0;
+      if (ipCount >= feedbackLimit) {
+        return res.status(429).json({ error: '留言过于频繁，请稍后再试' });
       }
     }
     if (fingerprint) {
-      const lastByFingerprint = db
-        .prepare('SELECT created_at FROM feedback_messages WHERE fingerprint = ? ORDER BY created_at DESC LIMIT 1')
-        .get(fingerprint);
-      if (lastByFingerprint?.created_at) {
-        lastCreatedAt = Math.max(lastCreatedAt, lastByFingerprint.created_at);
+      const fingerprintCount = db
+        .prepare('SELECT COUNT(1) AS count FROM feedback_messages WHERE fingerprint = ? AND created_at >= ?')
+        .get(fingerprint, feedbackWindowStart)?.count ?? 0;
+      if (fingerprintCount >= feedbackLimit) {
+        return res.status(429).json({ error: '留言过于频繁，请稍后再试' });
       }
     }
-    if (lastCreatedAt && now - lastCreatedAt < FEEDBACK_LIMIT_MS) {
-      return res.status(429).json({ error: '留言过于频繁，请稍后再试' });
-    }
-
     const feedbackVerification = await verifyTurnstile(req.body?.turnstileToken, req, 'feedback');
     if (!feedbackVerification.ok) {
       return res.status(feedbackVerification.status).json({ error: feedbackVerification.error });

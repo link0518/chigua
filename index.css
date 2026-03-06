@@ -179,6 +179,29 @@ body.theme-cny {
   margin: 0;
 }
 
+.markdown-content {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.markdown-content > :first-child {
+  margin-top: 0;
+}
+
+.markdown-content > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown-content p,
+.markdown-content li,
+.markdown-content blockquote,
+.markdown-content td,
+.markdown-content th,
+.markdown-content a {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 @keyframes mascot-float {
   0%,
   100% {

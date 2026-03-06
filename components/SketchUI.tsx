@@ -55,8 +55,13 @@ export const Tape: React.FC<{ className?: string }> = ({ className = '' }) => (
   <div className={`h-8 w-32 bg-highlight/80 absolute -top-4 left-1/2 -translate-x-1/2 rotate-2 shadow-sm ${className}`}></div>
 );
 
-export const Badge: React.FC<{ children: React.ReactNode; color?: string }> = ({ children, color = 'bg-gray-100' }) => (
-  <span className={`${color} border border-ink px-2 py-0.5 text-xs font-bold rounded-md transform -rotate-1 inline-flex items-center whitespace-nowrap shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]`}>
+export const Badge: React.FC<{ children: React.ReactNode; color?: string; className?: string; allowWrap?: boolean }> = ({
+  children,
+  color = 'bg-gray-100',
+  className = '',
+  allowWrap = false,
+}) => (
+  <span className={`${color} border border-ink px-2 py-0.5 text-xs font-bold rounded-md transform -rotate-1 inline-flex items-center ${allowWrap ? 'whitespace-normal break-all' : 'whitespace-nowrap'} shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] ${className}`}>
     {children}
   </span>
 );

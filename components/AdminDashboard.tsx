@@ -102,6 +102,66 @@ const parseDefaultPostTagsInput = (value: string) => {
 
 const formatDefaultPostTagsInput = (tags: unknown) => sanitizeTagArray(tags, MAX_DEFAULT_POST_TAGS).join('\n');
 
+type RateLimitAction = 'post' | 'comment' | 'report' | 'feedback';
+type RateLimitItem = { limit: number; windowMs: number };
+type RateLimitSettings = Record<RateLimitAction, RateLimitItem>;
+
+const RATE_LIMIT_MAX_COUNT = 1000;
+const RATE_LIMIT_MAX_WINDOW_SECONDS = 30 * 24 * 60 * 60;
+const RATE_LIMIT_DEFAULTS: RateLimitSettings = {
+  post: { limit: 2, windowMs: 30 * 60 * 1000 },
+  comment: { limit: 1, windowMs: 10 * 1000 },
+  report: { limit: 1, windowMs: 60 * 1000 },
+  feedback: { limit: 1, windowMs: 60 * 60 * 1000 },
+};
+const RATE_LIMIT_FIELDS: Array<{ key: RateLimitAction; label: string; hint: string }> = [
+  { key: 'post', label: '发帖限流', hint: '限制普通用户发帖频率' },
+  { key: 'comment', label: '评论限流', hint: '限制普通用户评论频率' },
+  { key: 'report', label: '举报限流', hint: '限制普通用户举报频率' },
+  { key: 'feedback', label: '留言限流', hint: '限制反馈留言提交频率' },
+];
+
+const normalizeRateLimitNumber = (value: unknown, fallback: number, min: number, max: number) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  return Math.min(Math.max(Math.trunc(parsed), min), max);
+};
+
+const normalizeRateLimits = (input: unknown): RateLimitSettings => {
+  const source = input && typeof input === 'object' ? input as Partial<Record<RateLimitAction, Partial<RateLimitItem>>> : {};
+  return {
+    post: {
+      limit: normalizeRateLimitNumber(source?.post?.limit, RATE_LIMIT_DEFAULTS.post.limit, 1, RATE_LIMIT_MAX_COUNT),
+      windowMs: normalizeRateLimitNumber(source?.post?.windowMs, RATE_LIMIT_DEFAULTS.post.windowMs, 1000, RATE_LIMIT_MAX_WINDOW_SECONDS * 1000),
+    },
+    comment: {
+      limit: normalizeRateLimitNumber(source?.comment?.limit, RATE_LIMIT_DEFAULTS.comment.limit, 1, RATE_LIMIT_MAX_COUNT),
+      windowMs: normalizeRateLimitNumber(source?.comment?.windowMs, RATE_LIMIT_DEFAULTS.comment.windowMs, 1000, RATE_LIMIT_MAX_WINDOW_SECONDS * 1000),
+    },
+    report: {
+      limit: normalizeRateLimitNumber(source?.report?.limit, RATE_LIMIT_DEFAULTS.report.limit, 1, RATE_LIMIT_MAX_COUNT),
+      windowMs: normalizeRateLimitNumber(source?.report?.windowMs, RATE_LIMIT_DEFAULTS.report.windowMs, 1000, RATE_LIMIT_MAX_WINDOW_SECONDS * 1000),
+    },
+    feedback: {
+      limit: normalizeRateLimitNumber(source?.feedback?.limit, RATE_LIMIT_DEFAULTS.feedback.limit, 1, RATE_LIMIT_MAX_COUNT),
+      windowMs: normalizeRateLimitNumber(source?.feedback?.windowMs, RATE_LIMIT_DEFAULTS.feedback.windowMs, 1000, RATE_LIMIT_MAX_WINDOW_SECONDS * 1000),
+    },
+  };
+};
+
+const formatRateLimitWindow = (windowMs: number) => {
+  const seconds = Math.max(1, Math.round(windowMs / 1000));
+  if (seconds % 3600 === 0) {
+    return `${seconds / 3600} 小时`;
+  }
+  if (seconds % 60 === 0) {
+    return `${seconds / 60} 分钟`;
+  }
+  return `${seconds} 秒`;
+};
+
 const StatCard: React.FC<{ title: string; value: string; trend: string; trendUp: boolean; icon: React.ReactNode; color?: string; valueClassName?: string }> = ({ title, value, trend, trendUp, icon, color = 'bg-white', valueClassName = '' }) => (
   <div className={`${color} p-6 border-2 border-ink shadow-sketch relative overflow-hidden group hover:-translate-y-1 transition-transform duration-200 sticky-curl ${roughBorderClassSm}`}>
     <div className="absolute -right-4 -top-4 text-ink/10 rotate-12 group-hover:rotate-0 transition-transform scale-150 opacity-100">
@@ -156,6 +216,7 @@ const AdminDashboard: React.FC = () => {
   const [cnyThemeAutoActive, setCnyThemeAutoActive] = useState(false);
   const [cnyThemeActive, setCnyThemeActive] = useState(false);
   const [defaultPostTagsInput, setDefaultPostTagsInput] = useState('');
+  const [rateLimits, setRateLimits] = useState<RateLimitSettings>(RATE_LIMIT_DEFAULTS);
   const [vocabularyLoading, setVocabularyLoading] = useState(false);
   const [vocabularySubmitting, setVocabularySubmitting] = useState(false);
   const [vocabularyItems, setVocabularyItems] = useState<Array<{ id: number; word: string; enabled: boolean; updatedAt: number }>>([]);
@@ -282,6 +343,26 @@ const AdminDashboard: React.FC = () => {
     () => parseDefaultPostTagsInput(defaultPostTagsInput),
     [defaultPostTagsInput]
   );
+  const updateRateLimitCount = useCallback((key: RateLimitAction, value: string) => {
+    const nextValue = normalizeRateLimitNumber(value, 0, 0, RATE_LIMIT_MAX_COUNT);
+    setRateLimits((prev) => ({
+      ...prev,
+      [key]: {
+        ...prev[key],
+        limit: nextValue,
+      },
+    }));
+  }, []);
+  const updateRateLimitWindowSeconds = useCallback((key: RateLimitAction, value: string) => {
+    const nextSeconds = normalizeRateLimitNumber(value, 0, 0, RATE_LIMIT_MAX_WINDOW_SECONDS);
+    setRateLimits((prev) => ({
+      ...prev,
+      [key]: {
+        ...prev[key],
+        windowMs: nextSeconds * 1000,
+      },
+    }));
+  }, []);
 
   // Filter reports by search query
   const filteredReports = useMemo(() => {
@@ -449,6 +530,7 @@ const AdminDashboard: React.FC = () => {
       setCnyThemeAutoActive(Boolean(data?.cnyThemeAutoActive));
       setCnyThemeActive(Boolean(data?.cnyThemeActive));
       setDefaultPostTagsInput(formatDefaultPostTagsInput(data?.defaultPostTags));
+      setRateLimits(normalizeRateLimits(data?.rateLimits));
     } catch (error) {
       const message = error instanceof Error ? error.message : '设置加载失败';
       showToast(message, 'error');
@@ -1186,9 +1268,22 @@ const AdminDashboard: React.FC = () => {
     event.preventDefault();
     const rawDefaultTags = defaultPostTagsInput.trim();
     const defaultPostTags = parseDefaultPostTagsInput(defaultPostTagsInput);
+    const normalizedRateLimits = normalizeRateLimits(rateLimits);
     if (rawDefaultTags && defaultPostTags.length === 0) {
       showToast(`默认标签格式无效，请用逗号或换行分隔，并确保每个标签不超过${MAX_TAG_LENGTH}字`, 'warning');
       return;
+    }
+    for (const item of RATE_LIMIT_FIELDS) {
+      const config = rateLimits[item.key];
+      const windowSeconds = Math.round(config.windowMs / 1000);
+      if (!Number.isInteger(config.limit) || config.limit < 1) {
+        showToast(`${item.label}的次数至少为 1`, 'warning');
+        return;
+      }
+      if (!Number.isInteger(windowSeconds) || windowSeconds < 1) {
+        showToast(`${item.label}的时间窗口至少为 1 秒`, 'warning');
+        return;
+      }
     }
     setSettingsSubmitting(true);
     try {
@@ -1196,12 +1291,14 @@ const AdminDashboard: React.FC = () => {
         turnstileEnabled,
         cnyThemeEnabled,
         defaultPostTags,
+        rateLimits: normalizedRateLimits,
       });
       setTurnstileEnabled(Boolean(data?.turnstileEnabled));
       setCnyThemeEnabled(Boolean(data?.cnyThemeEnabled));
       setCnyThemeAutoActive(Boolean(data?.cnyThemeAutoActive));
       setCnyThemeActive(Boolean(data?.cnyThemeActive));
       setDefaultPostTagsInput(formatDefaultPostTagsInput(data?.defaultPostTags));
+      setRateLimits(normalizeRateLimits(data?.rateLimits));
       loadSettings().catch(() => {});
       showToast('设置已更新', 'success');
     } catch (error) {
@@ -2057,6 +2154,57 @@ const AdminDashboard: React.FC = () => {
                       <div className="text-xs text-pencil font-sans space-y-1">
                         <p>投稿页会展示这些默认标签，用户仍可自行创建新标签。</p>
                         <p>当前有效：{parsedDefaultPostTags.length}/{MAX_DEFAULT_POST_TAGS}，超长标签与重复标签会自动过滤。</p>
+                      </div>
+                    </div>
+                    <div className="space-y-3">
+                      <label className="text-sm font-sans font-bold text-ink block">限流配置</label>
+                      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                        {RATE_LIMIT_FIELDS.map((item) => {
+                          const config = rateLimits[item.key];
+                          const windowSeconds = Math.max(1, Math.round(config.windowMs / 1000));
+                          return (
+                            <div
+                              key={item.key}
+                              className="rounded-lg border border-gray-200 bg-paper/60 p-3 space-y-3"
+                            >
+                              <div className="space-y-1">
+                                <p className="text-sm font-sans font-bold text-ink">{item.label}</p>
+                                <p className="text-xs text-pencil font-sans">{item.hint}</p>
+                              </div>
+                              <div className="grid grid-cols-2 gap-2">
+                                <label className="space-y-1">
+                                  <span className="text-xs text-pencil font-sans">次数</span>
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    max={RATE_LIMIT_MAX_COUNT}
+                                    step={1}
+                                    value={config.limit}
+                                    onChange={(e) => updateRateLimitCount(item.key, e.target.value)}
+                                    className="w-full bg-white border-2 border-gray-200 rounded-lg outline-none font-sans text-sm text-ink px-3 py-2 focus:border-ink transition-colors"
+                                    disabled={settingsLoading || settingsSubmitting}
+                                  />
+                                </label>
+                                <label className="space-y-1">
+                                  <span className="text-xs text-pencil font-sans">窗口（秒）</span>
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    max={RATE_LIMIT_MAX_WINDOW_SECONDS}
+                                    step={1}
+                                    value={windowSeconds}
+                                    onChange={(e) => updateRateLimitWindowSeconds(item.key, e.target.value)}
+                                    className="w-full bg-white border-2 border-gray-200 rounded-lg outline-none font-sans text-sm text-ink px-3 py-2 focus:border-ink transition-colors"
+                                    disabled={settingsLoading || settingsSubmitting}
+                                  />
+                                </label>
+                              </div>
+                              <p className="text-xs text-pencil font-sans">
+                                当前规则：{formatRateLimitWindow(config.windowMs)} 内最多 {config.limit} 次
+                              </p>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                     <div className="rounded-lg border border-dashed border-ink/40 bg-paper px-3 py-2 text-xs text-pencil font-sans space-y-1">

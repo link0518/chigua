@@ -444,7 +444,7 @@ const HomeView: React.FC = () => {
   );
 
   return (
-    <div className="flex-grow w-full max-w-2xl mx-auto px-4 py-8 flex flex-col justify-center min-h-[80vh] relative">
+    <div className="flex-grow w-full max-w-2xl mx-auto px-4 py-8 flex flex-col justify-center min-h-[80vh] relative overflow-x-hidden">
       {showMascot && (
         <>
           <div
@@ -506,7 +506,7 @@ const HomeView: React.FC = () => {
         <div className="tape-mask"></div>
 
         {/* Main Card Content */}
-        <div className="relative flex flex-col gap-4 rounded-lg border-2 border-black bg-white p-8 doodle-border !rounded-lg hover:-translate-y-1 transition-transform duration-200 shadow-paper">
+        <div className="relative flex flex-col rounded-lg border-2 border-black bg-white p-8 doodle-border !rounded-lg hover:-translate-y-1 transition-transform duration-200 shadow-paper">
 
           {/* Header */}
           <div className="flex items-start justify-between gap-3 mb-2">
@@ -544,13 +544,13 @@ const HomeView: React.FC = () => {
             </div>
           </div>
           {currentPost.tags?.length ? (
-            <div className="mb-2 flex flex-wrap items-center gap-2">
+            <div className="mb-2 flex min-w-0 flex-wrap items-center gap-2">
               {currentPost.tags.slice(0, 2).map((tag, i) => (
                 <button
                   type="button"
                   key={tag}
                   onClick={() => openTagSearch(tag)}
-                  className={`whitespace-nowrap border border-ink px-2 py-0.5 text-xs font-bold rounded-sm shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] ${['bg-marker-blue', 'bg-marker-green', 'bg-marker-purple', 'bg-marker-orange'][i % 4]
+                  className={`max-w-full break-all whitespace-normal border border-ink px-2 py-0.5 text-left text-xs font-bold rounded-sm shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] ${['bg-marker-blue', 'bg-marker-green', 'bg-marker-purple', 'bg-marker-orange'][i % 4]
                     } transform ${i % 2 === 0 ? 'rotate-1' : '-rotate-1'} hover:opacity-80`}
                 >
                   #{tag}
@@ -560,7 +560,7 @@ const HomeView: React.FC = () => {
           ) : null}
 
           {/* Body - Markdown Rendered */}
-          <div className="text-black text-lg leading-relaxed font-sans py-2">
+          <div className="text-black text-lg leading-relaxed font-sans">
             <MarkdownRenderer content={currentPost.content} />
           </div>
 
