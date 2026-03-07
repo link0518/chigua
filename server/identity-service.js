@@ -49,19 +49,18 @@ export const createIdentityService = ({
   );
   const getAliasRowsByCanonicalStmt = db.prepare(
     `
-      SELECT legacy_fingerprint_hash
+      SELECT id, legacy_fingerprint_hash, first_seen_at
       FROM identity_aliases
       WHERE canonical_hash = ?
       ORDER BY last_seen_at DESC
     `
   );
-  const getLinkedIdentityStmt = db.prepare(
+  const getCanonicalRowsByLegacyStmt = db.prepare(
     `
-      SELECT 1
+      SELECT id, canonical_hash, first_seen_at
       FROM identity_aliases
-      WHERE (canonical_hash = ? AND legacy_fingerprint_hash = ?)
-         OR (canonical_hash = ? AND legacy_fingerprint_hash = ?)
-      LIMIT 1
+      WHERE legacy_fingerprint_hash = ?
+      ORDER BY last_seen_at DESC
     `
   );
 
@@ -132,17 +131,180 @@ export const createIdentityService = ({
     upsertIdentityAliasStmt.run(canonicalHash, legacyFingerprintHash, source, now, now);
   };
 
+  const collectLinkedIdentityHashes = ({ canonicalHash = '', legacyFingerprintHash = '' } = {}) => {
+    const canonicalQueue = [];
+    const legacyQueue = [];
+    const canonicalSet = new Set();
+    const legacySet = new Set();
+
+    const enqueueCanonical = (value) => {
+      const normalized = String(value || '').trim();
+      if (!normalized || canonicalSet.has(normalized)) {
+        return;
+      }
+      canonicalSet.add(normalized);
+      canonicalQueue.push(normalized);
+    };
+
+    const enqueueLegacy = (value) => {
+      const normalized = String(value || '').trim();
+      if (!normalized || legacySet.has(normalized)) {
+        return;
+      }
+      legacySet.add(normalized);
+      legacyQueue.push(normalized);
+    };
+
+    enqueueCanonical(canonicalHash);
+    enqueueLegacy(legacyFingerprintHash);
+
+    while (canonicalQueue.length || legacyQueue.length) {
+      while (canonicalQueue.length) {
+        const currentCanonicalHash = canonicalQueue.shift();
+        const rows = getAliasRowsByCanonicalStmt.all(currentCanonicalHash);
+        rows.forEach((row) => enqueueLegacy(row.legacy_fingerprint_hash));
+      }
+
+      while (legacyQueue.length) {
+        const currentLegacyHash = legacyQueue.shift();
+        const rows = getCanonicalRowsByLegacyStmt.all(currentLegacyHash);
+        rows.forEach((row) => enqueueCanonical(row.canonical_hash));
+      }
+    }
+
+    return normalizeHashList([
+      ...canonicalSet,
+      ...legacySet,
+    ]);
+  };
+
   const getLookupHashesForCanonicalHash = (canonicalHash, currentLegacyFingerprintHash = '') => {
     const normalizedCanonicalHash = String(canonicalHash || '').trim();
-    if (!normalizedCanonicalHash) {
-      return normalizeHashList(currentLegacyFingerprintHash);
+    const normalizedLegacyFingerprintHash = String(currentLegacyFingerprintHash || '').trim();
+    if (!normalizedCanonicalHash && !normalizedLegacyFingerprintHash) {
+      return [];
     }
-    const rows = getAliasRowsByCanonicalStmt.all(normalizedCanonicalHash);
-    return normalizeHashList([
-      normalizedCanonicalHash,
-      currentLegacyFingerprintHash,
-      ...rows.map((row) => row.legacy_fingerprint_hash),
-    ]);
+    return collectLinkedIdentityHashes({
+      canonicalHash: normalizedCanonicalHash,
+      legacyFingerprintHash: normalizedLegacyFingerprintHash,
+    });
+  };
+
+  const getLookupHashesForIdentityHash = (identityHash) => {
+    const normalizedIdentityHash = String(identityHash || '').trim();
+    if (!normalizedIdentityHash) {
+      return [];
+    }
+    return collectLinkedIdentityHashes({
+      canonicalHash: normalizedIdentityHash,
+      legacyFingerprintHash: normalizedIdentityHash,
+    });
+  };
+
+  const getPreferredFingerprintHashForCanonicalHash = (canonicalHash) => {
+    const normalizedCanonicalHash = String(canonicalHash || '').trim();
+    if (!normalizedCanonicalHash) {
+      return '';
+    }
+    const directLegacyHash = getAliasRowsByCanonicalStmt
+      .all(normalizedCanonicalHash)
+      .map((row) => String(row.legacy_fingerprint_hash || '').trim())
+      .find(Boolean);
+    return directLegacyHash || normalizedCanonicalHash;
+  };
+
+  const getStableLegacyFingerprintHashForIdentityHashes = (identityHashes) => {
+    const pendingCanonical = [];
+    const pendingLegacy = [];
+    const visitedCanonical = new Set();
+    const visitedLegacy = new Set();
+    const stableLegacyCandidates = new Map();
+
+    const rememberLegacy = (legacyFingerprintHash, firstSeenAt, aliasId) => {
+      const normalizedLegacyFingerprintHash = String(legacyFingerprintHash || '').trim();
+      if (!normalizedLegacyFingerprintHash) {
+        return;
+      }
+      const normalizedFirstSeenAt = Number(firstSeenAt);
+      const normalizedAliasId = Number(aliasId);
+      const nextCandidate = {
+        firstSeenAt: Number.isFinite(normalizedFirstSeenAt) ? normalizedFirstSeenAt : Number.MAX_SAFE_INTEGER,
+        aliasId: Number.isFinite(normalizedAliasId) ? normalizedAliasId : Number.MAX_SAFE_INTEGER,
+      };
+      const existingCandidate = stableLegacyCandidates.get(normalizedLegacyFingerprintHash);
+      if (
+        !existingCandidate
+        || nextCandidate.firstSeenAt < existingCandidate.firstSeenAt
+        || (
+          nextCandidate.firstSeenAt === existingCandidate.firstSeenAt
+          && nextCandidate.aliasId < existingCandidate.aliasId
+        )
+      ) {
+        stableLegacyCandidates.set(normalizedLegacyFingerprintHash, nextCandidate);
+      }
+    };
+
+    const enqueueCanonical = (value) => {
+      const normalized = String(value || '').trim();
+      if (!normalized || visitedCanonical.has(normalized)) {
+        return;
+      }
+      visitedCanonical.add(normalized);
+      pendingCanonical.push(normalized);
+    };
+
+    const enqueueLegacy = (value) => {
+      const normalized = String(value || '').trim();
+      if (!normalized || visitedLegacy.has(normalized)) {
+        return;
+      }
+      visitedLegacy.add(normalized);
+      pendingLegacy.push(normalized);
+    };
+
+    normalizeHashList(identityHashes).forEach((identityHash) => {
+      enqueueCanonical(identityHash);
+      enqueueLegacy(identityHash);
+    });
+
+    while (pendingCanonical.length || pendingLegacy.length) {
+      while (pendingCanonical.length) {
+        const canonicalHash = pendingCanonical.shift();
+        const rows = getAliasRowsByCanonicalStmt.all(canonicalHash);
+        rows.forEach((row) => {
+          rememberLegacy(row.legacy_fingerprint_hash, row.first_seen_at, row.id);
+          enqueueLegacy(row.legacy_fingerprint_hash);
+        });
+      }
+
+      while (pendingLegacy.length) {
+        const legacyFingerprintHash = pendingLegacy.shift();
+        const rows = getCanonicalRowsByLegacyStmt.all(legacyFingerprintHash);
+        rows.forEach((row) => {
+          rememberLegacy(legacyFingerprintHash, row.first_seen_at, row.id);
+          enqueueCanonical(row.canonical_hash);
+        });
+      }
+    }
+
+    return Array.from(stableLegacyCandidates.entries())
+      .sort((left, right) => {
+        if (left[1].firstSeenAt !== right[1].firstSeenAt) {
+          return left[1].firstSeenAt - right[1].firstSeenAt;
+        }
+        if (left[1].aliasId !== right[1].aliasId) {
+          return left[1].aliasId - right[1].aliasId;
+        }
+        return left[0].localeCompare(right[0]);
+      })[0]?.[0] || '';
+  };
+
+  const getStableIdentityKeyFromContext = (context) => {
+    const stableLegacyFingerprintHash = getStableLegacyFingerprintHashForIdentityHashes(context?.lookupHashes || []);
+    return stableLegacyFingerprintHash
+      || String(context?.canonicalHash || '').trim()
+      || String(context?.legacyFingerprintHash || '').trim()
+      || '';
   };
 
   const resolveRequestIdentity = (request, response, options = {}) => {
@@ -170,7 +332,7 @@ export const createIdentityService = ({
 
     const lookupHashes = canonicalHash
       ? getLookupHashesForCanonicalHash(canonicalHash, legacyFingerprintHash)
-      : normalizeHashList(legacyFingerprintHash);
+      : getLookupHashesForCanonicalHash('', legacyFingerprintHash);
 
     const context = {
       rawClientId: clientId,
@@ -208,6 +370,10 @@ export const createIdentityService = ({
     resolveRequestIdentity(request, response, { allowIssueCookie: true }).lookupHashes.slice()
   );
 
+  const getRequestStableIdentityKey = (request, response) => (
+    getStableIdentityKeyFromContext(resolveRequestIdentity(request, response, { allowIssueCookie: true }))
+  );
+
   const sharesIdentityHashes = (leftHash, rightHash) => {
     const left = String(leftHash || '').trim();
     const right = String(rightHash || '').trim();
@@ -217,16 +383,24 @@ export const createIdentityService = ({
     if (left === right) {
       return true;
     }
-    return Boolean(getLinkedIdentityStmt.get(left, right, right, left));
+    return getLookupHashesForIdentityHash(left).includes(right);
   };
 
   const resolveSocketIdentity = (request) => {
     const clientId = readClientIdFromRequest(request);
     const canonicalHash = hashClientId(clientId);
+    const lookupHashes = getLookupHashesForCanonicalHash(canonicalHash);
+    const preferredFingerprintHash = getPreferredFingerprintHashForCanonicalHash(canonicalHash);
+    const stableIdentityHash = getStableIdentityKeyFromContext({
+      canonicalHash,
+      lookupHashes,
+    });
     return {
       rawClientId: clientId,
       canonicalHash,
-      lookupHashes: getLookupHashesForCanonicalHash(canonicalHash),
+      preferredFingerprintHash,
+      stableIdentityHash,
+      lookupHashes,
       source: canonicalHash ? 'cookie_v2' : 'none',
     };
   };
@@ -238,10 +412,14 @@ export const createIdentityService = ({
     requireRequestIdentityHash,
     getOptionalRequestIdentityHash,
     getRequestIdentityLookupHashes,
+    getRequestStableIdentityKey,
     hashLegacyFingerprint,
     getFingerprintValue,
     upsertIdentityAlias,
     getLookupHashesForCanonicalHash,
+    getLookupHashesForIdentityHash,
+    getPreferredFingerprintHashForCanonicalHash,
+    getStableLegacyFingerprintHashForIdentityHashes,
     sharesIdentityHashes,
     resolveSocketIdentity,
   };

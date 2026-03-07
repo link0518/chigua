@@ -303,6 +303,16 @@ CREATE TABLE IF NOT EXISTS chat_ban_sync (
   updated_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS identity_aliases (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  canonical_hash TEXT NOT NULL,
+  legacy_fingerprint_hash TEXT NOT NULL,
+  source TEXT NOT NULL DEFAULT 'request',
+  first_seen_at INTEGER NOT NULL,
+  last_seen_at INTEGER NOT NULL,
+  UNIQUE (canonical_hash, legacy_fingerprint_hash)
+);
+
 CREATE INDEX IF NOT EXISTS idx_posts_created_at ON posts(created_at);
 CREATE INDEX IF NOT EXISTS idx_posts_deleted ON posts(deleted);
 CREATE INDEX IF NOT EXISTS idx_post_reactions_fingerprint_post_id ON post_reactions_fingerprint(post_id);
@@ -332,6 +342,8 @@ CREATE INDEX IF NOT EXISTS idx_chat_messages_deleted_created_at ON chat_messages
 CREATE INDEX IF NOT EXISTS idx_chat_mutes_muted_until ON chat_mutes(muted_until);
 CREATE INDEX IF NOT EXISTS idx_chat_ban_sync_updated_at ON chat_ban_sync(updated_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_messages_fingerprint_client_msg_id ON chat_messages(fingerprint_hash, client_msg_id);
+CREATE INDEX IF NOT EXISTS idx_identity_aliases_canonical_hash ON identity_aliases(canonical_hash, last_seen_at DESC);
+CREATE INDEX IF NOT EXISTS idx_identity_aliases_legacy_hash ON identity_aliases(legacy_fingerprint_hash, last_seen_at DESC);
 `);
 
 const ensureColumn = (table, column, definition) => {

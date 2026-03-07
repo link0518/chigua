@@ -74,7 +74,22 @@ permissions 常见值（见服务端/前端映射）：
 - `site`：禁止进入站点
 - `chat`：禁止进入聊天室
 
-### 1.6 notifications（通知）
+### 1.6 identity_aliases（身份映射）
+
+用于把较稳定的 Cookie 身份与 legacy 指纹绑定起来：
+
+- `canonical_hash`：基于 `gs_client_id_v2` 计算出的 canonical 身份哈希
+- `legacy_fingerprint_hash`：基于 `X-Client-Fingerprint` / 历史指纹计算出的 legacy 哈希
+- `source`：映射来源（默认 `request`）
+- `first_seen_at` / `last_seen_at`
+- `(canonical_hash, legacy_fingerprint_hash)` 唯一
+
+典型用途：
+
+- 请求进入后构造 `lookupHashes`，让同一用户在指纹变化后仍能命中旧数据
+- 让封禁判断、通知读取、收藏/点赞状态、举报去重、连续登录彩蛋、聊天室身份识别按“身份集合”聚合
+
+### 1.7 notifications（通知）
 
 以“接收者指纹”作为投递对象：
 
@@ -84,12 +99,17 @@ permissions 常见值（见服务端/前端映射）：
 - `preview`：预览文本
 - `read_at`：已读时间
 
-### 1.7 announcements（公告）
+补充说明：
+
+- 通知写入时仍落单个 `recipient_fingerprint`
+- 读取/已读时会结合 `identity_aliases` 聚合同一身份下的多个哈希
+
+### 1.8 announcements（公告）
 
 - `content`
 - `updated_at`
 
-### 1.8 app_settings（站点设置）
+### 1.9 app_settings（站点设置）
 
 - `key`：主键
 - `value`
@@ -102,14 +122,14 @@ permissions 常见值（见服务端/前端映射）：
 
 春节皮肤是否实际生效由后端按农历窗口动态计算（腊月十六至正月十五）。
 
-### 1.9 vocabulary_words（敏感词）
+### 1.10 vocabulary_words（敏感词）
 
 - `word`：原词
 - `normalized`：归一化后用于去重（唯一）
 - `enabled`：启用/禁用
 - `created_at` / `updated_at`
 
-### 1.10 stats_daily / daily_visits / fingerprint_login_days（统计）
+### 1.11 stats_daily / daily_visits / fingerprint_login_days（统计）
 
 用于后台概览统计：
 
@@ -117,12 +137,17 @@ permissions 常见值（见服务端/前端映射）：
 - `daily_visits(date, session_id)`：访客去重
 - `fingerprint_login_days(date, fingerprint)`：按指纹统计活跃天数/彩蛋
 
-### 1.11 post_edits / admin_audit_logs（审计）
+补充说明：
+
+- `fingerprint_login_days` 仍按单个哈希落库
+- 连续登录彩蛋查询阶段会结合 `identity_aliases` 聚合同一身份下的多份记录
+
+### 1.12 post_edits / admin_audit_logs（审计）
 
 - `post_edits`：后台编辑帖子内容的前后对比与原因
 - `admin_audit_logs`：后台动作审计（action、target、before_json/after_json、reason、ip、session_id）
 
-### 1.12 chat_sessions / chat_messages / chat_mutes / chat_ban_sync（聊天室）
+### 1.13 chat_sessions / chat_messages / chat_mutes / chat_ban_sync（聊天室）
 
 单聊天室实时能力的数据基座：
 
@@ -140,6 +165,11 @@ permissions 常见值（见服务端/前端映射）：
 - `chat_ban_sync`
   - 聊天封禁时用于记录“指纹封禁同步到的 IP”
   - 用于解封时优先清理同一条同步 IP 封禁，避免残留
+
+补充说明：
+
+- 聊天消息、禁言、封禁同步表目前仍以单个 `fingerprint_hash` 为主键字段
+- 运行时会结合 `identity_aliases` 做身份归一，尽量让同一用户在指纹变化后延续既有封禁/禁言/在线状态判断
 
 ## 2. 删除语义（重要）
 

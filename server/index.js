@@ -11,6 +11,7 @@ import fs from 'fs';
 import path from 'path';
 import { spawn } from 'child_process';
 import { initializeRuntimeEnv, createRuntimeConfig } from './runtime-config.js';
+import { createIdentityService } from './identity-service.js';
 import { createSiteSettingsService } from './site-settings.js';
 import { registerPublicSiteRoutes } from './routes/public/site-routes.js';
 import { registerPublicPostsRoutes } from './routes/public/posts-routes.js';
@@ -74,6 +75,13 @@ const {
   getRateLimitConfig,
   setRateLimits,
 } = createSiteSettingsService({ db, turnstileSecretKey: TURNSTILE_SECRET_KEY });
+const identityService = createIdentityService({
+  db,
+  cookie,
+  sessionSecret,
+  fingerprintSalt: FINGERPRINT_SALT,
+  fingerprintHeader: FINGERPRINT_HEADER,
+});
 
 const PUBLIC_DIR = path.resolve(process.cwd(), 'public');
 const DIST_DIR = path.resolve(process.cwd(), 'dist');
@@ -231,6 +239,11 @@ app.use(
     },
   })
 );
+
+app.use((req, res, next) => {
+  identityService.ensureRequestIdentity(req, res);
+  next();
+});
 
 const parseSessionIdFromRequest = (request) => {
   const cookieHeader = String(request?.headers?.cookie || '').trim();
@@ -594,43 +607,13 @@ const getClientIp = (req) => {
   return normalizeIp(req.socket?.remoteAddress) || normalizeIp(req.ip) || 'unknown';
 };
 
-const getFingerprintValue = (req) => {
-  const headerValue = req.headers?.[FINGERPRINT_HEADER];
-  if (Array.isArray(headerValue) && headerValue.length) {
-    const first = String(headerValue[0] || '').trim();
-    if (first) return first;
-  }
-  if (typeof headerValue === 'string' && headerValue.trim()) {
-    return headerValue.trim();
-  }
-  const bodyValue = req.body?.fingerprint;
-  if (typeof bodyValue === 'string' && bodyValue.trim()) {
-    return bodyValue.trim();
-  }
-  return '';
-};
+const getFingerprintValue = identityService.getFingerprintValue;
+const hashFingerprint = identityService.hashLegacyFingerprint;
+const getIdentityLookupHashes = (req, res) => identityService.getRequestIdentityLookupHashes(req, res);
 
-const hashFingerprint = (value) => {
-  if (!value) return '';
-  return crypto.createHmac('sha256', FINGERPRINT_SALT).update(value).digest('hex');
-};
+const requireFingerprint = (req, res) => identityService.requireRequestIdentityHash(req, res);
 
-const requireFingerprint = (req, res) => {
-  const raw = getFingerprintValue(req);
-  if (!raw) {
-    res.status(400).json({ error: '浏览器指纹缺失，请刷新后重试' });
-    return null;
-  }
-  return hashFingerprint(raw);
-};
-
-const getOptionalFingerprint = (req) => {
-  const raw = getFingerprintValue(req);
-  if (!raw) {
-    return '';
-  }
-  return hashFingerprint(raw);
-};
+const getOptionalFingerprint = (req, res) => identityService.getOptionalRequestIdentityHash(req, res);
 
 const trimPreview = (value, maxLength = 120) => {
   const text = String(value || '').replace(/\s+/g, ' ').trim();
@@ -644,7 +627,7 @@ const createNotification = ({ recipientFingerprint, type, postId, commentId, pre
   if (!recipientFingerprint) {
     return;
   }
-  if (actorFingerprint && recipientFingerprint === actorFingerprint) {
+  if (actorFingerprint && identityService.sharesIdentityHashes(recipientFingerprint, actorFingerprint)) {
     return;
   }
   const now = Date.now();
@@ -765,6 +748,18 @@ const allowRate = (key, limit, windowMs) => {
   return true;
 };
 
+const resolveRateLimitFingerprint = (req, res, fallbackFingerprint) => {
+  const stableIdentityKey = identityService.getRequestStableIdentityKey(req, res);
+  if (stableIdentityKey) {
+    return stableIdentityKey;
+  }
+  const normalizedFallbackFingerprint = String(fallbackFingerprint || '').trim();
+  if (normalizedFallbackFingerprint) {
+    return normalizedFallbackFingerprint;
+  }
+  return hashFingerprint(getFingerprintValue(req));
+};
+
 const enforceRateLimit = (req, res, action, fingerprint) => {
   const config = getRateLimitConfig(action);
   if (!config) {
@@ -774,7 +769,8 @@ const enforceRateLimit = (req, res, action, fingerprint) => {
   const ip = getClientIp(req);
   const sessionKey = `${action}:session:${sessionId}`;
   const ipKey = `${action}:ip:${ip}`;
-  const fingerprintKey = fingerprint ? `${action}:fingerprint:${fingerprint}` : null;
+  const rateLimitFingerprint = resolveRateLimitFingerprint(req, res, fingerprint);
+  const fingerprintKey = rateLimitFingerprint ? `${action}:fingerprint:${rateLimitFingerprint}` : null;
   const allowedBySession = allowRate(sessionKey, config.limit, config.windowMs);
   const allowedByIp = allowRate(ipKey, config.limit, config.windowMs);
   const allowedByFingerprint = fingerprintKey ? allowRate(fingerprintKey, config.limit, config.windowMs) : true;
@@ -851,10 +847,17 @@ const getActiveBans = (ip, fingerprint) => {
   if (ipRow) {
     entries.push({ type: 'ip', ...ipRow });
   }
-  const fingerprintRow = getActiveBanRow('banned_fingerprints', 'fingerprint', fingerprint);
-  if (fingerprintRow) {
-    entries.push({ type: 'fingerprint', ...fingerprintRow });
-  }
+  const identityHashes = Array.from(new Set(
+    (Array.isArray(fingerprint) ? fingerprint : [fingerprint])
+      .map((item) => String(item || '').trim())
+      .filter(Boolean)
+  ));
+  identityHashes.forEach((identityHash) => {
+    const fingerprintRow = getActiveBanRow('banned_fingerprints', 'fingerprint', identityHash);
+    if (fingerprintRow && !entries.some((item) => item.type === 'fingerprint' && item.value === fingerprintRow.value)) {
+      entries.push({ type: 'fingerprint', ...fingerprintRow });
+    }
+  });
   return entries;
 };
 
@@ -876,7 +879,9 @@ const isBannedFor = (ip, fingerprint, permission) => {
 
 const checkBanFor = (req, res, permission, message, fingerprintOverride) => {
   const clientIp = getClientIp(req);
-  const fingerprint = fingerprintOverride ?? getOptionalFingerprint(req);
+  const fingerprint = Array.isArray(fingerprintOverride) && fingerprintOverride.length
+    ? fingerprintOverride
+    : getIdentityLookupHashes(req, res);
   if (isBannedFor(clientIp, fingerprint, permission)) {
     res.status(403).json({ error: message });
     return false;
@@ -1118,6 +1123,7 @@ const chatRealtime = createChatRealtimeService({
   server: httpServer,
   db,
   hashFingerprint,
+  resolveSocketIdentity: identityService.resolveSocketIdentity,
   getClientIp,
   containsSensitiveWord,
   isBannedFor,
@@ -1131,6 +1137,7 @@ const chatRealtime = createChatRealtimeService({
 registerPublicSystemRoutes(app, {
   db,
   requireFingerprint,
+  getIdentityLookupHashes,
   checkBanFor,
   touchOnlineSession,
   getOnlineCount,
@@ -1143,6 +1150,8 @@ registerPublicSystemRoutes(app, {
 registerPublicChatRoutes(app, {
   db,
   requireFingerprint,
+  getIdentityLookupHashes,
+  sharesIdentityHashes: identityService.sharesIdentityHashes,
   checkBanFor,
   enforceRateLimit,
   getClientIp,
@@ -1155,6 +1164,7 @@ registerPublicChatRoutes(app, {
 registerPublicSiteRoutes(app, {
   getClientIp,
   getOptionalFingerprint,
+  getIdentityLookupHashes,
   getActiveBans,
   mergePermissions,
   buildSettingsResponse,
@@ -1169,6 +1179,7 @@ registerPublicPostsRoutes(app, {
   formatDateKey,
   trackDailyVisit,
   getOptionalFingerprint,
+  getIdentityLookupHashes,
   startOfDay,
   containsSensitiveWord,
   requireFingerprint,
@@ -1180,6 +1191,7 @@ registerPublicPostsRoutes(app, {
   scheduleSitemapGenerate,
   createNotification,
   trimPreview,
+  sharesIdentityHashes: identityService.sharesIdentityHashes,
   crypto,
   getDefaultPostTags,
 });
@@ -1188,6 +1200,7 @@ registerPublicCommentsRoutes(app, {
   db,
   checkBanFor,
   getOptionalFingerprint,
+  getIdentityLookupHashes,
   requireFingerprint,
   enforceRateLimit,
   getClientIp,
@@ -1195,6 +1208,7 @@ registerPublicCommentsRoutes(app, {
   verifyTurnstile,
   createNotification,
   trimPreview,
+  sharesIdentityHashes: identityService.sharesIdentityHashes,
   mapCommentRow,
   buildCommentTree,
   crypto,
@@ -1203,6 +1217,7 @@ registerPublicCommentsRoutes(app, {
 registerPublicReportsRoutes(app, {
   db,
   requireFingerprint,
+  getIdentityLookupHashes,
   enforceRateLimit,
   checkBanFor,
   getClientIp,

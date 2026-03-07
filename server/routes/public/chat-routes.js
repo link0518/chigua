@@ -22,6 +22,8 @@ export const registerPublicChatRoutes = (app, deps) => {
   const {
     db,
     requireFingerprint,
+    getIdentityLookupHashes,
+    sharesIdentityHashes,
     checkBanFor,
     enforceRateLimit,
     getClientIp,
@@ -30,6 +32,24 @@ export const registerPublicChatRoutes = (app, deps) => {
     crypto,
     chatRealtime,
   } = deps;
+
+  const buildIdentityMatch = (column, identityHashes) => {
+    const values = Array.from(new Set(
+      (Array.isArray(identityHashes) ? identityHashes : [identityHashes])
+        .map((item) => String(item || '').trim())
+        .filter(Boolean)
+    ));
+    if (!values.length) {
+      return { clause: '1 = 0', params: [] };
+    }
+    if (values.length === 1) {
+      return { clause: `${column} = ?`, params: values };
+    }
+    return {
+      clause: `${column} IN (${values.map(() => '?').join(', ')})`,
+      params: values,
+    };
+  };
 
   const ensureChatEnabled = (res) => {
     const enabled = Boolean(chatRealtime?.getChatConfig?.().chatEnabled);
@@ -98,6 +118,7 @@ export const registerPublicChatRoutes = (app, deps) => {
     if (!checkBanFor(req, res, 'view', '账号已被封禁，无法举报', fingerprint)) {
       return;
     }
+    const identityHashes = getIdentityLookupHashes(req, res);
     if (!enforceRateLimit(req, res, 'report', fingerprint)) {
       return;
     }
@@ -114,19 +135,20 @@ export const registerPublicChatRoutes = (app, deps) => {
       return res.status(404).json({ error: '消息不存在或已删除' });
     }
 
-    if (String(row.fingerprint_hash || '') === fingerprint) {
+    if (sharesIdentityHashes(String(row.fingerprint_hash || ''), fingerprint)) {
       return res.status(400).json({ error: '不能举报自己的消息' });
     }
 
     const reportTargetId = `chat:${messageId}`;
+    const reporterMatch = buildIdentityMatch('fingerprint', identityHashes);
     const duplicated = db.prepare(
       `
         SELECT 1
         FROM reports
-        WHERE target_type = 'chat' AND post_id = ? AND fingerprint = ?
+        WHERE target_type = 'chat' AND post_id = ? AND ${reporterMatch.clause}
         LIMIT 1
       `
-    ).get(reportTargetId, fingerprint);
+    ).get(reportTargetId, ...reporterMatch.params);
 
     if (duplicated) {
       return res.status(409).json({ error: '你已举报过该消息' });

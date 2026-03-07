@@ -6,7 +6,7 @@
     checkBanFor,
     formatDateKey,
     trackDailyVisit,
-    getOptionalFingerprint,
+    getIdentityLookupHashes,
     startOfDay,
     containsSensitiveWord,
     requireFingerprint,
@@ -121,6 +121,92 @@
     };
   };
 
+  const buildIdentityMatch = (column, identityHashes) => {
+    const values = Array.from(new Set(
+      (Array.isArray(identityHashes) ? identityHashes : [identityHashes])
+        .map((item) => String(item || '').trim())
+        .filter(Boolean)
+    ));
+    if (!values.length) {
+      return { clause: '1 = 0', params: [] };
+    }
+    if (values.length === 1) {
+      return { clause: `${column} = ?`, params: values };
+    }
+    return {
+      clause: `${column} IN (${values.map(() => '?').join(', ')})`,
+      params: values,
+    };
+  };
+
+  const buildViewerSelect = (identityHashes) => {
+    const reactionMatch = buildIdentityMatch('pr.fingerprint', identityHashes);
+    const favoriteMatch = buildIdentityMatch('pf.fingerprint', identityHashes);
+    return {
+      sql: `
+        (
+          SELECT pr.reaction
+          FROM post_reactions_fingerprint pr
+          WHERE pr.post_id = posts.id AND ${reactionMatch.clause}
+          ORDER BY pr.created_at DESC
+          LIMIT 1
+        ) AS viewer_reaction,
+        EXISTS(
+          SELECT 1
+          FROM post_favorites pf
+          WHERE pf.post_id = posts.id AND ${favoriteMatch.clause}
+        ) AS viewer_favorited
+      `,
+      params: [...reactionMatch.params, ...favoriteMatch.params],
+    };
+  };
+
+  const buildViewerReactionSelect = (identityHashes) => {
+    const reactionMatch = buildIdentityMatch('pr.fingerprint', identityHashes);
+    return {
+      sql: `
+        (
+          SELECT pr.reaction
+          FROM post_reactions_fingerprint pr
+          WHERE pr.post_id = posts.id AND ${reactionMatch.clause}
+          ORDER BY pr.created_at DESC
+          LIMIT 1
+        ) AS viewer_reaction
+      `,
+      params: reactionMatch.params,
+    };
+  };
+
+  const findExistingReaction = (postId, identityHashes) => {
+    const reactionMatch = buildIdentityMatch('fingerprint', identityHashes);
+    return db
+      .prepare(
+        `
+          SELECT fingerprint, reaction
+          FROM post_reactions_fingerprint
+          WHERE post_id = ? AND ${reactionMatch.clause}
+          ORDER BY created_at DESC
+          LIMIT 1
+        `
+      )
+      .get(postId, ...reactionMatch.params);
+  };
+
+  const findExistingFavorite = (postId, identityHashes) => {
+    const favoriteMatch = buildIdentityMatch('fingerprint', identityHashes);
+    return db
+      .prepare(
+        `
+          SELECT fingerprint, created_at
+          FROM post_favorites
+          WHERE post_id = ? AND ${favoriteMatch.clause}
+          ORDER BY created_at DESC
+          LIMIT 1
+        `
+      )
+      .get(postId, ...favoriteMatch.params);
+  };
+
 app.get('/api/posts/home', (req, res) => {
   if (!checkBanFor(req, res, 'view', '你已被限制浏览')) {
     return;
@@ -129,7 +215,8 @@ app.get('/api/posts/home', (req, res) => {
   const offset = Math.max(Number(req.query.offset || 0), 0);
   const dateKey = formatDateKey();
   trackDailyVisit(dateKey, req.sessionID);
-  const viewerFingerprint = getOptionalFingerprint(req);
+  const viewerIdentityHashes = getIdentityLookupHashes(req, res);
+  const viewerSelect = buildViewerSelect(viewerIdentityHashes);
 
   const total = db
     .prepare(
@@ -145,21 +232,14 @@ app.get('/api/posts/home', (req, res) => {
     .prepare(
       `
         SELECT posts.*, ${hotScoreSql} AS hot_score,
-          pr.reaction AS viewer_reaction,
-          pf.post_id IS NOT NULL AS viewer_favorited
+          ${viewerSelect.sql}
       FROM posts
-      LEFT JOIN post_reactions_fingerprint pr
-        ON pr.post_id = posts.id
-        AND pr.fingerprint = ?
-      LEFT JOIN post_favorites pf
-        ON pf.post_id = posts.id
-        AND pf.fingerprint = ?
         WHERE posts.deleted = 0
         ORDER BY posts.created_at DESC
         LIMIT ? OFFSET ?
         `
     )
-    .all(viewerFingerprint, viewerFingerprint, limit, offset);
+    .all(...viewerSelect.params, limit, offset);
 
   const posts = rows.map((row) => mapPostRow(row, row.hot_score >= 20));
   res.json({ items: posts, total });
@@ -173,10 +253,11 @@ app.get('/api/posts/feed', (req, res) => {
   const search = String(req.query.search || '').trim();
   const dateKey = formatDateKey();
   trackDailyVisit(dateKey, req.sessionID);
-  const viewerFingerprint = getOptionalFingerprint(req);
+  const viewerIdentityHashes = getIdentityLookupHashes(req, res);
+  const viewerSelect = buildViewerSelect(viewerIdentityHashes);
 
   const conditions = ['posts.deleted = 0'];
-  const params = [viewerFingerprint, viewerFingerprint];
+  const params = [...viewerSelect.params];
 
   if (filter === 'today') {
     conditions.push('posts.created_at >= ?');
@@ -198,15 +279,8 @@ app.get('/api/posts/feed', (req, res) => {
     .prepare(
       `
       SELECT posts.*, ${hotScoreSql} AS hot_score,
-        pr.reaction AS viewer_reaction,
-        pf.post_id IS NOT NULL AS viewer_favorited
+        ${viewerSelect.sql}
       FROM posts
-      LEFT JOIN post_reactions_fingerprint pr
-        ON pr.post_id = posts.id
-        AND pr.fingerprint = ?
-      LEFT JOIN post_favorites pf
-        ON pf.post_id = posts.id
-        AND pf.fingerprint = ?
       ${whereClause}
       ORDER BY hot_score DESC, posts.created_at DESC
       `
@@ -281,7 +355,8 @@ app.get('/api/posts/search', (req, res) => {
   const offset = (page - 1) * limit;
   const dateKey = formatDateKey();
   trackDailyVisit(dateKey, req.sessionID);
-  const viewerFingerprint = getOptionalFingerprint(req);
+  const viewerIdentityHashes = getIdentityLookupHashes(req, res);
+  const viewerSelect = buildViewerSelect(viewerIdentityHashes);
 
   if (dateRange.error) {
     return res.status(400).json({ error: dateRange.error });
@@ -330,21 +405,14 @@ app.get('/api/posts/search', (req, res) => {
     .prepare(
       `
         SELECT posts.*, ${hotScoreSql} AS hot_score,
-          pr.reaction AS viewer_reaction,
-          pf.post_id IS NOT NULL AS viewer_favorited
+          ${viewerSelect.sql}
         FROM posts
-        LEFT JOIN post_reactions_fingerprint pr
-          ON pr.post_id = posts.id
-          AND pr.fingerprint = ?
-        LEFT JOIN post_favorites pf
-          ON pf.post_id = posts.id
-          AND pf.fingerprint = ?
         ${whereClause}
         ORDER BY posts.created_at DESC
         LIMIT ? OFFSET ?
       `
     )
-    .all(viewerFingerprint, viewerFingerprint, ...params, limit, offset);
+    .all(...viewerSelect.params, ...params, limit, offset);
 
   const items = rows.map((row) => mapPostRow(row, row.hot_score >= 20));
   return res.json({ items, total, page, limit });
@@ -397,23 +465,17 @@ app.post('/api/posts', async (req, res) => {
 
   incrementDailyStat(formatDateKey(), 'posts', 1);
 
+  const viewerSelect = buildViewerSelect([fingerprint]);
   const row = db
     .prepare(
       `
       SELECT posts.*, ${hotScoreSql} AS hot_score,
-        pr.reaction AS viewer_reaction,
-        pf.post_id IS NOT NULL AS viewer_favorited
+        ${viewerSelect.sql}
       FROM posts
-      LEFT JOIN post_reactions_fingerprint pr
-        ON pr.post_id = posts.id
-        AND pr.fingerprint = ?
-      LEFT JOIN post_favorites pf
-        ON pf.post_id = posts.id
-        AND pf.fingerprint = ?
       WHERE posts.id = ?
       `
     )
-    .get(fingerprint, fingerprint, postId);
+    .get(...viewerSelect.params, postId);
 
   generateSnapshotForPost({ id: postId, content, created_at: now });
   scheduleSitemapGenerate();
@@ -429,26 +491,20 @@ app.get('/api/posts/:id', (req, res) => {
   if (!postId) {
     return res.status(400).json({ error: '帖子不存在' });
   }
-  const viewerFingerprint = getOptionalFingerprint(req);
+  const viewerIdentityHashes = getIdentityLookupHashes(req, res);
+  const viewerSelect = buildViewerSelect(viewerIdentityHashes);
 
   const row = db
     .prepare(
       `
       SELECT posts.*, ${hotScoreSql} AS hot_score,
-        pr.reaction AS viewer_reaction,
-        pf.post_id IS NOT NULL AS viewer_favorited
+        ${viewerSelect.sql}
       FROM posts
-      LEFT JOIN post_reactions_fingerprint pr
-        ON pr.post_id = posts.id
-        AND pr.fingerprint = ?
-      LEFT JOIN post_favorites pf
-        ON pf.post_id = posts.id
-        AND pf.fingerprint = ?
       WHERE posts.id = ?
         AND posts.deleted = 0
       `
     )
-    .get(viewerFingerprint, viewerFingerprint, postId);
+    .get(...viewerSelect.params, postId);
 
   if (!row) {
     return res.status(404).json({ error: '帖子不存在或已删除' });
@@ -479,10 +535,9 @@ const sumReactionCounts = (postId) => {
   };
 };
 
-const toggleReaction = db.transaction((postId, identityKey, reaction) => {
-  const existing = db
-    .prepare('SELECT reaction FROM post_reactions_fingerprint WHERE post_id = ? AND fingerprint = ?')
-    .get(postId, identityKey);
+const toggleReaction = db.transaction((postId, identityKey, identityHashes, reaction) => {
+  const existing = findExistingReaction(postId, identityHashes);
+  const reactionMatch = buildIdentityMatch('fingerprint', identityHashes);
 
   let nextReaction = null;
 
@@ -492,11 +547,19 @@ const toggleReaction = db.transaction((postId, identityKey, reaction) => {
     ).run(postId, identityKey, reaction, Date.now());
     nextReaction = reaction;
   } else if (existing.reaction === reaction) {
-    db.prepare('DELETE FROM post_reactions_fingerprint WHERE post_id = ? AND fingerprint = ?').run(postId, identityKey);
+    db.prepare(`DELETE FROM post_reactions_fingerprint WHERE post_id = ? AND ${reactionMatch.clause}`)
+      .run(postId, ...reactionMatch.params);
     nextReaction = null;
-  } else {
+  } else if (existing.fingerprint === identityKey) {
     db.prepare('UPDATE post_reactions_fingerprint SET reaction = ?, created_at = ? WHERE post_id = ? AND fingerprint = ?')
       .run(reaction, Date.now(), postId, identityKey);
+    nextReaction = reaction;
+  } else {
+    db.prepare(`DELETE FROM post_reactions_fingerprint WHERE post_id = ? AND ${reactionMatch.clause}`)
+      .run(postId, ...reactionMatch.params);
+    db.prepare(
+      'INSERT INTO post_reactions_fingerprint (post_id, fingerprint, reaction, created_at) VALUES (?, ?, ?, ?)'
+    ).run(postId, identityKey, reaction, Date.now());
     nextReaction = reaction;
   }
 
@@ -520,8 +583,9 @@ app.post('/api/posts/:id/like', (req, res) => {
   if (!fingerprint) {
     return;
   }
+  const identityHashes = getIdentityLookupHashes(req, res);
 
-  const result = toggleReaction(postId, fingerprint, 'like');
+  const result = toggleReaction(postId, fingerprint, identityHashes, 'like');
   if (result.reaction === 'like') {
     createNotification({
       recipientFingerprint: post.fingerprint,
@@ -549,8 +613,9 @@ app.post('/api/posts/:id/dislike', (req, res) => {
   if (!fingerprint) {
     return;
   }
+  const identityHashes = getIdentityLookupHashes(req, res);
 
-  const result = toggleReaction(postId, fingerprint, 'dislike');
+  const result = toggleReaction(postId, fingerprint, identityHashes, 'dislike');
   return res.json({
     likes: result.likes_count,
     dislikes: result.dislikes_count,
@@ -558,13 +623,13 @@ app.post('/api/posts/:id/dislike', (req, res) => {
   });
 });
 
-const toggleFavorite = db.transaction((postId, fingerprint) => {
-  const existing = db
-    .prepare('SELECT created_at FROM post_favorites WHERE post_id = ? AND fingerprint = ?')
-    .get(postId, fingerprint);
+const toggleFavorite = db.transaction((postId, fingerprint, identityHashes) => {
+  const existing = findExistingFavorite(postId, identityHashes);
+  const favoriteMatch = buildIdentityMatch('fingerprint', identityHashes);
 
   if (existing) {
-    db.prepare('DELETE FROM post_favorites WHERE post_id = ? AND fingerprint = ?').run(postId, fingerprint);
+    db.prepare(`DELETE FROM post_favorites WHERE post_id = ? AND ${favoriteMatch.clause}`)
+      .run(postId, ...favoriteMatch.params);
     return { favorited: false };
   }
 
@@ -588,12 +653,13 @@ app.post('/api/posts/:id/favorite', (req, res) => {
   if (!fingerprint) {
     return;
   }
+  const identityHashes = getIdentityLookupHashes(req, res);
 
   if (!checkBanFor(req, res, 'like', '你已被限制操作')) {
     return;
   }
 
-  const result = toggleFavorite(postId, fingerprint);
+  const result = toggleFavorite(postId, fingerprint, identityHashes);
   return res.json(result);
 });
 
@@ -605,33 +671,42 @@ app.get('/api/favorites', (req, res) => {
   if (!fingerprint) {
     return;
   }
+  const identityHashes = getIdentityLookupHashes(req, res);
+  const favoriteMatch = buildIdentityMatch('fingerprint', identityHashes);
+  const viewerReaction = buildViewerReactionSelect(identityHashes);
 
   const limit = Math.min(Math.max(Number(req.query.limit || 20), 1), 50);
   const offset = Math.max(Number(req.query.offset || 0), 0);
 
   const total = db
-    .prepare('SELECT COUNT(1) AS count FROM post_favorites WHERE fingerprint = ?')
-    .get(fingerprint)?.count ?? 0;
+    .prepare(`SELECT COUNT(1) AS count FROM (
+      SELECT post_id
+      FROM post_favorites
+      WHERE ${favoriteMatch.clause}
+      GROUP BY post_id
+    ) favorite_posts`)
+    .get(...favoriteMatch.params)?.count ?? 0;
 
   const rows = db
     .prepare(
       `
       SELECT posts.*, ${hotScoreSql} AS hot_score,
-        pr.reaction AS viewer_reaction,
+        ${viewerReaction.sql},
         1 AS viewer_favorited,
         pf.created_at AS favorited_at
-      FROM post_favorites pf
+      FROM (
+        SELECT post_id, MAX(created_at) AS created_at
+        FROM post_favorites
+        WHERE ${favoriteMatch.clause}
+        GROUP BY post_id
+      ) pf
       JOIN posts ON posts.id = pf.post_id
-      LEFT JOIN post_reactions_fingerprint pr
-        ON pr.post_id = posts.id
-        AND pr.fingerprint = ?
-      WHERE pf.fingerprint = ?
-        AND posts.deleted = 0
+      WHERE posts.deleted = 0
       ORDER BY pf.created_at DESC
       LIMIT ? OFFSET ?
       `
     )
-    .all(fingerprint, fingerprint, limit, offset);
+    .all(...viewerReaction.params, ...favoriteMatch.params, limit, offset);
 
   const items = rows.map((row) => mapPostRow(row, row.hot_score >= 20));
   return res.json({ items, total });

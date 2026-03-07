@@ -2,6 +2,7 @@
   const {
     db,
     requireFingerprint,
+    getIdentityLookupHashes,
     enforceRateLimit,
     checkBanFor,
     getClientIp,
@@ -9,6 +10,24 @@
     incrementDailyStat,
     formatDateKey,
   } = deps;
+
+const buildIdentityMatch = (column, identityHashes) => {
+  const values = Array.from(new Set(
+    (Array.isArray(identityHashes) ? identityHashes : [identityHashes])
+      .map((item) => String(item || '').trim())
+      .filter(Boolean)
+  ));
+  if (!values.length) {
+    return { clause: '1 = 0', params: [] };
+  }
+  if (values.length === 1) {
+    return { clause: `${column} = ?`, params: values };
+  }
+  return {
+    clause: `${column} IN (${values.map(() => '?').join(', ')})`,
+    params: values,
+  };
+};
 
 const resolveRiskLevel = (reason) => {
   if (reason.includes('隐私')) return 'high';
@@ -31,6 +50,7 @@ app.post('/api/reports', (req, res) => {
   if (!fingerprint) {
     return;
   }
+  const identityHashes = getIdentityLookupHashes(req, res);
 
   if (!enforceRateLimit(req, res, 'report', fingerprint)) {
     return;
@@ -79,9 +99,10 @@ app.post('/api/reports', (req, res) => {
         return res.status(409).json({ error: '你已举报过该内容' });
       }
     }
+    const commentReporterMatch = buildIdentityMatch('fingerprint', identityHashes);
     const existingFingerprint = db
-      .prepare('SELECT 1 FROM comment_report_fingerprints WHERE comment_id = ? AND fingerprint = ?')
-      .get(targetCommentId, fingerprint);
+      .prepare(`SELECT 1 FROM comment_report_fingerprints WHERE comment_id = ? AND ${commentReporterMatch.clause}`)
+      .get(targetCommentId, ...commentReporterMatch.params);
     if (existingFingerprint) {
       return res.status(409).json({ error: '你已举报过该内容' });
     }
@@ -100,9 +121,10 @@ app.post('/api/reports', (req, res) => {
         return res.status(409).json({ error: '你已举报过该内容' });
       }
     }
+    const postReporterMatch = buildIdentityMatch('fingerprint', identityHashes);
     const existingFingerprint = db
-      .prepare('SELECT 1 FROM report_fingerprints WHERE post_id = ? AND fingerprint = ?')
-      .get(targetPostId, fingerprint);
+      .prepare(`SELECT 1 FROM report_fingerprints WHERE post_id = ? AND ${postReporterMatch.clause}`)
+      .get(targetPostId, ...postReporterMatch.params);
     if (existingFingerprint) {
       return res.status(409).json({ error: '你已举报过该内容' });
     }

@@ -16,9 +16,21 @@
 
 部分敏感接口会要求 `X-CSRF-Token`（见前端 `api.ts` 的 `needsAdminCsrf()` 判断）。
 
-### 1.4 指纹（X-Client-Fingerprint）
+### 1.4 客户端身份（Cookie + X-Client-Fingerprint）
 
-后端依赖指纹做频控/风控、通知投递与聊天室身份识别。前端会按路径选择性附带 `X-Client-Fingerprint`（见 `api.ts` 的 `shouldAttachFingerprint()`）。
+后端不再只依赖单一指纹，而是同时使用：
+
+- `gs_client_id_v2`：服务端补发的 `HttpOnly Cookie`，用于生成较稳定的 canonical 身份
+- `X-Client-Fingerprint`：前端按路径选择性附带的 legacy 指纹（见 `api.ts` 的 `shouldAttachFingerprint()`）
+
+服务端会把二者关联到 `identity_aliases`，为当前请求生成一组 `lookupHashes`，并在风控、封禁判断、通知读取、互动状态查询与聊天室身份识别中复用。
+
+### 1.5 身份归一的影响范围
+
+- `GET /api/access`：按 `IP + lookupHashes` 计算是否被封禁与权限收窄
+- 通知/连续登录彩蛋/反馈频控：会聚合同一身份下的多个历史哈希
+- 帖子点赞、点踩、收藏、评论点赞、举报去重：会跨 linked hashes 查询既有状态，避免“换指纹后重复算新用户”
+- `WS /ws/chat`：优先从 Cookie 解析身份；若解析不到，再回退到 join payload 中的 `fingerprint`
 
 ## 2. 公共 API（无需管理员）
 

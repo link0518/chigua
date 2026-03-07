@@ -571,8 +571,10 @@ const ChatRoomView: React.FC<ChatRoomViewProps> = ({ onExitToFeed }) => {
   const connect = useCallback(async () => {
     cleanupReconnectTimer();
     setStatus('connecting');
-
-    const fingerprint = await getBrowserFingerprint();
+    const [fingerprint] = await Promise.all([
+      getBrowserFingerprint().catch(() => ''),
+      api.getChatOnline().catch(() => null),
+    ]);
     if (!aliveRef.current || !shouldReconnectRef.current) {
       return;
     }
@@ -581,7 +583,10 @@ const ChatRoomView: React.FC<ChatRoomViewProps> = ({ onExitToFeed }) => {
     wsRef.current = ws;
 
     ws.onopen = () => {
-      const joinPayload: Record<string, any> = { fingerprint, clientTs: Date.now() };
+      const joinPayload: Record<string, any> = { clientTs: Date.now() };
+      if (fingerprint) {
+        joinPayload.fingerprint = fingerprint;
+      }
       if (isAdminUserRef.current) {
         joinPayload.adminAnonymous = adminAnonymousRef.current;
         joinPayload.hiddenInOnline = adminHiddenInOnlineRef.current;

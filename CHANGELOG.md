@@ -2,10 +2,15 @@
 
 ### Changed
 
+- 指纹主身份切换为 `HttpOnly Cookie` `gs_client_id_v2`，服务端新增身份归一层与 `identity_aliases` 兼容映射；通知、封禁、举报、点赞/收藏、评论点赞、聊天室统一按新旧身份并行识别，涉及 `server/identity-service.js`、`server/index.js`、`server/chat-realtime-service.js`、`server/routes/public/*`、`components/ChatRoomView.tsx`。
+
+### Changed
+
 - 后台系统设置新增发帖、评论、举报、留言的限流配置，支持直接调整次数与时间窗口；涉及 `server/site-settings.js`、`server/routes/admin/settings-routes.js`、`components/AdminDashboard.tsx`、`api.ts`。
 
 ### Fixed
 
+- 补齐身份归一的稳定键策略：聊天室会复用同一 identity graph 下的在线 presence，发帖/评论/举报限流统一按稳定身份键计数，避免更换浏览器指纹后被误识别为新用户；涉及 `server/identity-service.js`、`server/index.js`、`server/chat-realtime-service.js`、`server/tests/identity-service.test.js`、`server/tests/chat-realtime-service.test.js`。
 - 修复移动端点击标签进入搜索页后，长标签与长链接可能导致导航栏下方内容超宽、页面可横向滑动的问题；涉及 `components/SearchView.tsx`、`components/HomeView.tsx`、`components/FeedView.tsx`、`components/SketchUI.tsx`、`App.tsx`。
 - 统一 Markdown 链接与正文的换行策略，避免链接换行过碎，并保持评论区与帖子正文的浏览体验一致；涉及 `components/MarkdownRenderer.tsx`、`index.css`、`components/CommentModal.tsx`。
 

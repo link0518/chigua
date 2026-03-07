@@ -69,6 +69,59 @@ const toSafeInt = (value, fallback = 0) => {
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const toBoolean = (value) => value === true || value === 'true' || value === 1 || value === '1';
 const hasOwn = (target, key) => Object.prototype.hasOwnProperty.call(target || {}, key);
+const normalizeIdentityHashes = (value) => {
+  const source = Array.isArray(value) ? value : [value];
+  return Array.from(new Set(
+    source
+      .flatMap((item) => (Array.isArray(item) ? item : [item]))
+      .map((item) => String(item || '').trim())
+      .filter(Boolean)
+  ));
+};
+const hasSharedIdentityHashes = (left, right) => {
+  const leftHashes = normalizeIdentityHashes(left);
+  const rightHashes = new Set(normalizeIdentityHashes(right));
+  if (!leftHashes.length || !rightHashes.size) {
+    return false;
+  }
+  return leftHashes.some((identityHash) => rightHashes.has(identityHash));
+};
+export const findPresenceByIdentityHashes = (presences, fingerprintHash, identityHashes = []) => {
+  const normalizedFingerprintHash = String(fingerprintHash || '').trim();
+  const candidateHashes = normalizeIdentityHashes([normalizedFingerprintHash, identityHashes]);
+  if (!candidateHashes.length) {
+    return null;
+  }
+  const iterable = presences instanceof Map ? presences.values() : presences;
+  let sharedPresence = null;
+  for (const presence of iterable || []) {
+    if (!presence) {
+      continue;
+    }
+    const presenceFingerprintHash = String(presence.fingerprintHash || '').trim();
+    if (normalizedFingerprintHash && presenceFingerprintHash === normalizedFingerprintHash) {
+      return presence;
+    }
+    if (!sharedPresence && hasSharedIdentityHashes(
+      [presenceFingerprintHash, presence.identityHashes],
+      candidateHashes
+    )) {
+      sharedPresence = presence;
+    }
+  }
+  return sharedPresence;
+};
+export const getChatMessageRateLimitKey = (connection, presence) => {
+  const sessionId = String(presence?.sessionId || connection?.sessionId || '').trim();
+  if (sessionId) {
+    return `session:${sessionId}`;
+  }
+  const fingerprintHash = String(presence?.fingerprintHash || connection?.fingerprintHash || '').trim();
+  if (fingerprintHash) {
+    return `fingerprint:${fingerprintHash}`;
+  }
+  return '';
+};
 const normalizeMessageIntervalMs = (value, fallback = CHAT_DEFAULT_CONFIG.messageIntervalMs) => {
   const raw = Number(value);
   if (!Number.isFinite(raw)) {
@@ -160,6 +213,7 @@ export const createChatRealtimeService = (deps) => {
     server,
     db,
     hashFingerprint,
+    resolveSocketIdentity,
     getClientIp,
     containsSensitiveWord,
     isBannedFor,
@@ -173,7 +227,7 @@ export const createChatRealtimeService = (deps) => {
 
   const connectionBySocket = new Map();
   const presenceByFingerprint = new Map();
-  const lastMessageSentAtByFingerprint = new Map();
+  const lastMessageSentAtByRateKey = new Map();
 
   const insertChatSessionStmt = db.prepare(
     `
@@ -447,21 +501,26 @@ export const createChatRealtimeService = (deps) => {
   };
 
   const resolveActiveMute = (fingerprintHash) => {
-    if (!fingerprintHash) return null;
-    const row = getMuteRowStmt.get(fingerprintHash);
-    if (!row) return null;
-    const mutedUntil = typeof row.muted_until === 'number' ? row.muted_until : null;
-    if (mutedUntil && mutedUntil <= Date.now()) {
-      deleteMuteStmt.run(fingerprintHash);
-      return null;
+    const candidates = normalizeIdentityHashes(fingerprintHash);
+    for (const candidate of candidates) {
+      const row = getMuteRowStmt.get(candidate);
+      if (!row) {
+        continue;
+      }
+      const mutedUntil = typeof row.muted_until === 'number' ? row.muted_until : null;
+      if (mutedUntil && mutedUntil <= Date.now()) {
+        deleteMuteStmt.run(candidate);
+        continue;
+      }
+      return {
+        fingerprintHash: row.fingerprint_hash,
+        mutedUntil,
+        reason: row.reason || null,
+        createdAt: row.created_at,
+        createdByAdminId: row.created_by_admin_id || null,
+      };
     }
-    return {
-      fingerprintHash: row.fingerprint_hash,
-      mutedUntil,
-      reason: row.reason || null,
-      createdAt: row.created_at,
-      createdByAdminId: row.created_by_admin_id || null,
-    };
+    return null;
   };
 
   const collectOnlineNicknameSet = (excludeFingerprint = '') => {
@@ -600,6 +659,12 @@ export const createChatRealtimeService = (deps) => {
     broadcastEvent('chat.online.changed', snapshot);
   };
 
+  const getPresenceByConnection = (connection) => findPresenceByIdentityHashes(
+    presenceByFingerprint.values(),
+    connection?.fingerprintHash,
+    connection?.identityHashes
+  );
+
   const releaseConnection = (connection, reason) => {
     if (!connection || connection.released) {
       return;
@@ -611,7 +676,7 @@ export const createChatRealtimeService = (deps) => {
       return;
     }
 
-    const presence = presenceByFingerprint.get(connection.fingerprintHash);
+    const presence = getPresenceByConnection(connection);
     if (!presence) {
       return;
     }
@@ -621,8 +686,8 @@ export const createChatRealtimeService = (deps) => {
 
     if (presence.connections.size === 0) {
       closeChatSessionStmt.run(Date.now(), reason || 'disconnect', presence.sessionId);
-      presenceByFingerprint.delete(connection.fingerprintHash);
-      lastMessageSentAtByFingerprint.delete(connection.fingerprintHash);
+      presenceByFingerprint.delete(presence.fingerprintHash);
+      lastMessageSentAtByRateKey.delete(getChatMessageRateLimitKey(connection, presence));
     } else {
       const hasAdminConnection = Array.from(presence.connections).some((item) => item.isAdmin);
       if (!hasAdminConnection) {
@@ -636,12 +701,30 @@ export const createChatRealtimeService = (deps) => {
     broadcastOnlineChanged();
   };
 
-  const disconnectFingerprintConnections = (fingerprintHash, event, payload, closeCode, closeReason) => {
-    const presence = presenceByFingerprint.get(fingerprintHash);
-    if (!presence) {
-      return 0;
+  const getPresenceIdentityHashes = (presence) => normalizeIdentityHashes([
+    presence?.fingerprintHash,
+    presence?.identityHashes,
+  ]);
+
+  const getConnectionsByFingerprintHash = (fingerprintHash) => {
+    const normalizedFingerprintHash = String(fingerprintHash || '').trim();
+    if (!normalizedFingerprintHash) {
+      return [];
     }
-    const targets = Array.from(presence.connections);
+    const targets = new Set();
+    presenceByFingerprint.forEach((presence) => {
+      if (!getPresenceIdentityHashes(presence).includes(normalizedFingerprintHash)) {
+        return;
+      }
+      presence.connections.forEach((connection) => {
+        targets.add(connection);
+      });
+    });
+    return Array.from(targets);
+  };
+
+  const disconnectFingerprintConnections = (fingerprintHash, event, payload, closeCode, closeReason) => {
+    const targets = getConnectionsByFingerprintHash(fingerprintHash);
     targets.forEach((connection) => {
       sendEvent(connection.socket, event, payload);
       closeSocket(connection.socket, closeCode, closeReason);
@@ -650,11 +733,7 @@ export const createChatRealtimeService = (deps) => {
   };
 
   const notifyFingerprintConnections = (fingerprintHash, event, payload) => {
-    const presence = presenceByFingerprint.get(fingerprintHash);
-    if (!presence) {
-      return 0;
-    }
-    const targets = Array.from(presence.connections);
+    const targets = getConnectionsByFingerprintHash(fingerprintHash);
     targets.forEach((connection) => {
       sendEvent(connection.socket, event, payload);
     });
@@ -819,27 +898,8 @@ export const createChatRealtimeService = (deps) => {
     return connection.nickname || '匿名';
   };
 
-  const handleJoin = async (connection, payload) => {
-    if (connection.joined) {
-      sendEvent(connection.socket, 'chat.error', { message: '已在聊天室内' });
-      return;
-    }
-
-    const rawFingerprint = String(payload?.fingerprint || '').trim();
-    if (!rawFingerprint) {
-      sendEvent(connection.socket, 'chat.error', { message: '缺少指纹标识' });
-      closeSocket(connection.socket, CHAT_JOIN_CLOSE_CODE, 'fingerprint_required');
-      return;
-    }
-
-    const fingerprintHash = hashFingerprint(rawFingerprint);
-    if (!fingerprintHash) {
-      sendEvent(connection.socket, 'chat.error', { message: '指纹计算失败' });
-      closeSocket(connection.socket, CHAT_JOIN_CLOSE_CODE, 'fingerprint_invalid');
-      return;
-    }
-
-    if (isBannedFor(connection.ip, fingerprintHash, 'chat')) {
+  const joinWithResolvedIdentity = async (connection, payload, fingerprintHash, identityHashes) => {
+    if (isBannedFor(connection.ip, identityHashes.length ? identityHashes : [fingerprintHash], 'chat')) {
       sendEvent(connection.socket, 'chat.banned', { message: '账号已被封禁，无法进入聊天室' });
       closeSocket(connection.socket, CHAT_JOIN_CLOSE_CODE, 'banned');
       return;
@@ -862,12 +922,18 @@ export const createChatRealtimeService = (deps) => {
     const requestAnonymous = toBoolean(payload?.adminAnonymous);
     const requestHiddenInOnline = toBoolean(payload?.hiddenInOnline);
     const now = Date.now();
-    let presence = presenceByFingerprint.get(fingerprintHash);
+    const normalizedIdentityHashes = normalizeIdentityHashes([fingerprintHash, identityHashes]);
+    let presence = findPresenceByIdentityHashes(
+      presenceByFingerprint.values(),
+      fingerprintHash,
+      normalizedIdentityHashes
+    );
     if (!presence) {
       const baseNickname = buildUniqueNickname(collectOnlineNicknameSet());
       const sessionId = crypto.randomUUID();
       presence = {
         fingerprintHash,
+        identityHashes: normalizedIdentityHashes,
         sessionId,
         baseNickname,
         adminAlias: '',
@@ -882,13 +948,18 @@ export const createChatRealtimeService = (deps) => {
       presenceByFingerprint.set(fingerprintHash, presence);
       insertChatSessionStmt.run(sessionId, fingerprintHash, baseNickname, now, 1);
     }
+    presence.identityHashes = normalizeIdentityHashes([
+      presence.fingerprintHash,
+      presence.identityHashes,
+      identityHashes,
+    ]);
 
     if (connection.isAdmin) {
       presence.isAdmin = true;
       presence.adminAnonymous = requestAnonymous;
       presence.hiddenInOnline = requestHiddenInOnline;
       if (presence.adminAnonymous && !presence.adminAlias) {
-        const onlineNameSet = collectOnlineNicknameSet(fingerprintHash);
+        const onlineNameSet = collectOnlineNicknameSet(presence.fingerprintHash);
         onlineNameSet.add(presence.baseNickname);
         presence.adminAlias = buildUniqueNickname(onlineNameSet);
       }
@@ -902,18 +973,22 @@ export const createChatRealtimeService = (deps) => {
     }
 
     presence.connections.add(connection);
+    presence.connections.forEach((item) => {
+      item.identityHashes = presence.identityHashes.slice();
+    });
     presence.lastActiveAt = now;
     const currentNickname = syncPresenceConnections(presence);
     updateSessionPeakStmt.run(presence.connections.size, presence.sessionId, presence.connections.size);
 
     connection.joined = true;
-    connection.fingerprintHash = fingerprintHash;
+    connection.fingerprintHash = presence.fingerprintHash;
+    connection.identityHashes = presence.identityHashes.length ? presence.identityHashes.slice() : [fingerprintHash];
     connection.nickname = connection.isAdmin ? currentNickname : presence.baseNickname;
     connection.sessionId = presence.sessionId;
     connection.joinedAt = now;
     connection.lastSeen = now;
 
-    const mute = resolveActiveMute(fingerprintHash);
+    const mute = resolveActiveMute([connection.fingerprintHash, connection.identityHashes]);
     const joinedPayload = {
       roomId: 'main',
       sessionId: presence.sessionId,
@@ -933,19 +1008,55 @@ export const createChatRealtimeService = (deps) => {
     broadcastOnlineChanged();
   };
 
+  const handleJoin = async (connection, payload) => {
+    if (connection.joined) {
+      sendEvent(connection.socket, 'chat.error', { message: '已在聊天室内' });
+      return;
+    }
+
+    const resolvedIdentity = typeof resolveSocketIdentity === 'function'
+      ? resolveSocketIdentity(connection.request)
+      : null;
+    let resolvedFingerprintHash = String(
+      resolvedIdentity?.stableIdentityHash
+      || resolvedIdentity?.preferredFingerprintHash
+      || resolvedIdentity?.canonicalHash
+      || ''
+    ).trim();
+    let resolvedIdentityHashes = Array.isArray(resolvedIdentity?.lookupHashes)
+      ? resolvedIdentity.lookupHashes.filter(Boolean)
+      : [];
+    if (!resolvedFingerprintHash) {
+      const rawFingerprint = String(payload?.fingerprint || '').trim();
+      const fallbackFingerprintHash = typeof hashFingerprint === 'function'
+        ? hashFingerprint(rawFingerprint)
+        : '';
+      if (fallbackFingerprintHash) {
+        resolvedFingerprintHash = fallbackFingerprintHash;
+        resolvedIdentityHashes = [fallbackFingerprintHash];
+      }
+    }
+    if (!resolvedFingerprintHash) {
+      sendEvent(connection.socket, 'chat.error', { message: '缺少身份标识，请刷新页面后重试' });
+      closeSocket(connection.socket, CHAT_JOIN_CLOSE_CODE, 'identity_required');
+      return;
+    }
+    await joinWithResolvedIdentity(connection, payload, resolvedFingerprintHash, resolvedIdentityHashes);
+  };
+
   const handleSendMessage = (connection, payload) => {
     if (!connection.joined || !connection.fingerprintHash || !connection.sessionId) {
       sendEvent(connection.socket, 'chat.error', { message: '请先进入聊天室' });
       return;
     }
 
-    if (isBannedFor(connection.ip, connection.fingerprintHash, 'chat')) {
+    if (isBannedFor(connection.ip, connection.identityHashes?.length ? connection.identityHashes : [connection.fingerprintHash], 'chat')) {
       sendEvent(connection.socket, 'chat.banned', { message: '账号已被封禁，无法发言' });
       closeSocket(connection.socket, CHAT_JOIN_CLOSE_CODE, 'banned');
       return;
     }
 
-    const mute = resolveActiveMute(connection.fingerprintHash);
+    const mute = resolveActiveMute([connection.fingerprintHash, connection.identityHashes]);
     if (mute) {
       sendEvent(connection.socket, 'chat.muted', {
         message: '你已被禁言',
@@ -997,7 +1108,7 @@ export const createChatRealtimeService = (deps) => {
       };
     }
 
-    const presence = presenceByFingerprint.get(connection.fingerprintHash);
+    const presence = getPresenceByConnection(connection);
     const messageNickname = resolveMessageNickname(connection, presence);
     const messageIsAdmin = Boolean(connection.isAdmin);
     const messageAdminAnonymous = Boolean(connection.isAdmin && presence?.adminAnonymous);
@@ -1007,7 +1118,8 @@ export const createChatRealtimeService = (deps) => {
       CHAT_DEFAULT_CONFIG.messageIntervalMs
     );
     if (intervalMs > 0) {
-      const lastSentAt = toSafeInt(lastMessageSentAtByFingerprint.get(connection.fingerprintHash), 0);
+      const messageRateLimitKey = getChatMessageRateLimitKey(connection, presence);
+      const lastSentAt = toSafeInt(lastMessageSentAtByRateKey.get(messageRateLimitKey), 0);
       const elapsedMs = now - lastSentAt;
       if (elapsedMs < intervalMs) {
         const retryAfterSeconds = Math.max(1, Math.ceil((intervalMs - elapsedMs) / 1000));
@@ -1039,7 +1151,7 @@ export const createChatRealtimeService = (deps) => {
         sendEvent(connection.socket, 'chat.error', { message: '消息写入失败' });
         return;
       }
-      lastMessageSentAtByFingerprint.set(connection.fingerprintHash, now);
+      lastMessageSentAtByRateKey.set(getChatMessageRateLimitKey(connection, presence), now);
       broadcastEvent('chat.message.new', mapped);
       sendEvent(connection.socket, 'chat.send.ack', {
         clientMsgId: messagePayload.clientMsgId,
@@ -1054,7 +1166,7 @@ export const createChatRealtimeService = (deps) => {
       const duplicated = getChatMessageByClientIdStmt.get(connection.fingerprintHash, messagePayload.clientMsgId);
       const mapped = mapMessageRow(duplicated, false);
       if (mapped) {
-        lastMessageSentAtByFingerprint.set(connection.fingerprintHash, now);
+        lastMessageSentAtByRateKey.set(getChatMessageRateLimitKey(connection, presence), now);
         sendEvent(connection.socket, 'chat.send.ack', {
           clientMsgId: messagePayload.clientMsgId,
           messageId: mapped.id,
@@ -1074,7 +1186,7 @@ export const createChatRealtimeService = (deps) => {
       sendEvent(connection.socket, 'chat.error', { message: '无管理员权限' });
       return;
     }
-    const presence = presenceByFingerprint.get(connection.fingerprintHash);
+    const presence = getPresenceByConnection(connection);
     if (!presence) {
       sendEvent(connection.socket, 'chat.error', { message: '聊天室状态异常' });
       return;
@@ -1123,6 +1235,7 @@ export const createChatRealtimeService = (deps) => {
       ip: getClientIp(request),
       joined: false,
       fingerprintHash: '',
+      identityHashes: [],
       nickname: '',
       sessionId: '',
       isAdmin: false,

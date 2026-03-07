@@ -2,7 +2,7 @@
   const {
     db,
     checkBanFor,
-    getOptionalFingerprint,
+    getIdentityLookupHashes,
     requireFingerprint,
     enforceRateLimit,
     getClientIp,
@@ -10,10 +10,58 @@
     verifyTurnstile,
     createNotification,
     trimPreview,
+    sharesIdentityHashes,
     mapCommentRow,
     buildCommentTree,
     crypto,
   } = deps;
+
+const buildIdentityMatch = (column, identityHashes) => {
+  const values = Array.from(new Set(
+    (Array.isArray(identityHashes) ? identityHashes : [identityHashes])
+      .map((item) => String(item || '').trim())
+      .filter(Boolean)
+  ));
+  if (!values.length) {
+    return { clause: '1 = 0', params: [] };
+  }
+  if (values.length === 1) {
+    return { clause: `${column} = ?`, params: values };
+  }
+  return {
+    clause: `${column} IN (${values.map(() => '?').join(', ')})`,
+    params: values,
+  };
+};
+
+const buildViewerLikedSelect = (identityHashes) => {
+  const match = buildIdentityMatch('viewer.fingerprint', identityHashes);
+  return {
+    sql: `
+      EXISTS(
+        SELECT 1
+        FROM comment_likes viewer
+        WHERE viewer.comment_id = comments.id AND ${match.clause}
+      ) AS viewer_liked
+    `,
+    params: match.params,
+  };
+};
+
+const findExistingCommentLike = (db, commentId, identityHashes) => {
+  const match = buildIdentityMatch('fingerprint', identityHashes);
+  return db
+    .prepare(
+      `
+        SELECT fingerprint, created_at
+        FROM comment_likes
+        WHERE comment_id = ? AND ${match.clause}
+        ORDER BY created_at DESC
+        LIMIT 1
+      `
+    )
+    .get(commentId, ...match.params);
+};
 
 app.get('/api/posts/:id/comments', (req, res) => {
   if (!checkBanFor(req, res, 'view', '你已被限制浏览')) {
@@ -22,7 +70,8 @@ app.get('/api/posts/:id/comments', (req, res) => {
   const postId = req.params.id;
   const limit = Math.min(Number(req.query.limit || 10), 200);
   const offset = Math.max(Number(req.query.offset || 0), 0);
-  const viewerFingerprint = getOptionalFingerprint(req);
+  const viewerIdentityHashes = getIdentityLookupHashes(req, res);
+  const viewerLikedSelect = buildViewerLikedSelect(viewerIdentityHashes);
 
   const post = db.prepare('SELECT id, fingerprint FROM posts WHERE id = ? AND deleted = 0').get(postId);
   if (!post) {
@@ -39,22 +88,19 @@ app.get('/api/posts/:id/comments', (req, res) => {
       `
       SELECT comments.*,
         COALESCE(cl.likes_count, 0) AS likes_count,
-        viewer.comment_id IS NOT NULL AS viewer_liked
+        ${viewerLikedSelect.sql}
       FROM comments
       LEFT JOIN (
         SELECT comment_id, COUNT(1) AS likes_count
         FROM comment_likes
         GROUP BY comment_id
       ) cl ON cl.comment_id = comments.id
-      LEFT JOIN comment_likes viewer
-        ON viewer.comment_id = comments.id
-        AND viewer.fingerprint = ?
       WHERE comments.post_id = ? AND comments.parent_id IS NULL
       ORDER BY comments.created_at ASC
       LIMIT ? OFFSET ?
       `
     )
-    .all(viewerFingerprint, postId, limit, offset);
+    .all(...viewerLikedSelect.params, postId, limit, offset);
 
   if (rootRows.length === 0) {
     return res.json({ items: [], total });
@@ -67,21 +113,18 @@ app.get('/api/posts/:id/comments', (req, res) => {
       `
       SELECT comments.*,
         COALESCE(cl.likes_count, 0) AS likes_count,
-        viewer.comment_id IS NOT NULL AS viewer_liked
+        ${viewerLikedSelect.sql}
       FROM comments
       LEFT JOIN (
         SELECT comment_id, COUNT(1) AS likes_count
         FROM comment_likes
         GROUP BY comment_id
       ) cl ON cl.comment_id = comments.id
-      LEFT JOIN comment_likes viewer
-        ON viewer.comment_id = comments.id
-        AND viewer.fingerprint = ?
       WHERE comments.post_id = ? AND comments.parent_id IN (${placeholders})
       ORDER BY comments.created_at ASC
       `
     )
-    .all(viewerFingerprint, postId, ...rootIds);
+    .all(...viewerLikedSelect.params, postId, ...rootIds);
 
   return res.json({ items: buildCommentTree([...rootRows, ...replyRows]), total });
 });
@@ -95,7 +138,8 @@ app.get('/api/posts/:id/comment-thread', (req, res) => {
   if (!commentId) {
     return res.status(400).json({ error: '缺少 commentId' });
   }
-  const viewerFingerprint = getOptionalFingerprint(req);
+  const viewerIdentityHashes = getIdentityLookupHashes(req, res);
+  const viewerLikedSelect = buildViewerLikedSelect(viewerIdentityHashes);
 
   const commentRow = db
     .prepare('SELECT * FROM comments WHERE id = ?')
@@ -110,20 +154,17 @@ app.get('/api/posts/:id/comment-thread', (req, res) => {
       `
       SELECT comments.*,
         COALESCE(cl.likes_count, 0) AS likes_count,
-        viewer.comment_id IS NOT NULL AS viewer_liked
+        ${viewerLikedSelect.sql}
       FROM comments
       LEFT JOIN (
         SELECT comment_id, COUNT(1) AS likes_count
         FROM comment_likes
         GROUP BY comment_id
       ) cl ON cl.comment_id = comments.id
-      LEFT JOIN comment_likes viewer
-        ON viewer.comment_id = comments.id
-        AND viewer.fingerprint = ?
       WHERE comments.id = ?
       `
     )
-    .get(viewerFingerprint, rootId);
+    .get(...viewerLikedSelect.params, rootId);
   if (!rootRow || rootRow.post_id !== postId) {
     return res.status(404).json({ error: '评论不存在' });
   }
@@ -133,21 +174,18 @@ app.get('/api/posts/:id/comment-thread', (req, res) => {
       `
       SELECT comments.*,
         COALESCE(cl.likes_count, 0) AS likes_count,
-        viewer.comment_id IS NOT NULL AS viewer_liked
+        ${viewerLikedSelect.sql}
       FROM comments
       LEFT JOIN (
         SELECT comment_id, COUNT(1) AS likes_count
         FROM comment_likes
         GROUP BY comment_id
       ) cl ON cl.comment_id = comments.id
-      LEFT JOIN comment_likes viewer
-        ON viewer.comment_id = comments.id
-        AND viewer.fingerprint = ?
       WHERE comments.post_id = ? AND comments.parent_id = ?
       ORDER BY comments.created_at ASC
       `
     )
-    .all(viewerFingerprint, postId, rootId);
+    .all(...viewerLikedSelect.params, postId, rootId);
 
   const replies = replyRows
     .filter((row) => row.id !== rootId)
@@ -229,7 +267,7 @@ app.post('/api/posts/:id/comments', async (req, res) => {
   if (finalReplyToId) {
     const replyTarget = db.prepare('SELECT fingerprint FROM comments WHERE id = ?').get(finalReplyToId);
     replyRecipient = replyTarget?.fingerprint || '';
-    if (replyRecipient && replyRecipient !== fingerprint) {
+    if (replyRecipient && !sharesIdentityHashes(replyRecipient, fingerprint)) {
       createNotification({
         recipientFingerprint: replyRecipient,
         type: 'comment_reply',
@@ -241,7 +279,11 @@ app.post('/api/posts/:id/comments', async (req, res) => {
     }
   }
 
-  if (post.fingerprint && post.fingerprint !== fingerprint && post.fingerprint !== replyRecipient) {
+  if (
+    post.fingerprint
+    && !sharesIdentityHashes(post.fingerprint, fingerprint)
+    && !sharesIdentityHashes(post.fingerprint, replyRecipient)
+  ) {
     createNotification({
       recipientFingerprint: post.fingerprint,
       type: 'post_comment',
@@ -267,18 +309,18 @@ app.post('/api/posts/:id/comments', async (req, res) => {
   });
 });
 
-const toggleCommentLike = db.transaction((commentId, fingerprint) => {
+const toggleCommentLike = db.transaction((commentId, fingerprint, identityHashes) => {
   const comment = db.prepare('SELECT id, post_id FROM comments WHERE id = ? AND deleted = 0').get(commentId);
   if (!comment) {
     return { status: 404, error: '评论不存在' };
   }
 
-  const existing = db
-    .prepare('SELECT created_at FROM comment_likes WHERE comment_id = ? AND fingerprint = ?')
-    .get(commentId, fingerprint);
+  const existing = findExistingCommentLike(db, commentId, identityHashes);
+  const likeMatch = buildIdentityMatch('fingerprint', identityHashes);
 
   if (existing) {
-    db.prepare('DELETE FROM comment_likes WHERE comment_id = ? AND fingerprint = ?').run(commentId, fingerprint);
+    db.prepare(`DELETE FROM comment_likes WHERE comment_id = ? AND ${likeMatch.clause}`)
+      .run(commentId, ...likeMatch.params);
   } else {
     db.prepare('INSERT INTO comment_likes (comment_id, fingerprint, created_at) VALUES (?, ?, ?)')
       .run(commentId, fingerprint, Date.now());
@@ -305,7 +347,8 @@ app.post('/api/comments/:id/like', (req, res) => {
     return;
   }
 
-  const result = toggleCommentLike(commentId, fingerprint);
+  const identityHashes = getIdentityLookupHashes(req, res);
+  const result = toggleCommentLike(commentId, fingerprint, identityHashes);
   if (result.error) {
     return res.status(result.status || 400).json({ error: result.error });
   }

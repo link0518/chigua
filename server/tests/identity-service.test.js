@@ -88,10 +88,19 @@ test('同一 legacy 指纹在 Cookie 轮换后仍能找回历史 canonical', () 
   assert.ok(secondContext.lookupHashes.includes(secondContext.canonicalHash));
   assert.ok(secondContext.lookupHashes.includes(firstContext.legacyFingerprintHash));
 
+  const legacyOnlyLookupHashes = service.getRequestIdentityLookupHashes({
+    headers: { 'x-client-fingerprint': 'legacy-device-fingerprint' },
+  }, null);
+
+  assert.ok(legacyOnlyLookupHashes.includes(firstContext.canonicalHash));
+  assert.ok(legacyOnlyLookupHashes.includes(secondContext.canonicalHash));
+  assert.ok(legacyOnlyLookupHashes.includes(firstContext.legacyFingerprintHash));
+
   const socketIdentity = service.resolveSocketIdentity({
     headers: { cookie: buildCookieHeader(secondResponse) },
   });
 
+  assert.equal(socketIdentity.preferredFingerprintHash, firstContext.legacyFingerprintHash);
   assert.ok(socketIdentity.lookupHashes.includes(firstContext.canonicalHash));
   assert.ok(socketIdentity.lookupHashes.includes(secondContext.canonicalHash));
   assert.ok(socketIdentity.lookupHashes.includes(firstContext.legacyFingerprintHash));
@@ -120,6 +129,40 @@ test('共享同一 legacy 指纹的 canonical 会被识别为同一身份', () =
     service.sharesIdentityHashes(firstContext.canonicalHash, firstContext.legacyFingerprintHash),
     true
   );
+
+  db.close();
+});
+
+test('稳定身份键会复用整个 identity graph 中最早关联的 legacy 指纹', () => {
+  const { db, service } = createHarness();
+
+  const firstResponse = createResponse();
+  const firstContext = service.ensureRequestIdentity({
+    headers: { 'x-client-fingerprint': 'legacy-old' },
+  }, firstResponse);
+
+  const cookieHeader = buildCookieHeader(firstResponse);
+  const secondContext = service.ensureRequestIdentity({
+    headers: {
+      cookie: cookieHeader,
+      'x-client-fingerprint': 'legacy-new',
+    },
+  }, null);
+
+  const stableIdentityKey = service.getRequestStableIdentityKey({
+    headers: {
+      cookie: cookieHeader,
+      'x-client-fingerprint': 'legacy-new',
+    },
+  }, null);
+  const socketIdentity = service.resolveSocketIdentity({
+    headers: { cookie: cookieHeader },
+  });
+
+  assert.equal(secondContext.canonicalHash, firstContext.canonicalHash);
+  assert.notEqual(secondContext.legacyFingerprintHash, firstContext.legacyFingerprintHash);
+  assert.equal(stableIdentityKey, firstContext.legacyFingerprintHash);
+  assert.equal(socketIdentity.stableIdentityHash, firstContext.legacyFingerprintHash);
 
   db.close();
 });

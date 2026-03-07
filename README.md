@@ -77,11 +77,17 @@ npm run dev:full
 - `components/ChatRoomView.tsx`：匿名聊天室前端页面（单聊天室入口）
 - `store/AppContext.tsx`：全局状态与业务动作（调用 `api.ts`）
 - `types.ts`：共享类型定义
-- `server/`：后端（路由、鉴权、SQLite、管理逻辑，含 `chat-realtime-service.js` WebSocket 实时服务）
+- `server/`：后端（路由、鉴权、SQLite、管理逻辑，含 `identity-service.js` 身份归一与 `chat-realtime-service.js` WebSocket 实时服务）
 - `server/data/app.db`：SQLite 数据库文件（运行后生成）
 - `Vocabulary/`：敏感词库文本文件（服务端加载）
 - `scripts/`：构建/性能等脚本
 - `dist/`：前端构建产物（不要手改）
+
+## 身份与风控（重要）
+
+- 后端会为访客补发 `HttpOnly Cookie` `gs_client_id_v2`，作为相对稳定的客户端身份。
+- 前端对发帖、评论、点赞、举报、聊天室等风控敏感接口，仍会按需附带 `X-Client-Fingerprint`。
+- 服务端会把 Cookie 身份与 legacy 指纹关联到 `identity_aliases`，并在封禁判断、通知读取、收藏/点赞状态、连续登录彩蛋、聊天室身份识别等场景按“身份集合”聚合，而不是只看单次指纹。
 
 ## 后台入口
 

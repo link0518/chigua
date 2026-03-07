@@ -1,7 +1,7 @@
 export const registerPublicSiteRoutes = (app, deps) => {
   const {
     getClientIp,
-    getOptionalFingerprint,
+    getIdentityLookupHashes,
     getActiveBans,
     mergePermissions,
     buildSettingsResponse,
@@ -11,8 +11,8 @@ export const registerPublicSiteRoutes = (app, deps) => {
 
   app.get('/api/access', (req, res) => {
     const clientIp = getClientIp(req);
-    const fingerprint = getOptionalFingerprint(req);
-    const bans = getActiveBans(clientIp, fingerprint);
+    const identityHashes = getIdentityLookupHashes(req, res);
+    const bans = getActiveBans(clientIp, identityHashes);
     const permissions = mergePermissions(bans);
     const blocked = bans.some((ban) => ban.permissions.includes('site'));
     const viewBlocked = bans.some((ban) => ban.permissions.includes('view'));

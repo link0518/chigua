@@ -2,6 +2,7 @@
   const {
     db,
     requireFingerprint,
+    getIdentityLookupHashes,
     checkBanFor,
     touchOnlineSession,
     getOnlineCount,
@@ -14,8 +15,27 @@
 
   const EASTER_EGG_STREAK7_KEY = 'streak7_confetti_v1';
 
-  const resolveConsecutiveLoginDays = (fingerprint, maxDays = 30) => {
-    if (!fingerprint) {
+  const buildIdentityMatch = (column, identityHashes) => {
+    const values = Array.from(new Set(
+      (Array.isArray(identityHashes) ? identityHashes : [identityHashes])
+        .map((item) => String(item || '').trim())
+        .filter(Boolean)
+    ));
+    if (!values.length) {
+      return { clause: '1 = 0', params: [] };
+    }
+    if (values.length === 1) {
+      return { clause: `${column} = ?`, params: values };
+    }
+    return {
+      clause: `${column} IN (${values.map(() => '?').join(', ')})`,
+      params: values,
+    };
+  };
+
+  const resolveConsecutiveLoginDays = (identityHashes, maxDays = 30) => {
+    const identityMatch = buildIdentityMatch('fingerprint', identityHashes);
+    if (!identityMatch.params.length) {
       return 0;
     }
     const today = new Date();
@@ -27,8 +47,8 @@
     }
     const placeholders = keys.map(() => '?').join(',');
     const rows = db
-      .prepare(`SELECT date FROM fingerprint_login_days WHERE fingerprint = ? AND date IN (${placeholders})`)
-      .all(fingerprint, ...keys);
+      .prepare(`SELECT DISTINCT date FROM fingerprint_login_days WHERE ${identityMatch.clause} AND date IN (${placeholders})`)
+      .all(...identityMatch.params, ...keys);
     const set = new Set(rows.map((row) => row.date));
     let streak = 0;
     for (const key of keys) {
@@ -54,6 +74,7 @@
     if (!fingerprint) {
       return;
     }
+    const identityHashes = getIdentityLookupHashes(req, res);
     if (!checkBanFor(req, res, 'like', '账号已被封禁，无法点赞', fingerprint)) {
       return;
     }
@@ -65,8 +86,9 @@
     const limit = Math.min(Math.max(Number(req.query.limit || 20), 1), 50);
     const offset = Math.max(Number(req.query.offset || 0), 0);
 
-    const conditions = ['recipient_fingerprint = ?'];
-    const params = [fingerprint];
+    const recipientMatch = buildIdentityMatch('recipient_fingerprint', identityHashes);
+    const conditions = [recipientMatch.clause];
+    const params = [...recipientMatch.params];
 
     if (status === 'unread') {
       conditions.push('read_at IS NULL');
@@ -87,13 +109,15 @@
       )
       .all(...params, limit, offset);
 
+    const unreadMatch = buildIdentityMatch('recipient_fingerprint', identityHashes);
     const unreadCount = db
-      .prepare('SELECT COUNT(1) AS count FROM notifications WHERE recipient_fingerprint = ? AND read_at IS NULL')
-      .get(fingerprint)?.count ?? 0;
+      .prepare(`SELECT COUNT(1) AS count FROM notifications WHERE ${unreadMatch.clause} AND read_at IS NULL`)
+      .get(...unreadMatch.params)?.count ?? 0;
 
+    const totalMatch = buildIdentityMatch('recipient_fingerprint', identityHashes);
     const total = db
-      .prepare('SELECT COUNT(1) AS count FROM notifications WHERE recipient_fingerprint = ?')
-      .get(fingerprint)?.count ?? 0;
+      .prepare(`SELECT COUNT(1) AS count FROM notifications WHERE ${totalMatch.clause}`)
+      .get(...totalMatch.params)?.count ?? 0;
 
     const items = rows.map((row) => ({
       id: row.id,
@@ -113,6 +137,7 @@
     if (!fingerprint) {
       return;
     }
+    const identityHashes = getIdentityLookupHashes(req, res);
     if (!checkBanFor(req, res, 'like', '账号已被封禁，无法点踩', fingerprint)) {
       return;
     }
@@ -120,9 +145,10 @@
       return;
     }
     const now = Date.now();
+    const recipientMatch = buildIdentityMatch('recipient_fingerprint', identityHashes);
     const result = db
-      .prepare('UPDATE notifications SET read_at = ? WHERE recipient_fingerprint = ? AND read_at IS NULL')
-      .run(now, fingerprint);
+      .prepare(`UPDATE notifications SET read_at = ? WHERE ${recipientMatch.clause} AND read_at IS NULL`)
+      .run(now, ...recipientMatch.params);
     return res.json({ updated: result.changes || 0, readAt: now });
   });
 
@@ -136,15 +162,17 @@
     if (!fingerprint) {
       return;
     }
+    const identityHashes = getIdentityLookupHashes(req, res);
     const todayKey = formatDateKey();
     db.prepare('INSERT OR IGNORE INTO fingerprint_login_days (date, fingerprint) VALUES (?, ?)')
       .run(todayKey, fingerprint);
 
-    const streakDays = resolveConsecutiveLoginDays(fingerprint, 30);
+    const streakDays = resolveConsecutiveLoginDays(identityHashes, 30);
     const unlocked = streakDays >= 7;
+    const seenMatch = buildIdentityMatch('fingerprint', identityHashes);
     const alreadyShown = unlocked
-      ? Boolean(db.prepare('SELECT 1 FROM easter_egg_seen WHERE fingerprint = ? AND egg_key = ?')
-        .get(fingerprint, EASTER_EGG_STREAK7_KEY))
+      ? Boolean(db.prepare(`SELECT 1 FROM easter_egg_seen WHERE ${seenMatch.clause} AND egg_key = ?`)
+        .get(...seenMatch.params, EASTER_EGG_STREAK7_KEY))
       : false;
 
     return res.json({ streakDays, unlocked, alreadyShown });
@@ -190,6 +218,7 @@
     if (!fingerprint) {
       return;
     }
+    const identityHashes = getIdentityLookupHashes(req, res);
 
     const clientIp = getClientIp(req);
     if (!checkBanFor(req, res, 'site', '账号已被封禁，无法留言', fingerprint)) {
@@ -222,9 +251,10 @@
       }
     }
     if (fingerprint) {
+      const feedbackMatch = buildIdentityMatch('fingerprint', identityHashes);
       const fingerprintCount = db
-        .prepare('SELECT COUNT(1) AS count FROM feedback_messages WHERE fingerprint = ? AND created_at >= ?')
-        .get(fingerprint, feedbackWindowStart)?.count ?? 0;
+        .prepare(`SELECT COUNT(1) AS count FROM feedback_messages WHERE ${feedbackMatch.clause} AND created_at >= ?`)
+        .get(...feedbackMatch.params, feedbackWindowStart)?.count ?? 0;
       if (fingerprintCount >= feedbackLimit) {
         return res.status(429).json({ error: '留言过于频繁，请稍后再试' });
       }
