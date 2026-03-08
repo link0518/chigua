@@ -693,7 +693,6 @@ const CommentModal: React.FC<CommentModalProps> = ({
                 const orderedReplies = [...replies].sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
                 const isExpanded = expandedThreads.has(item.id);
                 const visibleReplies = isExpanded ? orderedReplies : [];
-                const maxIndent = depth > 0 ? 14 : 0;
                 const currentIndex = siblingOrderMap.get(item.id) || 1;
                 const threadLabel = parentLabel ? `${parentLabel}.${currentIndex}` : `${currentIndex}`;
                 const isDeleted = Boolean(item.deleted);
@@ -703,7 +702,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
                 const replyOrderMap = replies.length ? buildOrderMap(orderedReplies) : null;
 
                 return (
-                  <div key={item.id} data-comment-id={item.id} style={{ marginLeft: maxIndent }} className="group px-3 pt-2">
+                  <div key={item.id} data-comment-id={item.id} className={depth === 0 ? 'group px-3 pt-2' : 'group px-3 pt-1'}>
                     <div className="flex items-center justify-between text-[12px] text-gray-500 font-sans">
                       <div className="min-w-0 flex items-center gap-2 overflow-hidden whitespace-nowrap">
                         <span className="text-[12px] font-mono text-gray-500">{threadLabel}楼</span>
@@ -757,7 +756,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
                         )}
                       </div>
                     </div>
-                    <div className={depth === 0 ? `text-[13px] mt-1 ${isDeleted ? 'text-gray-400 italic' : 'text-ink'}` : `text-[12px] mt-1 ${isDeleted ? 'text-gray-400 italic' : 'text-ink/90'}`}>
+                    <div className={depth === 0 ? `text-[13px] mt-1 ${isDeleted ? 'text-gray-400 italic' : 'text-ink'}` : `text-[12px] mt-0.5 ${isDeleted ? 'text-gray-400 italic' : 'text-ink/90'}`}>
                       <MarkdownRenderer
                         content={item.content}
                         className={`${depth === 0 ? 'leading-5' : 'leading-4'} [&_.markdown-image-link]:block [&_.markdown-image]:max-h-32 md:[&_.markdown-image]:max-h-44 [&_.markdown-image]:object-contain [&_.markdown-image]:mx-auto [&_.markdown-image]:w-auto [&_.markdown-image]:!max-w-52 md:[&_.markdown-image]:!max-w-64`}
@@ -781,7 +780,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
                         </button>
                       </div>
                     )}
-                    <div className="border-b border-gray-100 mt-3" />
+                    <div className={depth === 0 ? 'border-b border-gray-100 mt-3' : 'border-b border-gray-100 mt-2'} />
                   </div>
                 );
               };
