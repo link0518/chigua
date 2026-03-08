@@ -1124,6 +1124,8 @@ const chatRealtime = createChatRealtimeService({
   db,
   hashFingerprint,
   resolveSocketIdentity: identityService.resolveSocketIdentity,
+  getLookupHashesForIdentityHash: identityService.getLookupHashesForIdentityHash,
+  getStableLegacyFingerprintHashForIdentityHashes: identityService.getStableLegacyFingerprintHashForIdentityHashes,
   getClientIp,
   containsSensitiveWord,
   isBannedFor,
@@ -1236,6 +1238,8 @@ registerAdminReportsRoutes(app, {
   upsertBan,
   BAN_PERMISSIONS,
   chatRealtime,
+  getLookupHashesForIdentityHash: identityService.getLookupHashesForIdentityHash,
+  getStableLegacyFingerprintHashForIdentityHashes: identityService.getStableLegacyFingerprintHashForIdentityHashes,
 });
 
 registerAdminPostsRoutes(app, {
@@ -1257,6 +1261,8 @@ registerAdminPostsRoutes(app, {
   BAN_PERMISSIONS,
   mapAdminCommentRow,
   formatRelativeTime,
+  getLookupHashesForIdentityHash: identityService.getLookupHashesForIdentityHash,
+  getStableLegacyFingerprintHashForIdentityHashes: identityService.getStableLegacyFingerprintHashForIdentityHashes,
 });
 registerAdminFeedbackRoutes(app, {
   db,
@@ -1266,6 +1272,8 @@ registerAdminFeedbackRoutes(app, {
   resolveBanOptions,
   upsertBan,
   BAN_PERMISSIONS,
+  getLookupHashesForIdentityHash: identityService.getLookupHashesForIdentityHash,
+  getStableLegacyFingerprintHashForIdentityHashes: identityService.getStableLegacyFingerprintHashForIdentityHashes,
 });
 
 registerAdminBansRoutes(app, {
@@ -1278,6 +1286,8 @@ registerAdminBansRoutes(app, {
   upsertBan,
   BAN_PERMISSIONS,
   logAdminAction,
+  getLookupHashesForIdentityHash: identityService.getLookupHashesForIdentityHash,
+  getStableLegacyFingerprintHashForIdentityHashes: identityService.getStableLegacyFingerprintHashForIdentityHashes,
 });
 registerAdminChatRoutes(app, {
   db,

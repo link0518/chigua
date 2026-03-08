@@ -38,9 +38,14 @@ export interface Report {
   commentContent?: string;
   targetContent?: string;
   targetIp?: string | null;
+  targetSessionId?: string | null;
   targetFingerprint?: string | null;
+  targetIdentityKey?: string | null;
+  targetIdentityHashes?: string[];
   reporterIp?: string | null;
   reporterFingerprint?: string | null;
+  reporterIdentityKey?: string | null;
+  reporterIdentityHashes?: string[];
   reporterCount?: number;
   timestamp: string;
   status: 'pending' | 'resolved' | 'ignored';
@@ -72,7 +77,15 @@ export interface NotificationItem {
   readAt?: number | null;
 }
 
-export interface AdminPost {
+export interface AdminIdentityInfo {
+  sessionId?: string | null;
+  ip?: string | null;
+  fingerprint?: string | null;
+  identityKey?: string | null;
+  identityHashes?: string[];
+}
+
+export interface AdminPost extends AdminIdentityInfo {
   id: string;
   content: string;
   author: string;
@@ -84,14 +97,11 @@ export interface AdminPost {
   deleted: boolean;
   deletedAt?: number | null;
   hotScore?: number;
-  sessionId?: string | null;
-  ip?: string | null;
-  fingerprint?: string | null;
   matchedComments?: AdminComment[];
   matchedCommentCount?: number;
 }
 
-export interface AdminComment {
+export interface AdminComment extends AdminIdentityInfo {
   id: string;
   postId: string;
   parentId?: string | null;
@@ -102,8 +112,6 @@ export interface AdminComment {
   createdAt: number;
   deleted: boolean;
   deletedAt?: number | null;
-  ip?: string | null;
-  fingerprint?: string | null;
   replies?: AdminComment[];
 }
 
@@ -128,10 +136,12 @@ export interface BanEntry {
   expiresAt?: number | null;
   permissions?: string[];
   reason?: string | null;
-  type: 'ip' | 'fingerprint';
+  type: 'ip' | 'fingerprint' | 'identity';
+  identityKey?: string | null;
+  identityHashes?: string[];
 }
 
-export interface FeedbackMessage {
+export interface FeedbackMessage extends AdminIdentityInfo {
   id: string;
   content: string;
   email: string;
@@ -139,9 +149,6 @@ export interface FeedbackMessage {
   qq?: string | null;
   createdAt: number;
   readAt?: number | null;
-  sessionId?: string | null;
-  ip?: string | null;
-  fingerprint?: string | null;
 }
 
 export interface ChartDataPoint {
@@ -184,11 +191,15 @@ export interface ChatOnlineUser {
 export interface AdminChatOnlineUser extends ChatOnlineUser {
   fingerprintHash: string;
   sessionId: string;
+  identityKey?: string | null;
+  identityHashes?: string[];
   hiddenInOnline?: boolean;
 }
 
 export interface ChatMuteEntry {
   fingerprintHash: string;
+  identityKey?: string | null;
+  identityHashes?: string[];
   mutedUntil: number | null;
   reason: string | null;
   createdAt: number;

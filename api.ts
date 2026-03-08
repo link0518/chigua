@@ -220,7 +220,7 @@ export const api = {
     method: 'POST',
     body: JSON.stringify({ reason }),
   }),
-  muteAdminChatUser: (fingerprintHash, options = {}) => apiFetch(`/admin/chat/users/${encodeURIComponent(fingerprintHash)}/mute`, {
+  muteAdminChatUser: (identityValue, options = {}) => apiFetch(`/admin/chat/users/${encodeURIComponent(identityValue)}/mute`, {
     method: 'POST',
     body: JSON.stringify(options || {}),
   }),
@@ -228,19 +228,19 @@ export const api = {
     method: 'POST',
     body: JSON.stringify(options || {}),
   }),
-  unmuteAdminChatUser: (fingerprintHash, reason = '') => apiFetch(`/admin/chat/users/${encodeURIComponent(fingerprintHash)}/unmute`, {
+  unmuteAdminChatUser: (identityValue, reason = '') => apiFetch(`/admin/chat/users/${encodeURIComponent(identityValue)}/unmute`, {
     method: 'POST',
     body: JSON.stringify({ reason }),
   }),
-  kickAdminChatUser: (fingerprintHash, reason = '') => apiFetch(`/admin/chat/users/${encodeURIComponent(fingerprintHash)}/kick`, {
+  kickAdminChatUser: (identityValue, reason = '') => apiFetch(`/admin/chat/users/${encodeURIComponent(identityValue)}/kick`, {
     method: 'POST',
     body: JSON.stringify({ reason }),
   }),
-  banAdminChatUser: (fingerprintHash, options = {}) => apiFetch(`/admin/chat/users/${encodeURIComponent(fingerprintHash)}/ban`, {
+  banAdminChatUser: (identityValue, options = {}) => apiFetch(`/admin/chat/users/${encodeURIComponent(identityValue)}/ban`, {
     method: 'POST',
     body: JSON.stringify(options || {}),
   }),
-  unbanAdminChatUser: (fingerprintHash, reason = '') => apiFetch(`/admin/chat/users/${encodeURIComponent(fingerprintHash)}/unban`, {
+  unbanAdminChatUser: (identityValue, reason = '') => apiFetch(`/admin/chat/users/${encodeURIComponent(identityValue)}/unban`, {
     method: 'POST',
     body: JSON.stringify({ reason }),
   }),

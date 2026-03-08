@@ -9,6 +9,7 @@ import { AdminAuditLog, AdminComment, AdminPost, FeedbackMessage, Report } from 
 import { useApp } from '../store/AppContext';
 import Modal from './Modal';
 import { api } from '../api';
+import { formatAdminIdentityInline, getAdminIdentityPrimary } from './adminIdentity';
 import MarkdownRenderer from './MarkdownRenderer';
 import AdminChatPanel from './AdminChatPanel';
 
@@ -241,13 +242,13 @@ const AdminDashboard: React.FC = () => {
     reason: string;
   }>({ isOpen: false, reason: '' });
   const [bannedIps, setBannedIps] = useState<Array<{ ip: string; bannedAt: number; expiresAt?: number | null; permissions?: string[]; reason?: string | null }>>([]);
-  const [bannedFingerprints, setBannedFingerprints] = useState<Array<{ fingerprint: string; bannedAt: number; expiresAt?: number | null; permissions?: string[]; reason?: string | null }>>([]);
+  const [bannedFingerprints, setBannedFingerprints] = useState<Array<{ fingerprint: string; identityKey?: string | null; identityHashes?: string[]; bannedAt: number; expiresAt?: number | null; permissions?: string[]; reason?: string | null }>>([]);
   const [banLoading, setBanLoading] = useState(false);
   const [banDuration, setBanDuration] = useState<'1h' | '1d' | '7d' | 'forever' | 'custom'>('7d');
   const [banCustomUntil, setBanCustomUntil] = useState('');
   const [banPermissions, setBanPermissions] = useState<string[]>(['post', 'comment', 'like', 'view', 'site', 'chat']);
   const [banSearch, setBanSearch] = useState('');
-  const [manualBanType, setManualBanType] = useState<'ip' | 'fingerprint'>('ip');
+  const [manualBanType, setManualBanType] = useState<'ip' | 'identity'>('identity');
   const [manualBanValue, setManualBanValue] = useState('');
   const [manualBanReason, setManualBanReason] = useState('');
   const [manualBanSubmitting, setManualBanSubmitting] = useState(false);
@@ -381,29 +382,73 @@ const AdminDashboard: React.FC = () => {
         r.targetContent,
         r.targetIp || '',
         r.targetFingerprint || '',
+        r.targetSessionId || '',
+        r.targetIdentityKey || '',
+        ...(r.targetIdentityHashes || []),
+        r.reporterIp || '',
+        r.reporterFingerprint || '',
+        r.reporterIdentityKey || '',
+        ...(r.reporterIdentityHashes || []),
       ].filter(Boolean) as string[];
       return values.some((value) => value.toLowerCase().includes(query));
     });
   }, [currentView, pendingReports, processedReports, searchQuery]);
 
   const mergedBans = useMemo(() => {
+    const identityBanMap = new Map<string, {
+      type: 'identity';
+      value: string;
+      fingerprint: string;
+      identityKey?: string | null;
+      identityHashes?: string[];
+      bannedAt: number;
+      expiresAt?: number | null;
+      permissions?: string[];
+      reason?: string | null;
+    }>();
+    bannedFingerprints.forEach((item) => {
+      const value = item.identityKey || item.fingerprint;
+      const existing = identityBanMap.get(value);
+      const mergedHashes = Array.from(new Set([
+        ...(existing?.identityHashes || []),
+        ...(item.identityHashes || []),
+        item.fingerprint,
+      ].filter(Boolean)));
+      if (!existing) {
+        identityBanMap.set(value, {
+          ...item,
+          type: 'identity',
+          value,
+          identityKey: item.identityKey || value,
+          identityHashes: mergedHashes,
+        });
+        return;
+      }
+      existing.identityHashes = mergedHashes;
+      existing.bannedAt = Math.max(existing.bannedAt, item.bannedAt);
+      existing.expiresAt = existing.expiresAt || item.expiresAt || null;
+      existing.permissions = existing.permissions?.length ? existing.permissions : item.permissions;
+      existing.reason = existing.reason || item.reason || null;
+    });
     const items = [
       ...bannedIps.map((item) => ({ ...item, type: 'ip' as const, value: item.ip })),
-      ...bannedFingerprints.map((item) => ({ ...item, type: 'fingerprint' as const, value: item.fingerprint })),
+      ...Array.from(identityBanMap.values()),
     ];
     const query = banSearch.trim().toLowerCase();
     if (!query) {
       return items;
     }
     return items.filter((item) => {
-      const fields = [
-        item.value,
-        item.reason || '',
-        (item.permissions || []).join(' '),
-        item.type,
-      ];
-      return fields.some((field) => field.toLowerCase().includes(query));
-    });
+        const fields = [
+          item.value,
+          item.reason || '',
+          (item.permissions || []).join(' '),
+          item.type,
+          'identityKey' in item ? (item.identityKey || '') : '',
+          'identityHashes' in item ? (item.identityHashes || []).join(' ') : '',
+        ];
+        return fields.some((field) => field.toLowerCase().includes(query));
+      });
   }, [bannedFingerprints, bannedIps, banSearch]);
 
 
@@ -816,18 +861,17 @@ const AdminDashboard: React.FC = () => {
     return list.map((perm) => BAN_PERMISSION_LABELS[perm] || perm).join('、');
   };
 
-  const formatIdentity = (ip?: string | null, fingerprint?: string | null) => {
-    if (!ip && !fingerprint) {
+  const formatIdentity = (identity?: {
+    ip?: string | null;
+    sessionId?: string | null;
+    fingerprint?: string | null;
+    identityKey?: string | null;
+    identityHashes?: string[];
+  } | null) => {
+    if (!identity) {
       return '-';
     }
-    const parts = [];
-    if (ip) {
-      parts.push(`IP: ${ip}`);
-    }
-    if (fingerprint) {
-      parts.push(`指纹: ${fingerprint}`);
-    }
-    return parts.join(' / ');
+    return formatAdminIdentityInline(identity);
   };
 
   const getBanExpiresAt = () => {
@@ -901,7 +945,7 @@ const AdminDashboard: React.FC = () => {
           <span className="bg-gray-100 border border-ink text-ink text-[10px] font-bold px-2 py-0.5 rounded font-sans">#{item.id}</span>
           <span>{item.timestamp}</span>
           {item.deleted && <Badge color="bg-gray-200">已删除</Badge>}
-          <span>标识：{formatIdentity(item.ip, item.fingerprint)}</span>
+          <span>标识：{formatIdentity(item)}</span>
         </div>
         <p className={`text-sm font-sans leading-6 ${contentClass}`}>{content}</p>
         <div className="flex items-center gap-2 mt-2">
@@ -1125,7 +1169,7 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
-  const handleUnban = async (type: 'ip' | 'fingerprint', value: string) => {
+  const handleUnban = async (type: 'ip' | 'fingerprint' | 'identity', value: string) => {
     try {
       await api.handleAdminBan('unban', type, value);
       showToast('已解除封禁', 'success');
@@ -1140,13 +1184,13 @@ const AdminDashboard: React.FC = () => {
   const handleManualBan = async () => {
     const value = manualBanValue.trim();
     if (!value) {
-      showToast(manualBanType === 'ip' ? '请输入要封禁的 IP' : '请输入要封禁的指纹', 'warning');
+      showToast(manualBanType === 'ip' ? '请输入要封禁的 IP' : '请输入要封禁的身份', 'warning');
       return;
     }
     setManualBanSubmitting(true);
     try {
       await api.handleAdminBan('ban', manualBanType, value, manualBanReason.trim(), buildBanOptions());
-      showToast(manualBanType === 'ip' ? '已封禁指定 IP' : '已封禁指定指纹', 'success');
+      showToast(manualBanType === 'ip' ? '已封禁指定 IP' : '已封禁指定身份', 'success');
       setManualBanValue('');
       setManualBanReason('');
       await fetchBans();
@@ -1525,7 +1569,7 @@ const AdminDashboard: React.FC = () => {
                       setSearchQuery(e.target.value);
                     }
                   }}
-                  placeholder={isPostView ? '搜索 ID/内容/IP/指纹...' : isAuditView ? '搜索操作/目标/管理员...' : isFeedbackView ? '搜索内容或联系方式/IP/指纹...' : '搜索 ID/内容/IP/指纹...'}
+                  placeholder={isPostView ? '搜索 ID/内容/IP/身份...' : isAuditView ? '搜索操作/目标/管理员...' : isFeedbackView ? '搜索内容或联系方式/IP/身份...' : '搜索 ID/内容/IP/身份...'}
                   className="pl-9 pr-4 py-2 rounded-full border-2 border-ink bg-white text-sm focus:shadow-sketch-sm outline-none transition-all w-full font-sans"
                 />
               </div>
@@ -1883,7 +1927,7 @@ const AdminDashboard: React.FC = () => {
                               <span>点赞 {post.likes}</span>
                               <span>评论 {post.comments}</span>
                               <span>举报 {post.reports}</span>
-                              <span>标识 {formatIdentity(post.ip, post.fingerprint)}</span>
+                              <span>标识 {formatIdentity(post)}</span>
                             </div>
                           </div>
                           <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 min-w-fit mt-2 md:mt-0 font-sans">
@@ -2411,7 +2455,7 @@ const AdminDashboard: React.FC = () => {
                               <span>邮箱：{message.email}</span>
                               {message.wechat && <span>微信：{message.wechat}</span>}
                               {message.qq && <span>QQ：{message.qq}</span>}
-                              <span>标识：{formatIdentity(message.ip, message.fingerprint)}</span>
+                              <span>标识：{formatIdentity(message)}</span>
                             </div>
                           </div>
                           <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 min-w-fit mt-2 md:mt-0 font-sans">
@@ -2486,7 +2530,7 @@ const AdminDashboard: React.FC = () => {
                     <input
                       value={banSearch}
                       onChange={(e) => setBanSearch(e.target.value)}
-                      placeholder="搜索 IP/指纹/理由/权限..."
+                      placeholder="搜索 IP/身份/理由/权限..."
                       className="w-full h-9 border-2 border-gray-200 rounded-lg px-3 text-xs font-sans focus:border-ink outline-none"
                     />
                   </div>
@@ -2497,16 +2541,16 @@ const AdminDashboard: React.FC = () => {
                   <div className="grid grid-cols-1 md:grid-cols-[120px_1fr] gap-2">
                     <select
                       value={manualBanType}
-                      onChange={(e) => setManualBanType(e.target.value as 'ip' | 'fingerprint')}
+                      onChange={(e) => setManualBanType(e.target.value as 'ip' | 'identity')}
                       className="h-9 border-2 border-gray-200 rounded-lg px-2 text-xs font-sans focus:border-ink outline-none"
                     >
+                      <option value="identity">身份</option>
                       <option value="ip">IP</option>
-                      <option value="fingerprint">指纹</option>
                     </select>
                     <input
                       value={manualBanValue}
                       onChange={(e) => setManualBanValue(e.target.value)}
-                      placeholder={manualBanType === 'ip' ? '输入需要封禁的 IP' : '输入需要封禁的指纹'}
+                      placeholder={manualBanType === 'ip' ? '输入需要封禁的 IP' : '输入需要封禁的身份'}
                       className="h-9 border-2 border-gray-200 rounded-lg px-3 text-xs font-sans focus:border-ink outline-none"
                     />
                   </div>
@@ -2549,12 +2593,17 @@ const AdminDashboard: React.FC = () => {
                           <div className="flex-1">
                             <div className="flex flex-wrap items-center gap-3 text-xs font-sans text-pencil mb-2">
                               <Badge color="bg-gray-200">
-                                {item.type === 'ip' ? 'IP' : '指纹'}
+                                {item.type === 'ip' ? 'IP' : '身份'}
                               </Badge>
-                              <span className="text-xs font-bold text-ink break-all">{item.value}</span>
+                              <span className="text-xs font-bold text-ink break-all">
+                                {'identityKey' in item && item.identityKey ? getAdminIdentityPrimary(item) : item.value}
+                              </span>
                               <span>{formatTimestamp(item.bannedAt)}</span>
                             </div>
                             <div className="text-xs text-pencil font-sans space-y-1">
+                              {'identityHashes' in item && (item.identityHashes || []).length > 1 && (
+                                <p>关联身份：{(item.identityHashes || []).filter((hash) => hash !== item.identityKey).join(' / ')}</p>
+                              )}
                               <p>权限：{formatBanPermissions(item.permissions)}</p>
                               <p>到期：{item.expiresAt ? formatTimestamp(item.expiresAt) : '永久'}</p>
                               {item.reason && <p>理由：{item.reason}</p>}
@@ -3112,12 +3161,23 @@ const AdminDashboard: React.FC = () => {
             <p>举报 ID：{reportDetail.report?.id}</p>
             <p>类型：{reportDetail.report?.targetType === 'comment' ? '评论举报' : reportDetail.report?.targetType === 'chat' ? '聊天室发言举报' : '帖子举报'}</p>
             <p>原因：{reportDetail.report?.reason}</p>
-            <p className="break-words">标识：{formatIdentity(reportDetail.report?.targetIp, reportDetail.report?.targetFingerprint)}</p>
+            <p className="break-words">标识：{formatIdentity({
+              ip: reportDetail.report?.targetIp,
+              sessionId: reportDetail.report?.targetSessionId,
+              fingerprint: reportDetail.report?.targetFingerprint,
+              identityKey: reportDetail.report?.targetIdentityKey,
+              identityHashes: reportDetail.report?.targetIdentityHashes,
+            })}</p>
           </div>
           <div>
             <p className="text-xs text-pencil font-sans mb-2">举报者信息</p>
             <div className="bg-gray-50 border-2 border-dashed border-gray-200 rounded-lg p-3 text-xs text-pencil font-sans">
-              <p className="break-words">举报者标识：{formatIdentity(reportDetail.report?.reporterIp, reportDetail.report?.reporterFingerprint)}</p>
+              <p className="break-words">举报者标识：{formatIdentity({
+                ip: reportDetail.report?.reporterIp,
+                fingerprint: reportDetail.report?.reporterFingerprint,
+                identityKey: reportDetail.report?.reporterIdentityKey,
+                identityHashes: reportDetail.report?.reporterIdentityHashes,
+              })}</p>
               <p>举报时间：{reportDetail.report?.timestamp || '-'}</p>
               <p>举报次数：{reportDetail.report?.reporterCount ?? 0}</p>
             </div>
@@ -3163,18 +3223,17 @@ const ReportCard: React.FC<{
       default: return 'bg-gray-200';
     }
   };
-  const formatIdentity = (ip?: string | null, fingerprint?: string | null) => {
-    if (!ip && !fingerprint) {
+  const formatIdentity = (identity?: {
+    ip?: string | null;
+    sessionId?: string | null;
+    fingerprint?: string | null;
+    identityKey?: string | null;
+    identityHashes?: string[];
+  } | null) => {
+    if (!identity) {
       return '-';
     }
-    const parts = [];
-    if (ip) {
-      parts.push(`IP: ${ip}`);
-    }
-    if (fingerprint) {
-      parts.push(`指纹: ${fingerprint}`);
-    }
-    return parts.join(' / ');
+    return formatAdminIdentityInline(identity);
   };
 
   return (
@@ -3217,7 +3276,13 @@ const ReportCard: React.FC<{
             "{report.contentSnippet}"
           </p>
           <div className="flex flex-wrap items-center gap-3 text-xs text-pencil font-sans mt-3">
-            <span>标识 {formatIdentity(report.targetIp, report.targetFingerprint)}</span>
+            <span>标识 {formatIdentity({
+              ip: report.targetIp,
+              sessionId: report.targetSessionId,
+              fingerprint: report.targetFingerprint,
+              identityKey: report.targetIdentityKey,
+              identityHashes: report.targetIdentityHashes,
+            })}</span>
             <button
               type="button"
               onClick={() => onDetail?.(report)}

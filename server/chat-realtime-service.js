@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { WebSocket, WebSocketServer } from 'ws';
+import { buildAdminIdentity } from './admin-identity-utils.js';
 
 const CHAT_PATH = '/ws/chat';
 const CHAT_TEXT_MAX_LENGTH = 2000;
@@ -214,6 +215,8 @@ export const createChatRealtimeService = (deps) => {
     db,
     hashFingerprint,
     resolveSocketIdentity,
+    getLookupHashesForIdentityHash,
+    getStableLegacyFingerprintHashForIdentityHashes,
     getClientIp,
     containsSensitiveWord,
     isBannedFor,
@@ -224,6 +227,21 @@ export const createChatRealtimeService = (deps) => {
     adminNickname,
   } = deps;
   const ADMIN_NICKNAME = String(adminNickname || '闰土').trim() || '闰土';
+
+  const resolveAdminIdentity = ({ fingerprintHash = '', identityHashes = [], sessionId = '', ip = '' }) => buildAdminIdentity({
+    identityHash: fingerprintHash,
+    identityHashes,
+    fingerprint: fingerprintHash,
+    sessionId,
+    ip,
+    getLookupHashesForIdentityHash,
+    getStableLegacyFingerprintHashForIdentityHashes,
+  });
+
+  const resolveAdminIdentityHashes = ({ fingerprintHash = '', identityHashes = [] }) => {
+    const summary = resolveAdminIdentity({ fingerprintHash, identityHashes });
+    return summary.identityHashes;
+  };
 
   const connectionBySocket = new Map();
   const presenceByFingerprint = new Map();
@@ -446,9 +464,16 @@ export const createChatRealtimeService = (deps) => {
       } : null,
     };
     if (includeFingerprint) {
+      const identity = resolveAdminIdentity({
+        fingerprintHash: row.fingerprint_hash || '',
+        sessionId: row.session_id || '',
+        ip: row.ip_snapshot || '',
+      });
       return {
         ...mapped,
         fingerprintHash: row.fingerprint_hash || '',
+        identityKey: identity.identityKey,
+        identityHashes: identity.identityHashes,
         ip: row.ip_snapshot || '',
       };
     }
@@ -514,6 +539,8 @@ export const createChatRealtimeService = (deps) => {
       }
       return {
         fingerprintHash: row.fingerprint_hash,
+        identityKey: resolveAdminIdentity({ fingerprintHash: row.fingerprint_hash || '' }).identityKey,
+        identityHashes: resolveAdminIdentity({ fingerprintHash: row.fingerprint_hash || '' }).identityHashes,
         mutedUntil,
         reason: row.reason || null,
         createdAt: row.created_at,
@@ -598,7 +625,14 @@ export const createChatRealtimeService = (deps) => {
       mapped.hiddenInOnline = hiddenInOnline;
     }
     if (includeFingerprint) {
+      const identity = resolveAdminIdentity({
+        fingerprintHash: item.fingerprintHash,
+        identityHashes: item.identityHashes,
+        sessionId: item.sessionId,
+      });
       mapped.fingerprintHash = item.fingerprintHash;
+      mapped.identityKey = identity.identityKey;
+      mapped.identityHashes = identity.identityHashes;
     }
     return mapped;
   };
@@ -707,13 +741,13 @@ export const createChatRealtimeService = (deps) => {
   ]);
 
   const getConnectionsByFingerprintHash = (fingerprintHash) => {
-    const normalizedFingerprintHash = String(fingerprintHash || '').trim();
-    if (!normalizedFingerprintHash) {
+    const identityHashes = resolveAdminIdentityHashes({ fingerprintHash });
+    if (!identityHashes.length) {
       return [];
     }
     const targets = new Set();
     presenceByFingerprint.forEach((presence) => {
-      if (!getPresenceIdentityHashes(presence).includes(normalizedFingerprintHash)) {
+      if (!hasSharedIdentityHashes(getPresenceIdentityHashes(presence), identityHashes)) {
         return;
       }
       presence.connections.forEach((connection) => {
@@ -1350,13 +1384,19 @@ export const createChatRealtimeService = (deps) => {
     return scope === 'site' ? BAN_PERMISSIONS : ['chat'];
   };
 
-  const resolveBanIp = (fingerprintHash, providedIp = '') => {
+  const resolveBanIp = (fingerprintHash, providedIp = '', identityHashes = []) => {
     const inputIp = String(providedIp || '').trim();
     if (inputIp) {
       return inputIp;
     }
-    const row = getLatestMessageIpByFingerprintStmt.get(fingerprintHash);
-    return row?.ip_snapshot ? String(row.ip_snapshot) : '';
+    const candidates = resolveAdminIdentityHashes({ fingerprintHash, identityHashes });
+    for (const candidate of candidates) {
+      const row = getLatestMessageIpByFingerprintStmt.get(candidate);
+      if (row?.ip_snapshot) {
+        return String(row.ip_snapshot);
+      }
+    }
+    return '';
   };
 
   return {
@@ -1413,33 +1453,40 @@ export const createChatRealtimeService = (deps) => {
       return { ok: true, config: after };
     },
     muteByAdmin({ req, fingerprintHash, reason, expiresAt }) {
+      const identity = resolveAdminIdentity({ fingerprintHash });
+      const identityKey = String(identity.identityKey || fingerprintHash || '').trim();
+      const identityHashes = identity.identityHashes.length ? identity.identityHashes : [identityKey].filter(Boolean);
       const now = Date.now();
-      const mutedUntil = typeof expiresAt === 'number' && expiresAt > now ? expiresAt : null;
-      upsertMuteStmt.run(
-        fingerprintHash,
-        mutedUntil,
-        reason || null,
-        now,
-        req.session?.admin?.id || null
-      );
+      const mutedUntil = typeof expiresAt === "number" && expiresAt > now ? expiresAt : null;
+      identityHashes.forEach((identityHash) => {
+        upsertMuteStmt.run(
+          identityHash,
+          mutedUntil,
+          reason || null,
+          now,
+          req.session?.admin?.id || null
+        );
+      });
 
       const payload = {
-        fingerprintHash,
+        fingerprintHash: identityKey,
+        identityKey,
+        identityHashes,
         mutedUntil,
         reason: reason || null,
       };
       disconnectFingerprintConnections(
-        fingerprintHash,
-        'chat.muted',
+        identityKey,
+        "chat.muted",
         payload,
         CHAT_KICK_CLOSE_CODE,
-        'muted'
+        "muted"
       );
-      if (typeof logAdminAction === 'function') {
+      if (typeof logAdminAction === "function") {
         logAdminAction(req, {
-          action: 'chat_mute',
-          targetType: 'chat_user',
-          targetId: fingerprintHash,
+          action: "chat_mute",
+          targetType: "chat_user",
+          targetId: identityKey,
           after: payload,
           reason: reason || null,
         });
@@ -1459,26 +1506,36 @@ export const createChatRealtimeService = (deps) => {
       };
     },
     unmuteByAdmin({ req, fingerprintHash, reason }) {
-      const result = deleteMuteStmt.run(fingerprintHash);
+      const identity = resolveAdminIdentity({ fingerprintHash });
+      const identityKey = String(identity.identityKey || fingerprintHash || '').trim();
+      const identityHashes = identity.identityHashes.length ? identity.identityHashes : [identityKey].filter(Boolean);
+      let removed = false;
+      identityHashes.forEach((identityHash) => {
+        removed = deleteMuteStmt.run(identityHash).changes > 0 || removed;
+      });
       const notifiedConnections = notifyFingerprintConnections(
-        fingerprintHash,
-        'chat.unmuted',
+        identityKey,
+        "chat.unmuted",
         {
-          fingerprintHash,
+          fingerprintHash: identityKey,
+          identityKey,
+          identityHashes,
           reason: reason || null,
           muteActive: false,
         }
       );
       const payload = {
-        fingerprintHash,
-        removed: result.changes > 0,
+        fingerprintHash: identityKey,
+        identityKey,
+        identityHashes,
+        removed,
         notifiedConnections,
       };
-      if (typeof logAdminAction === 'function') {
+      if (typeof logAdminAction === "function") {
         logAdminAction(req, {
-          action: 'chat_unmute',
-          targetType: 'chat_user',
-          targetId: fingerprintHash,
+          action: "chat_unmute",
+          targetType: "chat_user",
+          targetId: identityKey,
           after: payload,
           reason: reason || null,
         });
@@ -1486,69 +1543,90 @@ export const createChatRealtimeService = (deps) => {
       return payload;
     },
     kickByAdmin({ req, fingerprintHash, reason }) {
+      const identity = resolveAdminIdentity({ fingerprintHash });
+      const identityKey = String(identity.identityKey || fingerprintHash || '').trim();
       const kicked = disconnectFingerprintConnections(
-        fingerprintHash,
-        'chat.kicked',
+        identityKey,
+        "chat.kicked",
         { message: reason || '你已被管理员移出聊天室' },
         CHAT_KICK_CLOSE_CODE,
-        'kicked'
+        "kicked"
       );
-      if (typeof logAdminAction === 'function') {
+      if (typeof logAdminAction === "function") {
         logAdminAction(req, {
-          action: 'chat_kick',
-          targetType: 'chat_user',
-          targetId: fingerprintHash,
-          after: { kickedConnections: kicked },
+          action: "chat_kick",
+          targetType: "chat_user",
+          targetId: identityKey,
+          after: {
+            identityKey,
+            identityHashes: identity.identityHashes,
+            kickedConnections: kicked,
+          },
           reason: reason || null,
         });
       }
-      return { fingerprintHash, kickedConnections: kicked };
+      return {
+        fingerprintHash: identityKey,
+        identityKey,
+        identityHashes: identity.identityHashes,
+        kickedConnections: kicked,
+      };
     },
     banByAdmin({
       req,
       fingerprintHash,
       reason,
       expiresAt,
-      scope = 'chat',
+      scope = "chat",
       permissions: requestedPermissions,
-      ip = '',
+      ip = "",
     }) {
+      const identity = resolveAdminIdentity({ fingerprintHash });
+      const identityKey = String(identity.identityKey || fingerprintHash || '').trim();
+      const identityHashes = identity.identityHashes.length ? identity.identityHashes : [identityKey].filter(Boolean);
       const now = Date.now();
-      const normalizedScope = scope === 'site' ? 'site' : 'chat';
+      const normalizedScope = scope === "site" ? "site" : "chat";
       const permissions = normalizeBanPermissions(requestedPermissions, normalizedScope);
-      const resolvedIp = resolveBanIp(fingerprintHash, ip);
-      upsertBan('banned_fingerprints', 'fingerprint', fingerprintHash, {
-        permissions,
-        expiresAt: typeof expiresAt === 'number' && expiresAt > now ? expiresAt : null,
-        reason: reason || null,
-      });
-      if (resolvedIp) {
-        upsertBan('banned_ips', 'ip', resolvedIp, {
+      const effectiveExpiresAt = typeof expiresAt === "number" && expiresAt > now ? expiresAt : null;
+      const resolvedIp = resolveBanIp(identityKey, ip, identityHashes);
+      identityHashes.forEach((identityHash) => {
+        upsertBan("banned_fingerprints", "fingerprint", identityHash, {
           permissions,
-          expiresAt: typeof expiresAt === 'number' && expiresAt > now ? expiresAt : null,
+          expiresAt: effectiveExpiresAt,
           reason: reason || null,
         });
-        upsertChatBanSyncStmt.run(fingerprintHash, resolvedIp, now);
-      } else {
-        deleteChatBanSyncStmt.run(fingerprintHash);
+        if (resolvedIp) {
+          upsertChatBanSyncStmt.run(identityHash, resolvedIp, now);
+        } else {
+          deleteChatBanSyncStmt.run(identityHash);
+        }
+      });
+      if (resolvedIp) {
+        upsertBan("banned_ips", "ip", resolvedIp, {
+          permissions,
+          expiresAt: effectiveExpiresAt,
+          reason: reason || null,
+        });
       }
       const kicked = disconnectFingerprintConnections(
-        fingerprintHash,
-        'chat.banned',
+        identityKey,
+        "chat.banned",
         { message: reason || '你已被封禁，无法进入聊天室' },
         CHAT_JOIN_CLOSE_CODE,
-        'banned'
+        "banned"
       );
-      if (typeof logAdminAction === 'function') {
+      if (typeof logAdminAction === "function") {
         logAdminAction(req, {
-          action: normalizedScope === 'site' ? 'chat_ban_site' : 'chat_ban',
-          targetType: 'chat_user',
-          targetId: fingerprintHash,
+          action: normalizedScope === "site" ? "chat_ban_site" : "chat_ban",
+          targetType: "chat_user",
+          targetId: identityKey,
           after: {
+            identityKey,
+            identityHashes,
             permissions,
             kickedConnections: kicked,
             syncedBan: {
-              fingerprint: true,
+              identity: identityHashes.length,
               ip: Boolean(resolvedIp),
             },
           },
@@ -1556,35 +1634,49 @@ export const createChatRealtimeService = (deps) => {
         });
       }
       return {
-        fingerprintHash,
+        fingerprintHash: identityKey,
+        identityKey,
+        identityHashes,
         ip: resolvedIp || null,
         permissions,
         kickedConnections: kicked,
         syncedBan: {
-          fingerprint: true,
+          identity: identityHashes.length,
           ip: Boolean(resolvedIp),
         },
       };
     },
-    unbanByAdmin({ req, fingerprintHash, reason, ip = '' }) {
-      const result = deleteBanStmt.run(fingerprintHash);
-      const providedIp = String(ip || '').trim();
-      const syncedIpRow = getChatBanSyncIpStmt.get(fingerprintHash);
-      const syncedIp = syncedIpRow?.ip ? String(syncedIpRow.ip).trim() : '';
-      const fallbackIp = resolveBanIp(fingerprintHash, providedIp);
-      const candidateIps = Array.from(new Set([providedIp, syncedIp, fallbackIp].filter(Boolean)));
+    unbanByAdmin({ req, fingerprintHash, reason, ip = "" }) {
+      const identity = resolveAdminIdentity({ fingerprintHash });
+      const identityKey = String(identity.identityKey || fingerprintHash || '').trim();
+      const identityHashes = identity.identityHashes.length ? identity.identityHashes : [identityKey].filter(Boolean);
+      let removed = false;
+      const syncedIps = [];
+      identityHashes.forEach((identityHash) => {
+        removed = deleteBanStmt.run(identityHash).changes > 0 || removed;
+        const syncedIpRow = getChatBanSyncIpStmt.get(identityHash);
+        const syncedIp = syncedIpRow?.ip ? String(syncedIpRow.ip).trim() : "";
+        if (syncedIp) {
+          syncedIps.push(syncedIp);
+        }
+        deleteChatBanSyncStmt.run(identityHash);
+      });
+      const providedIp = String(ip || "").trim();
+      const fallbackIp = resolveBanIp(identityKey, providedIp, identityHashes);
+      const candidateIps = Array.from(new Set([providedIp, fallbackIp, ...syncedIps].filter(Boolean)));
       let removedIp = false;
       candidateIps.forEach((candidateIp) => {
         removedIp = deleteIpBanStmt.run(candidateIp).changes > 0 || removedIp;
       });
-      deleteChatBanSyncStmt.run(fingerprintHash);
-      if (typeof logAdminAction === 'function') {
+      if (typeof logAdminAction === "function") {
         logAdminAction(req, {
-          action: 'chat_unban',
-          targetType: 'chat_user',
-          targetId: fingerprintHash,
+          action: "chat_unban",
+          targetType: "chat_user",
+          targetId: identityKey,
           after: {
-            removed: result.changes > 0,
+            identityKey,
+            identityHashes,
+            removed,
             removedIp,
             ip: candidateIps[0] || null,
             ipCandidates: candidateIps,
@@ -1593,8 +1685,10 @@ export const createChatRealtimeService = (deps) => {
         });
       }
       return {
-        fingerprintHash,
-        removed: result.changes > 0,
+        fingerprintHash: identityKey,
+        identityKey,
+        identityHashes,
+        removed,
         removedIp,
         ip: candidateIps[0] || null,
         ipCandidates: candidateIps,

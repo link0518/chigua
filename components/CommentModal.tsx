@@ -702,7 +702,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
                 const replyOrderMap = replies.length ? buildOrderMap(orderedReplies) : null;
 
                 return (
-                  <div key={item.id} data-comment-id={item.id} className={depth === 0 ? 'group px-3 pt-2' : 'group px-3 pt-1'}>
+                  <div key={item.id} data-comment-id={item.id} className={depth === 0 ? 'group px-3 pt-2' : 'group px-2.5 pt-1'}>
                     <div className="flex items-center justify-between text-[12px] text-gray-500 font-sans">
                       <div className="min-w-0 flex items-center gap-2 overflow-hidden whitespace-nowrap">
                         <span className="text-[12px] font-mono text-gray-500">{threadLabel}楼</span>
@@ -763,7 +763,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
                       />
                     </div>
                     {depth === 0 && visibleReplies.length > 0 && (
-                      <div className="mt-2 rounded-md bg-gray-50 border border-gray-200 p-2 flex flex-col gap-2">
+                      <div className="mt-2 rounded-md bg-gray-50 border border-gray-200 px-1.5 py-2 flex flex-col gap-2">
                         {visibleReplies.map((reply) => (
                           renderComment(reply, depth + 1, threadLabel, replyOrderMap || new Map())
                         ))}

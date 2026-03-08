@@ -1,5 +1,6 @@
 import { createModerationRepository } from '../../repositories/moderation-repository.js';
 import { createAdminModerationService } from '../../services/admin-moderation-service.js';
+import { buildAdminIdentity, matchesAdminSearch } from '../../admin-identity-utils.js';
 
 export const registerAdminReportsRoutes = (app, deps) => {
   const {
@@ -12,6 +13,8 @@ export const registerAdminReportsRoutes = (app, deps) => {
     upsertBan,
     BAN_PERMISSIONS,
     chatRealtime,
+    getLookupHashesForIdentityHash,
+    getStableLegacyFingerprintHashForIdentityHashes,
   } = deps;
 
   const moderationRepository = createModerationRepository(db);
@@ -20,6 +23,16 @@ export const registerAdminReportsRoutes = (app, deps) => {
     upsertBan,
     BAN_PERMISSIONS,
     logAdminAction,
+    getLookupHashesForIdentityHash,
+    getStableLegacyFingerprintHashForIdentityHashes,
+  });
+
+  const resolveAdminIdentity = ({ fingerprint, sessionId = '', ip = '' }) => buildAdminIdentity({
+    fingerprint,
+    sessionId,
+    ip,
+    getLookupHashesForIdentityHash,
+    getStableLegacyFingerprintHashForIdentityHashes,
   });
 
   app.get('/api/reports', requireAdmin, (req, res) => {
@@ -34,14 +47,6 @@ export const registerAdminReportsRoutes = (app, deps) => {
       params.push(status);
     }
 
-    if (search) {
-      conditions.push(
-        '(reports.id LIKE ? OR reports.content_snippet LIKE ? OR reports.reason LIKE ? OR reports.post_id LIKE ? OR reports.comment_id LIKE ? OR posts.content LIKE ? OR comments.content LIKE ? OR posts.ip LIKE ? OR comments.ip LIKE ? OR posts.fingerprint LIKE ? OR comments.fingerprint LIKE ? OR chat_messages.text_content LIKE ? OR chat_messages.ip_snapshot LIKE ? OR chat_messages.fingerprint_hash LIKE ?)'
-      );
-      const keyword = `%${search}%`;
-      params.push(keyword, keyword, keyword, keyword, keyword, keyword, keyword, keyword, keyword, keyword, keyword, keyword, keyword, keyword);
-    }
-
     const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
     const rows = db
@@ -50,12 +55,14 @@ export const registerAdminReportsRoutes = (app, deps) => {
         SELECT reports.*,
           posts.content AS post_content,
           posts.ip AS post_ip,
+          posts.session_id AS post_session_id,
           posts.fingerprint AS post_fingerprint,
           comments.content AS comment_content,
           comments.ip AS comment_ip,
           comments.fingerprint AS comment_fingerprint,
           chat_messages.text_content AS chat_content,
           chat_messages.ip_snapshot AS chat_ip,
+          chat_messages.session_id AS chat_session_id,
           chat_messages.fingerprint_hash AS chat_fingerprint,
           reporter_stats.reporter_count AS reporter_count
         FROM reports
@@ -81,6 +88,15 @@ export const registerAdminReportsRoutes = (app, deps) => {
       const postContent = row.post_content || '';
       const commentContent = row.comment_content || '';
       const chatContent = row.chat_content || '';
+      const targetIdentity = resolveAdminIdentity({
+        fingerprint: isComment ? row.comment_fingerprint || '' : isChat ? row.chat_fingerprint || '' : row.post_fingerprint || '',
+        sessionId: isComment ? '' : isChat ? row.chat_session_id || '' : row.post_session_id || '',
+        ip: isComment ? row.comment_ip || '' : isChat ? row.chat_ip || '' : row.post_ip || '',
+      });
+      const reporterIdentity = resolveAdminIdentity({
+        fingerprint: row.fingerprint || '',
+        ip: row.reporter_ip || '',
+      });
       return {
         id: row.id,
         targetId: isComment ? row.comment_id : row.post_id,
@@ -92,9 +108,14 @@ export const registerAdminReportsRoutes = (app, deps) => {
         commentContent,
         targetContent: isComment ? commentContent : isChat ? chatContent : postContent,
         targetIp: isComment ? row.comment_ip || null : isChat ? row.chat_ip || null : row.post_ip || null,
+        targetSessionId: isComment ? null : isChat ? row.chat_session_id || null : row.post_session_id || null,
         targetFingerprint: isComment ? row.comment_fingerprint || null : isChat ? row.chat_fingerprint || null : row.post_fingerprint || null,
+        targetIdentityKey: targetIdentity.identityKey,
+        targetIdentityHashes: targetIdentity.identityHashes,
         reporterIp: row.reporter_ip || null,
         reporterFingerprint: row.fingerprint || null,
+        reporterIdentityKey: reporterIdentity.identityKey,
+        reporterIdentityHashes: reporterIdentity.identityHashes,
         reporterCount: row.reporter_count ? Number(row.reporter_count) : 0,
         timestamp: formatRelativeTime(row.created_at),
         status: row.status,
@@ -102,7 +123,29 @@ export const registerAdminReportsRoutes = (app, deps) => {
       };
     });
 
-    return res.json({ items: reports });
+    const filteredReports = search
+      ? reports.filter((item) => matchesAdminSearch(search, [
+        item.id,
+        item.contentSnippet,
+        item.reason,
+        item.postId,
+        item.targetId,
+        item.postContent,
+        item.commentContent,
+        item.targetContent,
+        item.targetIp || '',
+        item.targetSessionId || '',
+        item.targetFingerprint || '',
+        item.targetIdentityKey || '',
+        ...(item.targetIdentityHashes || []),
+        item.reporterIp || '',
+        item.reporterFingerprint || '',
+        item.reporterIdentityKey || '',
+        ...(item.reporterIdentityHashes || []),
+      ]))
+      : reports;
+
+    return res.json({ items: filteredReports });
   });
 
   app.post('/api/reports/:id/action', requireAdmin, requireAdminCsrf, (req, res) => {

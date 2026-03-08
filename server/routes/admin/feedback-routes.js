@@ -1,4 +1,10 @@
-﻿export const registerAdminFeedbackRoutes = (app, deps) => {
+﻿import {
+  buildAdminIdentity,
+  buildAdminIdentitySearchValues,
+  matchesAdminSearch,
+} from '../../admin-identity-utils.js';
+
+export const registerAdminFeedbackRoutes = (app, deps) => {
   const {
     db,
     requireAdmin,
@@ -7,7 +13,43 @@
     resolveBanOptions,
     upsertBan,
     BAN_PERMISSIONS,
+    getLookupHashesForIdentityHash,
+    getStableLegacyFingerprintHashForIdentityHashes,
   } = deps;
+
+  const resolveAdminIdentity = ({ fingerprint, sessionId = '', ip = '' }) => buildAdminIdentity({
+    fingerprint,
+    sessionId,
+    ip,
+    getLookupHashesForIdentityHash,
+    getStableLegacyFingerprintHashForIdentityHashes,
+  });
+
+  const buildFeedbackItem = (row) => ({
+    id: row.id,
+    content: row.content,
+    email: row.email,
+    wechat: row.wechat,
+    qq: row.qq,
+    createdAt: row.created_at,
+    readAt: row.read_at,
+    sessionId: row.session_id || null,
+    ip: row.ip || null,
+    fingerprint: row.fingerprint || null,
+    ...resolveAdminIdentity({
+      fingerprint: row.fingerprint || '',
+      sessionId: row.session_id || '',
+      ip: row.ip || '',
+    }),
+  });
+
+  const buildFeedbackSearchValues = (item) => [
+    item.content,
+    item.email,
+    item.wechat || '',
+    item.qq || '',
+    ...buildAdminIdentitySearchValues(item),
+  ];
 
   app.get('/api/admin/feedback', requireAdmin, (req, res) => {
     const status = String(req.query.status || 'unread').trim();
@@ -25,46 +67,56 @@
       conditions.push('read_at IS NOT NULL');
     }
 
-    if (search) {
-      conditions.push('(content LIKE ? OR email LIKE ? OR wechat LIKE ? OR qq LIKE ? OR session_id LIKE ? OR ip LIKE ? OR fingerprint LIKE ?)');
-      const keyword = `%${search}%`;
-      params.push(keyword, keyword, keyword, keyword, keyword, keyword, keyword);
-    }
-
     const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
-    const rows = db
-      .prepare(
-        `
-        SELECT *
-        FROM feedback_messages
-        ${whereClause}
-        ORDER BY created_at DESC
-        LIMIT ? OFFSET ?
-        `
-      )
-      .all(...params, limit, offset);
+    let rows;
+    let total = 0;
 
-    const totalRow = db
-      .prepare(`SELECT COUNT(1) AS count FROM feedback_messages ${whereClause}`)
-      .get(...params);
+    if (search) {
+      rows = db
+        .prepare(
+          `
+          SELECT *
+          FROM feedback_messages
+          ${whereClause}
+          ORDER BY created_at DESC
+          `
+        )
+        .all(...params);
+    } else {
+      total = db
+        .prepare(
+          `
+          SELECT COUNT(1) AS count
+          FROM feedback_messages
+          ${whereClause}
+          `
+        )
+        .get(...params)?.count || 0;
 
-    const items = rows.map((row) => ({
-      id: row.id,
-      content: row.content,
-      email: row.email,
-      wechat: row.wechat,
-      qq: row.qq,
-      createdAt: row.created_at,
-      readAt: row.read_at,
-      sessionId: row.session_id || null,
-      ip: row.ip || null,
-      fingerprint: row.fingerprint || null,
-    }));
+      rows = db
+        .prepare(
+          `
+          SELECT *
+          FROM feedback_messages
+          ${whereClause}
+          ORDER BY created_at DESC
+          LIMIT ? OFFSET ?
+          `
+        )
+        .all(...params, limit, offset);
+    }
+
+    let items = rows.map((row) => buildFeedbackItem(row));
+    if (search) {
+      items = items.filter((item) => matchesAdminSearch(search, buildFeedbackSearchValues(item)));
+      total = items.length;
+      items = items.slice(offset, offset + limit);
+    }
 
     return res.json({
       items,
-      total: totalRow?.count || 0,
+      total,
       page,
       limit,
     });
@@ -125,10 +177,14 @@
       return res.json({ id: feedbackId, deleted: true });
     }
 
-    const ip = row.ip;
-    const fingerprint = row.fingerprint;
-    if (!ip && !fingerprint) {
-      return res.status(400).json({ error: '无法获取封禁标识（IP/指纹）' });
+    const ip = String(row.ip || '').trim();
+    const identity = resolveAdminIdentity({
+      fingerprint: row.fingerprint || '',
+      sessionId: row.session_id || '',
+      ip,
+    });
+    if (!ip && !identity.identityHashes.length) {
+      return res.status(400).json({ error: '无法获取可封禁的身份标识（IP/身份）' });
     }
 
     if (ip) {
@@ -142,30 +198,39 @@
         reason,
       });
     }
-    if (fingerprint) {
-      upsertBan('banned_fingerprints', 'fingerprint', fingerprint, banOptions || {});
+
+    let identityBanned = false;
+    identity.identityHashes.forEach((identityHash) => {
+      upsertBan('banned_fingerprints', 'fingerprint', identityHash, banOptions || {});
+      identityBanned = true;
       logAdminAction(req, {
-        action: 'ban_fingerprint',
-        targetType: 'fingerprint',
-        targetId: fingerprint,
+        action: 'ban_identity',
+        targetType: 'identity',
+        targetId: identityHash,
         before: null,
         after: { banned: true, permissions: banOptions?.permissions || BAN_PERMISSIONS, expiresAt: banOptions?.expiresAt || null },
         reason,
       });
-    }
+    });
+
     logAdminAction(req, {
       action: 'feedback_ban',
       targetType: 'feedback',
       targetId: feedbackId,
       before: null,
-      after: { ip: ip || null, fingerprint: fingerprint || null },
+      after: {
+        ip: ip || null,
+        identityKey: identity.identityKey || null,
+        identityHashes: identity.identityHashes,
+      },
       reason,
     });
 
     return res.json({
       id: feedbackId,
       ipBanned: Boolean(ip),
-      fingerprintBanned: Boolean(fingerprint),
+      identityBanned,
+      fingerprintBanned: identityBanned,
     });
   });
 };

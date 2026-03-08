@@ -69,7 +69,16 @@ export const registerAdminChatRoutes = (app, deps) => {
         ORDER BY created_at DESC
       `
     ).all();
-    return res.json({ items: rows.map(mapMuteRow) });
+    const itemsByIdentity = new Map();
+    rows.forEach((row) => {
+      const payload = chatRealtime.getActiveMute(row.fingerprint_hash) || mapMuteRow(row);
+      const key = String(payload?.identityKey || payload?.fingerprintHash || row.fingerprint_hash || '').trim();
+      if (!key || itemsByIdentity.has(key)) {
+        return;
+      }
+      itemsByIdentity.set(key, payload);
+    });
+    return res.json({ items: Array.from(itemsByIdentity.values()) });
   });
 
   app.post('/api/admin/chat/messages/:id/delete', requireAdmin, requireAdminCsrf, (req, res) => {

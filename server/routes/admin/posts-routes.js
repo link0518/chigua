@@ -1,5 +1,10 @@
 ﻿import { createModerationRepository } from '../../repositories/moderation-repository.js';
 import { createAdminModerationService } from '../../services/admin-moderation-service.js';
+import {
+  buildAdminIdentity,
+  buildAdminIdentitySearchValues,
+  matchesAdminSearch,
+} from '../../admin-identity-utils.js';
 
 export const registerAdminPostsRoutes = (app, deps) => {
   const {
@@ -20,6 +25,8 @@ export const registerAdminPostsRoutes = (app, deps) => {
     BAN_PERMISSIONS,
     mapAdminCommentRow,
     formatRelativeTime,
+    getLookupHashesForIdentityHash,
+    getStableLegacyFingerprintHashForIdentityHashes,
   } = deps;
 
   const moderationRepository = createModerationRepository(db);
@@ -28,7 +35,65 @@ export const registerAdminPostsRoutes = (app, deps) => {
     upsertBan,
     BAN_PERMISSIONS,
     logAdminAction,
+    getLookupHashesForIdentityHash,
+    getStableLegacyFingerprintHashForIdentityHashes,
   });
+
+  const resolveAdminIdentity = ({ fingerprint, sessionId = '', ip = '' }) => buildAdminIdentity({
+    fingerprint,
+    sessionId,
+    ip,
+    getLookupHashesForIdentityHash,
+    getStableLegacyFingerprintHashForIdentityHashes,
+  });
+
+  const mapAdminCommentWithIdentity = (row) => ({
+    ...mapAdminCommentRow(row),
+    ...resolveAdminIdentity({
+      fingerprint: row.fingerprint || '',
+      ip: row.ip || '',
+    }),
+  });
+
+  const buildAdminPostItem = (row, extra = {}) => ({
+    id: row.id,
+    content: row.content,
+    author: row.author || '匿名',
+    timestamp: formatRelativeTime(row.created_at),
+    createdAt: row.created_at,
+    likes: row.likes_count,
+    comments: row.comments_count,
+    reports: row.report_count || 0,
+    deleted: row.deleted === 1,
+    deletedAt: row.deleted_at || null,
+    hotScore: row.hot_score,
+    sessionId: row.session_id || null,
+    ip: row.ip || null,
+    fingerprint: row.fingerprint || null,
+    ...resolveAdminIdentity({
+      fingerprint: row.fingerprint || '',
+      sessionId: row.session_id || '',
+      ip: row.ip || '',
+    }),
+    ...extra,
+  });
+
+  const buildPostSearchValues = (item) => [
+    item.id,
+    item.content,
+    item.author,
+    item.ip || '',
+    item.sessionId || '',
+    ...buildAdminIdentitySearchValues(item),
+  ];
+
+  const buildCommentSearchValues = (item) => [
+    item.id,
+    item.content,
+    item.author,
+    item.ip || '',
+    ...buildAdminIdentitySearchValues(item),
+  ];
 
   const MAX_POST_TAGS = 2;
   const MAX_TAG_LENGTH = 6;
@@ -233,26 +298,6 @@ app.get('/api/admin/posts', requireAdmin, (req, res) => {
     conditions.push('posts.deleted = 1');
   }
 
-  if (search) {
-    const commentConditions = [
-      'comments.post_id = posts.id',
-      '(comments.id LIKE ? OR comments.content LIKE ? OR comments.author LIKE ? OR comments.ip LIKE ? OR comments.fingerprint LIKE ?)',
-    ];
-    conditions.push(`(
-      posts.id LIKE ?
-      OR posts.content LIKE ?
-      OR posts.ip LIKE ?
-      OR posts.fingerprint LIKE ?
-      OR EXISTS (
-        SELECT 1
-        FROM comments
-        WHERE ${commentConditions.join(' AND ')}
-      )
-    )`);
-    const likeValue = `%${search}%`;
-    params.push(likeValue, likeValue, likeValue, likeValue, likeValue, likeValue, likeValue, likeValue, likeValue);
-  }
-
   const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
   let orderClause = 'posts.created_at DESC';
@@ -274,36 +319,34 @@ app.get('/api/admin/posts', requireAdmin, (req, res) => {
       FROM posts
       ${whereClause}
       ORDER BY ${orderClause}
-      LIMIT ? OFFSET ?
+      ${search ? '' : 'LIMIT ? OFFSET ?'}
       `
     )
-    .all(...params, limit, offset);
+    .all(...params, ...(search ? [] : [limit, offset]));
 
   let matchedCommentsByPost = new Map();
   let matchedCommentCounts = new Map();
   if (search && rows.length > 0) {
     const postIds = rows.map((row) => row.id);
     const placeholders = postIds.map(() => '?').join(',');
-    const likeValue = `%${search}%`;
-    const commentConditions = [
-      'post_id IN (' + placeholders + ')',
-      '(id LIKE ? OR content LIKE ? OR author LIKE ? OR ip LIKE ? OR fingerprint LIKE ?)',
-    ];
-    const commentParams = [...postIds, likeValue, likeValue, likeValue, likeValue, likeValue];
 
     const commentRows = db
       .prepare(
         `
         SELECT *
         FROM comments
-        WHERE ${commentConditions.join(' AND ')}
+        WHERE post_id IN (${placeholders})
         ORDER BY created_at ASC
         `
       )
-      .all(...commentParams);
+      .all(...postIds);
     matchedCommentsByPost = new Map();
     matchedCommentCounts = new Map();
     commentRows.forEach((row) => {
+      const mapped = mapAdminCommentWithIdentity(row);
+      if (!matchesAdminSearch(search, buildCommentSearchValues(mapped))) {
+        return;
+      }
       const currentCount = matchedCommentCounts.get(row.post_id) || 0;
       matchedCommentCounts.set(row.post_id, currentCount + 1);
       if (!matchedCommentsByPost.has(row.post_id)) {
@@ -311,41 +354,42 @@ app.get('/api/admin/posts', requireAdmin, (req, res) => {
       }
       const list = matchedCommentsByPost.get(row.post_id);
       if (list.length < 3) {
-        list.push(mapAdminCommentRow(row));
+        list.push(mapped);
       }
     });
   }
 
-  const totalRow = db
-    .prepare(`SELECT COUNT(1) AS count FROM posts ${whereClause}`)
-    .get(...params);
-
-  const items = rows.map((row) => ({
-    id: row.id,
-    content: row.content,
-    author: row.author || '匿名',
-    timestamp: formatRelativeTime(row.created_at),
-    createdAt: row.created_at,
-    likes: row.likes_count,
-    comments: row.comments_count,
-    reports: row.report_count || 0,
-    deleted: row.deleted === 1,
-    deletedAt: row.deleted_at || null,
-    hotScore: row.hot_score,
-    sessionId: row.session_id || null,
-    ip: row.ip || null,
-    fingerprint: row.fingerprint || null,
+  let items = rows.map((row) => buildAdminPostItem(row, {
     matchedComments: search ? matchedCommentsByPost.get(row.id) || [] : undefined,
     matchedCommentCount: search ? matchedCommentCounts.get(row.id) || 0 : undefined,
   }));
+  let total = search
+    ? items.length
+    : (db.prepare(`SELECT COUNT(1) AS count FROM posts ${whereClause}`).get(...params)?.count || 0);
 
   if (search) {
+    items = items.filter((item) => (
+      matchesAdminSearch(search, buildPostSearchValues(item))
+      || Boolean(item.matchedCommentCount)
+    ));
     const keyword = search.toLowerCase();
     items.sort((a, b) => {
-      const aMatchesPost = [a.id, a.content, a.ip || '', a.fingerprint || '']
-        .some((value) => String(value).toLowerCase().includes(keyword));
-      const bMatchesPost = [b.id, b.content, b.ip || '', b.fingerprint || '']
-        .some((value) => String(value).toLowerCase().includes(keyword));
+      const aMatchesPost = [
+        a.id,
+        a.content,
+        a.author,
+        a.ip || '',
+        a.sessionId || '',
+        ...buildAdminIdentitySearchValues(a),
+      ].some((value) => String(value).toLowerCase().includes(keyword));
+      const bMatchesPost = [
+        b.id,
+        b.content,
+        b.author,
+        b.ip || '',
+        b.sessionId || '',
+        ...buildAdminIdentitySearchValues(b),
+      ].some((value) => String(value).toLowerCase().includes(keyword));
       if (aMatchesPost !== bMatchesPost) {
         return aMatchesPost ? -1 : 1;
       }
@@ -356,11 +400,13 @@ app.get('/api/admin/posts', requireAdmin, (req, res) => {
       }
       return (b.createdAt || 0) - (a.createdAt || 0);
     });
+    total = items.length;
+    items = items.slice(offset, offset + limit);
   }
 
   return res.json({
     items,
-    total: totalRow?.count || 0,
+    total,
     page,
     limit,
   });
@@ -419,34 +465,56 @@ app.get('/api/admin/posts/:id/comments', requireAdmin, (req, res) => {
 
   const conditions = ['post_id = ?'];
   const params = [postId];
+  const whereClause = `WHERE ${conditions.join(' AND ' )}`;
+
+  let rows;
+  let total = 0;
 
   if (search) {
-    conditions.push('(id LIKE ? OR content LIKE ? OR author LIKE ? OR ip LIKE ? OR fingerprint LIKE ?)');
-    const likeValue = `%${search}%`;
-    params.push(likeValue, likeValue, likeValue, likeValue, likeValue);
+    rows = db
+      .prepare(
+        `
+        SELECT *
+        FROM comments
+        ${whereClause}
+        ORDER BY created_at ASC
+        `
+      )
+      .all(...params);
+  } else {
+    total = db
+      .prepare(
+        `
+        SELECT COUNT(1) AS count
+        FROM comments
+        ${whereClause}
+        `
+      )
+      .get(...params)?.count || 0;
+
+    rows = db
+      .prepare(
+        `
+        SELECT *
+        FROM comments
+        ${whereClause}
+        ORDER BY created_at ASC
+        LIMIT ? OFFSET ?
+        `
+      )
+      .all(...params, limit, offset);
   }
 
-  const whereClause = `WHERE ${conditions.join(' AND ')}`;
-
-  const totalRow = db
-    .prepare(`SELECT COUNT(1) AS count FROM comments ${whereClause}`)
-    .get(...params);
-
-  const rows = db
-    .prepare(
-      `
-      SELECT *
-      FROM comments
-      ${whereClause}
-      ORDER BY created_at ASC
-      LIMIT ? OFFSET ?
-      `
-    )
-    .all(...params, limit, offset);
+  let items = rows.map((row) => mapAdminCommentWithIdentity(row));
+  if (search) {
+    items = items.filter((item) => matchesAdminSearch(search, buildCommentSearchValues(item)));
+    total = items.length;
+    items = items.slice(offset, offset + limit);
+  }
 
   return res.json({
-    items: rows.map((row) => mapAdminCommentRow(row)),
-    total: totalRow?.count || 0,
+    items,
+    total,
     page,
     limit,
   });
@@ -493,7 +561,7 @@ app.post('/api/admin/comments/:id/action', requireAdmin, requireAdminCsrf, (req,
   });
 
   let ipBanned = false;
-  let fingerprintBanned = false;
+  let identityBanned = false;
 
   if (action === 'ban' && banOptions) {
     if (row.ip) {
@@ -508,23 +576,30 @@ app.post('/api/admin/comments/:id/action', requireAdmin, requireAdminCsrf, (req,
         reason,
       });
     }
-    if (row.fingerprint) {
-      upsertBan('banned_fingerprints', 'fingerprint', row.fingerprint, banOptions || {});
-      fingerprintBanned = true;
+    const identity = resolveAdminIdentity({ fingerprint: row.fingerprint || '', ip: row.ip || '' });
+    identity.identityHashes.forEach((identityHash) => {
+      upsertBan('banned_fingerprints', 'fingerprint', identityHash, banOptions || {});
+      identityBanned = true;
       logAdminAction(req, {
-        action: 'ban_fingerprint',
-        targetType: 'fingerprint',
-        targetId: row.fingerprint,
+        action: 'ban_identity',
+        targetType: 'identity',
+        targetId: identityHash,
         before: null,
         after: { banned: true, permissions: banOptions?.permissions || BAN_PERMISSIONS, expiresAt: banOptions?.expiresAt || null },
         reason,
       });
-    }
+    });
   }
 
-  return res.json({ id: commentId, deleted: true, removed: removedCount, ipBanned, fingerprintBanned });
+  return res.json({
+    id: commentId,
+    deleted: true,
+    removed: removedCount,
+    ipBanned,
+    identityBanned,
+    fingerprintBanned: identityBanned,
+  });
 });
 
 
 };
-

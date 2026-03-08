@@ -2,11 +2,20 @@
 import { Ban, MessageSquare, Search, Shield, Trash2 } from 'lucide-react';
 import { api } from '../api';
 import type { AdminChatOnlineUser, ChatMessage, ChatMuteEntry, ChatRoomConfig } from '../types';
+import {
+  getAdminIdentityAliases,
+  getAdminIdentityPrimary,
+} from './adminIdentity';
 import MarkdownRenderer from './MarkdownRenderer';
 import { SketchButton } from './SketchUI';
 
 type ToastType = 'success' | 'error' | 'info' | 'warning';
-type AdminChatMessage = ChatMessage & { fingerprintHash?: string; ip?: string };
+type AdminChatMessage = ChatMessage & {
+  fingerprintHash?: string;
+  identityKey?: string | null;
+  identityHashes?: string[];
+  ip?: string;
+};
 
 interface AdminChatPanelProps {
   showToast: (message: string, type?: ToastType) => void;
@@ -52,6 +61,11 @@ const includesSearch = (query: string, fields: Array<string | number | null | un
   return fields.some((field) => String(field || '').toLowerCase().includes(query));
 };
 
+const getActionIdentityValue = (identity: {
+  identityKey?: string | null;
+  fingerprintHash?: string | null;
+}) => String(identity.identityKey || identity.fingerprintHash || '').trim();
+
 const AdminChatPanel: React.FC<AdminChatPanelProps> = ({ showToast }) => {
   const [onlineUsers, setOnlineUsers] = useState<AdminChatOnlineUser[]>([]);
   const [onlineCount, setOnlineCount] = useState(0);
@@ -59,7 +73,7 @@ const AdminChatPanel: React.FC<AdminChatPanelProps> = ({ showToast }) => {
   const [mutes, setMutes] = useState<ChatMuteEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [manualFingerprint, setManualFingerprint] = useState('');
+  const [manualIdentityValue, setManualIdentityValue] = useState('');
   const [manualReason, setManualReason] = useState('');
   const [manualScope, setManualScope] = useState<'chat' | 'site'>('chat');
   const [manualMuteMinutes, setManualMuteMinutes] = useState(30);
@@ -138,33 +152,33 @@ const AdminChatPanel: React.FC<AdminChatPanelProps> = ({ showToast }) => {
     }
   }, [busyKey, fetchAll, showToast]);
 
-  const applyMute = useCallback((fingerprintHash: string, minutes: number, reason: string) => {
+  const applyMute = useCallback((identityValue: string, minutes: number, reason: string) => {
     const safeMinutes = Math.max(1, Math.trunc(minutes));
     return runAction(
-      `mute:${fingerprintHash}`,
-      () => api.muteAdminChatUser(fingerprintHash, { durationMinutes: safeMinutes, reason }),
+      `mute:${identityValue}`,
+      () => api.muteAdminChatUser(identityValue, { durationMinutes: safeMinutes, reason }),
       '已执行禁言',
     );
   }, [runAction]);
 
-  const applyKick = useCallback((fingerprintHash: string, reason: string) => {
+  const applyKick = useCallback((identityValue: string, reason: string) => {
     return runAction(
-      `kick:${fingerprintHash}`,
-      () => api.kickAdminChatUser(fingerprintHash, reason),
+      `kick:${identityValue}`,
+      () => api.kickAdminChatUser(identityValue, reason),
       '已踢出用户',
     );
   }, [runAction]);
 
   const applyBan = useCallback((params: {
-    fingerprintHash: string;
+    identityValue: string;
     durationMinutes: number;
     scope: 'chat' | 'site';
     reason?: string;
     ip?: string;
   }) => {
-    const fingerprintHash = String(params.fingerprintHash || '').trim();
-    if (!fingerprintHash) {
-      showToast('缺少指纹，无法执行封禁', 'warning');
+    const identityValue = String(params.identityValue || '').trim();
+    if (!identityValue) {
+      showToast('缺少身份，无法执行封禁', 'warning');
       return Promise.resolve();
     }
     const durationMinutes = toPositiveInt(params.durationMinutes, 7 * 24 * 60);
@@ -172,8 +186,8 @@ const AdminChatPanel: React.FC<AdminChatPanelProps> = ({ showToast }) => {
     const reason = String(params.reason || '').trim();
     const ip = String(params.ip || '').trim();
     return runAction(
-      `ban:${fingerprintHash}`,
-      () => api.banAdminChatUser(fingerprintHash, { durationMinutes, scope, reason, ip }),
+      `ban:${identityValue}`,
+      () => api.banAdminChatUser(identityValue, { durationMinutes, scope, reason, ip }),
       scope === 'site' ? '已封禁站点访问' : '已封禁聊天室',
     );
   }, [runAction, showToast]);
@@ -195,7 +209,7 @@ const AdminChatPanel: React.FC<AdminChatPanelProps> = ({ showToast }) => {
   }, [configAdminOnly, configChatEnabled, configIntervalSeconds, configMaxTextLength, configMuteAll, runAction]);
 
   const activeMuteSet = useMemo(() => {
-    return new Set(mutes.map((item) => item.fingerprintHash));
+    return new Set(mutes.map((item) => getActionIdentityValue(item)));
   }, [mutes]);
 
   const search = useMemo(() => normalizeSearch(searchQuery), [searchQuery]);
@@ -206,7 +220,9 @@ const AdminChatPanel: React.FC<AdminChatPanelProps> = ({ showToast }) => {
     }
     return onlineUsers.filter((user) => includesSearch(search, [
       user.nickname,
+      user.identityKey,
       user.fingerprintHash,
+      ...(user.identityHashes || []),
       user.sessionId,
       user.connections,
       formatTime(user.joinedAt),
@@ -218,7 +234,9 @@ const AdminChatPanel: React.FC<AdminChatPanelProps> = ({ showToast }) => {
       return mutes;
     }
     return mutes.filter((item) => includesSearch(search, [
+      item.identityKey,
       item.fingerprintHash,
+      ...(item.identityHashes || []),
       item.reason,
       formatTime(item.mutedUntil),
     ]));
@@ -234,7 +252,9 @@ const AdminChatPanel: React.FC<AdminChatPanelProps> = ({ showToast }) => {
       message.content,
       message.imageUrl,
       message.stickerCode,
+      message.identityKey,
       message.fingerprintHash,
+      ...(message.identityHashes || []),
       message.ip,
       formatTime(message.createdAt),
     ]));
@@ -259,7 +279,7 @@ const AdminChatPanel: React.FC<AdminChatPanelProps> = ({ showToast }) => {
               type="text"
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder="搜索昵称/ID/内容/IP/指纹..."
+              placeholder="搜索昵称/ID/内容/IP/身份..."
               className="h-9 w-full rounded-full border-2 border-ink bg-white pl-9 pr-3 text-xs font-sans outline-none focus:shadow-sketch-sm"
             />
           </div>
@@ -345,9 +365,9 @@ const AdminChatPanel: React.FC<AdminChatPanelProps> = ({ showToast }) => {
         <p className="text-sm font-bold text-ink font-sans">手动操作</p>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           <input
-            value={manualFingerprint}
-            onChange={(event) => setManualFingerprint(event.target.value.trim())}
-            placeholder="输入指纹哈希（fingerprint_hash）"
+            value={manualIdentityValue}
+            onChange={(event) => setManualIdentityValue(event.target.value.trim())}
+            placeholder="输入主身份或任一关联身份"
             className="h-9 border-2 border-gray-200 rounded-lg px-3 text-xs font-sans focus:border-ink outline-none"
           />
           <input
@@ -389,24 +409,24 @@ const AdminChatPanel: React.FC<AdminChatPanelProps> = ({ showToast }) => {
               <option value="site">全站</option>
             </select>
           </label>
-          <div className="text-xs text-pencil font-sans">按钮默认作用于上方输入的指纹</div>
+          <div className="text-xs text-pencil font-sans">按钮默认作用于上方输入的主身份或关联身份</div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <SketchButton
             variant="secondary"
             className="h-8 px-3 text-xs"
-            disabled={!manualFingerprint || Boolean(busyKey)}
-            onClick={() => applyMute(manualFingerprint, manualMuteMinutes, manualReason)}
+            disabled={!manualIdentityValue || Boolean(busyKey)}
+            onClick={() => applyMute(manualIdentityValue, manualMuteMinutes, manualReason)}
           >
             禁言
           </SketchButton>
           <SketchButton
             variant="secondary"
             className="h-8 px-3 text-xs"
-            disabled={!manualFingerprint || Boolean(busyKey)}
+            disabled={!manualIdentityValue || Boolean(busyKey)}
             onClick={() => runAction(
-              `unmute:${manualFingerprint}`,
-              () => api.unmuteAdminChatUser(manualFingerprint, manualReason),
+              `unmute:${manualIdentityValue}`,
+              () => api.unmuteAdminChatUser(manualIdentityValue, manualReason),
               '已解除禁言',
             )}
           >
@@ -415,17 +435,17 @@ const AdminChatPanel: React.FC<AdminChatPanelProps> = ({ showToast }) => {
           <SketchButton
             variant="secondary"
             className="h-8 px-3 text-xs"
-            disabled={!manualFingerprint || Boolean(busyKey)}
-            onClick={() => applyKick(manualFingerprint, manualReason)}
+            disabled={!manualIdentityValue || Boolean(busyKey)}
+            onClick={() => applyKick(manualIdentityValue, manualReason)}
           >
             踢出
           </SketchButton>
           <SketchButton
             variant="secondary"
             className="h-8 px-3 text-xs"
-            disabled={!manualFingerprint || Boolean(busyKey)}
+            disabled={!manualIdentityValue || Boolean(busyKey)}
             onClick={() => applyBan({
-              fingerprintHash: manualFingerprint,
+              identityValue: manualIdentityValue,
               durationMinutes: toPositiveInt(manualBanDays, 7) * 24 * 60,
               scope: manualScope,
               reason: manualReason,
@@ -436,10 +456,10 @@ const AdminChatPanel: React.FC<AdminChatPanelProps> = ({ showToast }) => {
           <SketchButton
             variant="secondary"
             className="h-8 px-3 text-xs"
-            disabled={!manualFingerprint || Boolean(busyKey)}
+            disabled={!manualIdentityValue || Boolean(busyKey)}
             onClick={() => runAction(
-              `unban:${manualFingerprint}`,
-              () => api.unbanAdminChatUser(manualFingerprint, manualReason),
+              `unban:${manualIdentityValue}`,
+              () => api.unbanAdminChatUser(manualIdentityValue, manualReason),
               '已解除封禁',
             )}
           >
@@ -460,11 +480,14 @@ const AdminChatPanel: React.FC<AdminChatPanelProps> = ({ showToast }) => {
                   <div className="grid grid-cols-1 gap-3">
                     <div className="text-xs font-sans text-pencil space-y-1 min-w-0">
                       <p className="break-all"><span className="font-bold text-ink">昵称：</span>{user.nickname}</p>
-                      <p className="break-all"><span className="font-bold text-ink">指纹：</span>{user.fingerprintHash}</p>
+                      <p className="break-all"><span className="font-bold text-ink">主身份：</span>{getAdminIdentityPrimary(user)}</p>
+                      {getAdminIdentityAliases(user).length > 0 && (
+                        <p className="break-all"><span className="font-bold text-ink">关联身份：</span>{getAdminIdentityAliases(user).join(' / ')}</p>
+                      )}
                       <p className="break-all"><span className="font-bold text-ink">会话：</span>{user.sessionId}</p>
                       <p><span className="font-bold text-ink">连接：</span>{user.connections}</p>
                       <p><span className="font-bold text-ink">加入：</span>{formatTime(user.joinedAt)}</p>
-                      <p><span className="font-bold text-ink">状态：</span>{activeMuteSet.has(user.fingerprintHash) ? '禁言中' : '正常'}</p>
+                      <p><span className="font-bold text-ink">状态：</span>{activeMuteSet.has(getActionIdentityValue(user)) ? '禁言中' : '正常'}</p>
                     </div>
                   </div>
                 </div>
@@ -480,8 +503,11 @@ const AdminChatPanel: React.FC<AdminChatPanelProps> = ({ showToast }) => {
           ) : (
             <div className="space-y-2 max-h-[420px] overflow-auto pr-1">
               {filteredMutes.map((item) => (
-                <div key={item.fingerprintHash} className="border border-gray-200 rounded-lg p-3 bg-gray-50">
-                  <p className="text-xs font-sans text-ink font-bold break-all">指纹：{item.fingerprintHash}</p>
+                <div key={item.identityKey || item.fingerprintHash} className="border border-gray-200 rounded-lg p-3 bg-gray-50">
+                  <p className="text-xs font-sans text-ink font-bold break-all">主身份：{getAdminIdentityPrimary(item)}</p>
+                  {getAdminIdentityAliases(item).length > 0 && (
+                    <p className="text-xs text-pencil font-sans break-all">关联身份：{getAdminIdentityAliases(item).join(' / ')}</p>
+                  )}
                   <p className="text-xs text-pencil font-sans">截止：{formatTime(item.mutedUntil)}</p>
                   {item.reason && <p className="text-xs text-pencil font-sans break-all">理由：{item.reason}</p>}
                   <div className="mt-2 flex items-center gap-2 flex-wrap">
@@ -490,8 +516,8 @@ const AdminChatPanel: React.FC<AdminChatPanelProps> = ({ showToast }) => {
                       className="h-7 px-2 text-[11px]"
                       disabled={Boolean(busyKey)}
                       onClick={() => runAction(
-                        `unmute:${item.fingerprintHash}`,
-                        () => api.unmuteAdminChatUser(item.fingerprintHash, '管理员解除禁言'),
+                        `unmute:${getActionIdentityValue(item)}`,
+                        () => api.unmuteAdminChatUser(getActionIdentityValue(item), '管理员解除禁言'),
                         '已解除禁言',
                       )}
                     >
@@ -502,7 +528,7 @@ const AdminChatPanel: React.FC<AdminChatPanelProps> = ({ showToast }) => {
                       className="h-7 px-2 text-[11px]"
                       disabled={Boolean(busyKey)}
                       onClick={() => applyBan({
-                        fingerprintHash: item.fingerprintHash,
+                        identityValue: getActionIdentityValue(item),
                         durationMinutes: 7 * 24 * 60,
                         scope: 'chat',
                         reason: '禁言转封禁',
@@ -553,7 +579,7 @@ const AdminChatPanel: React.FC<AdminChatPanelProps> = ({ showToast }) => {
             </select>
           </label>
         </div>
-        <p className="text-[11px] text-pencil font-sans mb-3">封禁会同步写入 IP 与指纹，优先用于处理最近消息里的违规用户。</p>
+        <p className="text-[11px] text-pencil font-sans mb-3">封禁会同步写入 IP 与整条身份链，优先用于处理最近消息里的违规用户。</p>
         {filteredMessages.length === 0 ? (
           <p className="text-sm text-pencil font-hand">{search ? '没有匹配的消息' : '暂无消息'}</p>
         ) : (
@@ -567,7 +593,10 @@ const AdminChatPanel: React.FC<AdminChatPanelProps> = ({ showToast }) => {
                       <span className="mx-2">#{message.id}</span>
                       <span>{formatTime(message.createdAt)}</span>
                     </p>
-                    <p className="break-all"><span className="font-bold text-ink">指纹：</span>{message.fingerprintHash || '-'}</p>
+                    <p className="break-all"><span className="font-bold text-ink">主身份：</span>{getAdminIdentityPrimary(message)}</p>
+                    {getAdminIdentityAliases(message).length > 0 && (
+                      <p className="break-all"><span className="font-bold text-ink">关联身份：</span>{getAdminIdentityAliases(message).join(' / ')}</p>
+                    )}
                     <p className="break-all"><span className="font-bold text-ink">IP：</span>{message.ip || '-'}</p>
                   </div>
                   {!message.deleted && (
@@ -587,9 +616,9 @@ const AdminChatPanel: React.FC<AdminChatPanelProps> = ({ showToast }) => {
                       <SketchButton
                         variant="secondary"
                         className="h-7 px-2 text-[11px] inline-flex items-center gap-1"
-                        disabled={Boolean(busyKey) || !String(message.fingerprintHash || '').trim()}
+                        disabled={Boolean(busyKey) || !getActionIdentityValue(message)}
                         onClick={() => applyMute(
-                          String(message.fingerprintHash || ''),
+                          getActionIdentityValue(message),
                           messageMuteMinutes,
                           `管理员禁言（消息#${message.id}）`,
                         )}
@@ -599,9 +628,9 @@ const AdminChatPanel: React.FC<AdminChatPanelProps> = ({ showToast }) => {
                       <SketchButton
                         variant="secondary"
                         className="h-7 px-2 text-[11px] inline-flex items-center gap-1"
-                        disabled={Boolean(busyKey) || !String(message.fingerprintHash || '').trim()}
+                        disabled={Boolean(busyKey) || !getActionIdentityValue(message)}
                         onClick={() => applyBan({
-                          fingerprintHash: String(message.fingerprintHash || ''),
+                          identityValue: getActionIdentityValue(message),
                           ip: String(message.ip || ''),
                           durationMinutes: messageBanMinutes,
                           scope: messageBanScope,
@@ -622,8 +651,8 @@ const AdminChatPanel: React.FC<AdminChatPanelProps> = ({ showToast }) => {
                 ) : (
                   <MarkdownRenderer content={message.content || ''} className="text-sm text-ink" />
                 )}
-                {!message.deleted && !String(message.fingerprintHash || '').trim() && (
-                  <p className="text-[11px] text-amber-700 font-sans mt-2">该消息缺少指纹，无法执行禁言/封禁。</p>
+                {!message.deleted && !getActionIdentityValue(message) && (
+                  <p className="text-[11px] text-amber-700 font-sans mt-2">该消息缺少身份标识，无法执行禁言/封禁。</p>
                 )}
               </div>
             ))}
@@ -632,7 +661,7 @@ const AdminChatPanel: React.FC<AdminChatPanelProps> = ({ showToast }) => {
       </div>
 
       <div className="text-xs text-pencil font-sans">
-        在线用户列表已改为纯展示；禁言/封禁操作集中在“最近消息”中，封禁默认同步到 IP + 指纹。
+        在线用户列表已改为纯展示；禁言/封禁操作集中在“最近消息”中，封禁默认同步到 IP + 身份链。
         当前有禁言：{activeMuteSet.size} 人。
       </div>
     </section>

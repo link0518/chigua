@@ -2,6 +2,11 @@
 
 ### Changed
 
+- 管理后台接入新身份体系：帖子、评论、反馈、举报、封禁列表与聊天室管理统一返回并展示 `identityKey` / `identityHashes`，搜索支持按主身份与关联身份命中。
+- 管理封禁与聊天室禁言/踢出/封禁改为按身份链执行，并保留 IP 维度与旧指纹数据兼容，避免后台仍停留在仅按单个旧指纹处理。
+
+### Changed
+
 - 指纹主身份切换为 `HttpOnly Cookie` `gs_client_id_v2`，服务端新增身份归一层与 `identity_aliases` 兼容映射；通知、封禁、举报、点赞/收藏、评论点赞、聊天室统一按新旧身份并行识别，涉及 `server/identity-service.js`、`server/index.js`、`server/chat-realtime-service.js`、`server/routes/public/*`、`components/ChatRoomView.tsx`。
 
 ### Changed
