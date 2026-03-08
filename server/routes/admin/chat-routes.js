@@ -146,6 +146,7 @@ export const registerAdminChatRoutes = (app, deps) => {
     }
     const reason = String(req.body?.reason || '').trim();
     const ip = String(req.body?.ip || '').trim();
+    const identityType = String(req.body?.identityType || '').trim();
     const scope = String(req.body?.scope || 'chat').trim() === 'site' ? 'site' : 'chat';
     const permissions = Array.isArray(req.body?.permissions) ? req.body.permissions : null;
     const expiresAt = resolveExpiresAt(req.body?.expiresAt, req.body?.durationMinutes);
@@ -157,6 +158,7 @@ export const registerAdminChatRoutes = (app, deps) => {
       expiresAt,
       scope,
       permissions,
+      identityType,
     });
     return res.json(payload);
   });
@@ -168,7 +170,8 @@ export const registerAdminChatRoutes = (app, deps) => {
     }
     const reason = String(req.body?.reason || '').trim();
     const ip = String(req.body?.ip || '').trim();
-    const payload = chatRealtime.unbanByAdmin({ req, fingerprintHash, reason, ip });
+    const identityType = String(req.body?.identityType || '').trim();
+    const payload = chatRealtime.unbanByAdmin({ req, fingerprintHash, reason, ip, identityType });
     return res.json(payload);
   });
 };

@@ -25,8 +25,7 @@ export const registerAdminPostsRoutes = (app, deps) => {
     BAN_PERMISSIONS,
     mapAdminCommentRow,
     formatRelativeTime,
-    getLookupHashesForIdentityHash,
-    getStableLegacyFingerprintHashForIdentityHashes,
+    identityCutoverAt,
   } = deps;
 
   const moderationRepository = createModerationRepository(db);
@@ -35,16 +34,13 @@ export const registerAdminPostsRoutes = (app, deps) => {
     upsertBan,
     BAN_PERMISSIONS,
     logAdminAction,
-    getLookupHashesForIdentityHash,
-    getStableLegacyFingerprintHashForIdentityHashes,
+    identityCutoverAt,
   });
 
   const resolveAdminIdentity = ({ fingerprint, sessionId = '', ip = '' }) => buildAdminIdentity({
     fingerprint,
     sessionId,
     ip,
-    getLookupHashesForIdentityHash,
-    getStableLegacyFingerprintHashForIdentityHashes,
   });
 
   const mapAdminCommentWithIdentity = (row) => ({
@@ -562,6 +558,7 @@ app.post('/api/admin/comments/:id/action', requireAdmin, requireAdminCsrf, (req,
 
   let ipBanned = false;
   let identityBanned = false;
+  let fingerprintBanned = false;
 
   if (action === 'ban' && banOptions) {
     if (row.ip) {
@@ -576,19 +573,25 @@ app.post('/api/admin/comments/:id/action', requireAdmin, requireAdminCsrf, (req,
         reason,
       });
     }
-    const identity = resolveAdminIdentity({ fingerprint: row.fingerprint || '', ip: row.ip || '' });
-    identity.identityHashes.forEach((identityHash) => {
-      upsertBan('banned_fingerprints', 'fingerprint', identityHash, banOptions || {});
-      identityBanned = true;
+    const identityValue = String(row.fingerprint || '').trim();
+    if (identityValue) {
+      const isIdentityRecord = Number(row.created_at || 0) >= identityCutoverAt;
+      if (isIdentityRecord) {
+        upsertBan('banned_identities', 'identity', identityValue, banOptions || {});
+        identityBanned = true;
+      } else {
+        upsertBan('banned_fingerprints', 'fingerprint', identityValue, banOptions || {});
+        fingerprintBanned = true;
+      }
       logAdminAction(req, {
-        action: 'ban_identity',
-        targetType: 'identity',
-        targetId: identityHash,
+        action: isIdentityRecord ? 'ban_identity' : 'ban_fingerprint',
+        targetType: isIdentityRecord ? 'identity' : 'fingerprint',
+        targetId: identityValue,
         before: null,
         after: { banned: true, permissions: banOptions?.permissions || BAN_PERMISSIONS, expiresAt: banOptions?.expiresAt || null },
         reason,
       });
-    });
+    }
   }
 
   return res.json({
@@ -597,7 +600,7 @@ app.post('/api/admin/comments/:id/action', requireAdmin, requireAdminCsrf, (req,
     removed: removedCount,
     ipBanned,
     identityBanned,
-    fingerprintBanned: identityBanned,
+    fingerprintBanned,
   });
 });
 

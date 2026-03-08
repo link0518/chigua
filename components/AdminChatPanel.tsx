@@ -2,9 +2,11 @@
 import { Ban, MessageSquare, Search, Shield, Trash2 } from 'lucide-react';
 import { api } from '../api';
 import type { AdminChatOnlineUser, ChatMessage, ChatMuteEntry, ChatRoomConfig } from '../types';
+import AdminIdentityCompact from './AdminIdentityCompact';
 import {
-  getAdminIdentityAliases,
-  getAdminIdentityPrimary,
+  type AdminIdentityBanTargetType,
+  type AdminIdentityField,
+  getAdminIdentitySearchValues,
 } from './adminIdentity';
 import MarkdownRenderer from './MarkdownRenderer';
 import { SketchButton } from './SketchUI';
@@ -19,6 +21,7 @@ type AdminChatMessage = ChatMessage & {
 
 interface AdminChatPanelProps {
   showToast: (message: string, type?: ToastType) => void;
+  onPrepareBan?: (type: AdminIdentityBanTargetType, value: string) => void;
 }
 
 const REFRESH_INTERVAL_MS = 5000;
@@ -66,7 +69,7 @@ const getActionIdentityValue = (identity: {
   fingerprintHash?: string | null;
 }) => String(identity.identityKey || identity.fingerprintHash || '').trim();
 
-const AdminChatPanel: React.FC<AdminChatPanelProps> = ({ showToast }) => {
+const AdminChatPanel: React.FC<AdminChatPanelProps> = ({ showToast, onPrepareBan }) => {
   const [onlineUsers, setOnlineUsers] = useState<AdminChatOnlineUser[]>([]);
   const [onlineCount, setOnlineCount] = useState(0);
   const [messages, setMessages] = useState<AdminChatMessage[]>([]);
@@ -213,6 +216,38 @@ const AdminChatPanel: React.FC<AdminChatPanelProps> = ({ showToast }) => {
   }, [mutes]);
 
   const search = useMemo(() => normalizeSearch(searchQuery), [searchQuery]);
+  const handleIdentitySearch = useCallback((field: AdminIdentityField) => {
+    setSearchQuery(field.value);
+  }, []);
+  const handleIdentityBanPrepare = useCallback((field: AdminIdentityField & { type: AdminIdentityBanTargetType }) => {
+    onPrepareBan?.(field.type, field.value);
+  }, [onPrepareBan]);
+  const renderIpActions = useCallback((ip?: string) => {
+    const value = String(ip || '').trim();
+    if (!value) {
+      return null;
+    }
+    return (
+      <span className="ml-2 inline-flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => setSearchQuery(value)}
+          className="rounded border border-gray-300 px-1.5 py-0.5 text-[10px] font-bold text-gray-600 hover:border-ink hover:text-ink"
+        >
+          搜索
+        </button>
+        {onPrepareBan && (
+          <button
+            type="button"
+            onClick={() => onPrepareBan('ip', value)}
+            className="rounded border border-gray-300 px-1.5 py-0.5 text-[10px] font-bold text-gray-600 hover:border-ink hover:text-ink"
+          >
+            封禁
+          </button>
+        )}
+      </span>
+    );
+  }, [onPrepareBan]);
 
   const filteredOnlineUsers = useMemo(() => {
     if (!search) {
@@ -220,9 +255,7 @@ const AdminChatPanel: React.FC<AdminChatPanelProps> = ({ showToast }) => {
     }
     return onlineUsers.filter((user) => includesSearch(search, [
       user.nickname,
-      user.identityKey,
-      user.fingerprintHash,
-      ...(user.identityHashes || []),
+      ...getAdminIdentitySearchValues(user),
       user.sessionId,
       user.connections,
       formatTime(user.joinedAt),
@@ -234,9 +267,7 @@ const AdminChatPanel: React.FC<AdminChatPanelProps> = ({ showToast }) => {
       return mutes;
     }
     return mutes.filter((item) => includesSearch(search, [
-      item.identityKey,
-      item.fingerprintHash,
-      ...(item.identityHashes || []),
+      ...getAdminIdentitySearchValues(item),
       item.reason,
       formatTime(item.mutedUntil),
     ]));
@@ -252,10 +283,7 @@ const AdminChatPanel: React.FC<AdminChatPanelProps> = ({ showToast }) => {
       message.content,
       message.imageUrl,
       message.stickerCode,
-      message.identityKey,
-      message.fingerprintHash,
-      ...(message.identityHashes || []),
-      message.ip,
+      ...getAdminIdentitySearchValues(message),
       formatTime(message.createdAt),
     ]));
   }, [messages, search]);
@@ -367,7 +395,7 @@ const AdminChatPanel: React.FC<AdminChatPanelProps> = ({ showToast }) => {
           <input
             value={manualIdentityValue}
             onChange={(event) => setManualIdentityValue(event.target.value.trim())}
-            placeholder="输入主身份或任一关联身份"
+            placeholder="输入新身份或指纹"
             className="h-9 border-2 border-gray-200 rounded-lg px-3 text-xs font-sans focus:border-ink outline-none"
           />
           <input
@@ -409,7 +437,7 @@ const AdminChatPanel: React.FC<AdminChatPanelProps> = ({ showToast }) => {
               <option value="site">全站</option>
             </select>
           </label>
-          <div className="text-xs text-pencil font-sans">按钮默认作用于上方输入的主身份或关联身份</div>
+          <div className="text-xs text-pencil font-sans">按钮默认作用于上方输入的新身份或指纹</div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <SketchButton
@@ -480,10 +508,15 @@ const AdminChatPanel: React.FC<AdminChatPanelProps> = ({ showToast }) => {
                   <div className="grid grid-cols-1 gap-3">
                     <div className="text-xs font-sans text-pencil space-y-1 min-w-0">
                       <p className="break-all"><span className="font-bold text-ink">昵称：</span>{user.nickname}</p>
-                      <p className="break-all"><span className="font-bold text-ink">主身份：</span>{getAdminIdentityPrimary(user)}</p>
-                      {getAdminIdentityAliases(user).length > 0 && (
-                        <p className="break-all"><span className="font-bold text-ink">关联身份：</span>{getAdminIdentityAliases(user).join(' / ')}</p>
-                      )}
+                      <AdminIdentityCompact
+                        identity={user}
+                        label="身份"
+                        showSession={false}
+                        actions={{
+                          onSearch: handleIdentitySearch,
+                          onBan: onPrepareBan ? handleIdentityBanPrepare : undefined,
+                        }}
+                      />
                       <p className="break-all"><span className="font-bold text-ink">会话：</span>{user.sessionId}</p>
                       <p><span className="font-bold text-ink">连接：</span>{user.connections}</p>
                       <p><span className="font-bold text-ink">加入：</span>{formatTime(user.joinedAt)}</p>
@@ -504,10 +537,14 @@ const AdminChatPanel: React.FC<AdminChatPanelProps> = ({ showToast }) => {
             <div className="space-y-2 max-h-[420px] overflow-auto pr-1">
               {filteredMutes.map((item) => (
                 <div key={item.identityKey || item.fingerprintHash} className="border border-gray-200 rounded-lg p-3 bg-gray-50">
-                  <p className="text-xs font-sans text-ink font-bold break-all">主身份：{getAdminIdentityPrimary(item)}</p>
-                  {getAdminIdentityAliases(item).length > 0 && (
-                    <p className="text-xs text-pencil font-sans break-all">关联身份：{getAdminIdentityAliases(item).join(' / ')}</p>
-                  )}
+                  <AdminIdentityCompact
+                    identity={item}
+                    label="身份"
+                    actions={{
+                      onSearch: handleIdentitySearch,
+                      onBan: onPrepareBan ? handleIdentityBanPrepare : undefined,
+                    }}
+                  />
                   <p className="text-xs text-pencil font-sans">截止：{formatTime(item.mutedUntil)}</p>
                   {item.reason && <p className="text-xs text-pencil font-sans break-all">理由：{item.reason}</p>}
                   <div className="mt-2 flex items-center gap-2 flex-wrap">
@@ -593,11 +630,20 @@ const AdminChatPanel: React.FC<AdminChatPanelProps> = ({ showToast }) => {
                       <span className="mx-2">#{message.id}</span>
                       <span>{formatTime(message.createdAt)}</span>
                     </p>
-                    <p className="break-all"><span className="font-bold text-ink">主身份：</span>{getAdminIdentityPrimary(message)}</p>
-                    {getAdminIdentityAliases(message).length > 0 && (
-                      <p className="break-all"><span className="font-bold text-ink">关联身份：</span>{getAdminIdentityAliases(message).join(' / ')}</p>
-                    )}
-                    <p className="break-all"><span className="font-bold text-ink">IP：</span>{message.ip || '-'}</p>
+                    <AdminIdentityCompact
+                      identity={message}
+                      label="身份"
+                      showIp={false}
+                      actions={{
+                        onSearch: handleIdentitySearch,
+                        onBan: onPrepareBan ? handleIdentityBanPrepare : undefined,
+                      }}
+                    />
+                    <p className="break-all">
+                      <span className="font-bold text-ink">IP：</span>
+                      {message.ip || '-'}
+                      {renderIpActions(message.ip)}
+                    </p>
                   </div>
                   {!message.deleted && (
                     <div className="flex flex-wrap justify-end gap-1 shrink-0">

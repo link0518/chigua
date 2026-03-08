@@ -41,7 +41,10 @@
     const bannedFingerprints = db
       .prepare('SELECT COUNT(1) AS count FROM banned_fingerprints WHERE expires_at IS NULL OR expires_at > ?')
       .get(now).count;
-    const bannedUsers = bannedIps + bannedFingerprints;
+    const bannedIdentities = db
+      .prepare('SELECT COUNT(1) AS count FROM banned_identities WHERE expires_at IS NULL OR expires_at > ?')
+      .get(now).count;
+    const bannedUsers = bannedIps + bannedFingerprints + bannedIdentities;
 
     return res.json({
       todayReports: todayStats?.reports || 0,

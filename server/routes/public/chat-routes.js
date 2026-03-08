@@ -23,7 +23,7 @@ export const registerPublicChatRoutes = (app, deps) => {
     db,
     requireFingerprint,
     getIdentityLookupHashes,
-    sharesIdentityHashes,
+    getRequestIdentityValueForCreatedAt,
     checkBanFor,
     enforceRateLimit,
     getClientIp,
@@ -125,7 +125,7 @@ export const registerPublicChatRoutes = (app, deps) => {
 
     const row = db.prepare(
       `
-        SELECT id, session_id, fingerprint_hash, msg_type, text_content, image_url, sticker_shortcode, deleted
+        SELECT id, session_id, fingerprint_hash, msg_type, text_content, image_url, sticker_shortcode, deleted, created_at
         FROM chat_messages
         WHERE id = ?
       `
@@ -135,7 +135,7 @@ export const registerPublicChatRoutes = (app, deps) => {
       return res.status(404).json({ error: '消息不存在或已删除' });
     }
 
-    if (sharesIdentityHashes(String(row.fingerprint_hash || ''), fingerprint)) {
+    if (getRequestIdentityValueForCreatedAt(req, res, row.created_at) === String(row.fingerprint_hash || '')) {
       return res.status(400).json({ error: '不能举报自己的消息' });
     }
 

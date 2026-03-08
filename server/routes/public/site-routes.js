@@ -1,7 +1,7 @@
 export const registerPublicSiteRoutes = (app, deps) => {
   const {
     getClientIp,
-    getIdentityLookupHashes,
+    getRequestIdentityContext,
     getActiveBans,
     mergePermissions,
     buildSettingsResponse,
@@ -11,8 +11,8 @@ export const registerPublicSiteRoutes = (app, deps) => {
 
   app.get('/api/access', (req, res) => {
     const clientIp = getClientIp(req);
-    const identityHashes = getIdentityLookupHashes(req, res);
-    const bans = getActiveBans(clientIp, identityHashes);
+    const identityContext = getRequestIdentityContext(req, res);
+    const bans = getActiveBans(clientIp, identityContext);
     const permissions = mergePermissions(bans);
     const blocked = bans.some((ban) => ban.permissions.includes('site'));
     const viewBlocked = bans.some((ban) => ban.permissions.includes('view'));

@@ -7,7 +7,7 @@ export const createModerationRepository = (db) => {
     }
     const placeholders = buildPlaceholders(ids);
     return db
-      .prepare(`SELECT id, content, deleted, session_id, ip, fingerprint FROM posts WHERE id IN (${placeholders})`)
+      .prepare(`SELECT id, content, deleted, session_id, ip, fingerprint, created_at FROM posts WHERE id IN (${placeholders})`)
       .all(...ids);
   };
 
@@ -28,7 +28,7 @@ export const createModerationRepository = (db) => {
   };
 
   const getCommentById = (commentId) => db
-    .prepare('SELECT id, post_id, ip, fingerprint, deleted FROM comments WHERE id = ?')
+    .prepare('SELECT id, post_id, ip, fingerprint, deleted, created_at FROM comments WHERE id = ?')
     .get(commentId);
 
   const softDeleteComment = (commentId, deletedAt) => {
@@ -42,7 +42,7 @@ export const createModerationRepository = (db) => {
     ).run(postId);
   };
 
-  const getPostIdentity = (postId) => db.prepare('SELECT ip, fingerprint FROM posts WHERE id = ?').get(postId);
+  const getPostIdentity = (postId) => db.prepare('SELECT ip, fingerprint, created_at FROM posts WHERE id = ?').get(postId);
 
   const softDeletePost = (postId, deletedAt) => {
     db.prepare('UPDATE posts SET deleted = 1, deleted_at = ? WHERE id = ?')
@@ -77,12 +77,20 @@ export const createModerationRepository = (db) => {
     .prepare('SELECT fingerprint, banned_at, expires_at, permissions, reason FROM banned_fingerprints ORDER BY banned_at DESC')
     .all();
 
+  const listBannedIdentities = () => db
+    .prepare('SELECT identity, banned_at, expires_at, permissions, reason FROM banned_identities ORDER BY banned_at DESC')
+    .all();
+
   const unbanIp = (ip) => {
     db.prepare('DELETE FROM banned_ips WHERE ip = ?').run(ip);
   };
 
   const unbanFingerprint = (fingerprint) => {
     db.prepare('DELETE FROM banned_fingerprints WHERE fingerprint = ?').run(fingerprint);
+  };
+
+  const unbanIdentity = (identity) => {
+    db.prepare('DELETE FROM banned_identities WHERE identity = ?').run(identity);
   };
 
   return {
@@ -99,7 +107,9 @@ export const createModerationRepository = (db) => {
     resolvePendingReports,
     listBannedIps,
     listBannedFingerprints,
+    listBannedIdentities,
     unbanIp,
     unbanFingerprint,
+    unbanIdentity,
   };
 };

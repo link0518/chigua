@@ -13,16 +13,13 @@ export const registerAdminFeedbackRoutes = (app, deps) => {
     resolveBanOptions,
     upsertBan,
     BAN_PERMISSIONS,
-    getLookupHashesForIdentityHash,
-    getStableLegacyFingerprintHashForIdentityHashes,
+    identityCutoverAt,
   } = deps;
 
   const resolveAdminIdentity = ({ fingerprint, sessionId = '', ip = '' }) => buildAdminIdentity({
     fingerprint,
     sessionId,
     ip,
-    getLookupHashesForIdentityHash,
-    getStableLegacyFingerprintHashForIdentityHashes,
   });
 
   const buildFeedbackItem = (row) => ({
@@ -178,12 +175,9 @@ export const registerAdminFeedbackRoutes = (app, deps) => {
     }
 
     const ip = String(row.ip || '').trim();
-    const identity = resolveAdminIdentity({
-      fingerprint: row.fingerprint || '',
-      sessionId: row.session_id || '',
-      ip,
-    });
-    if (!ip && !identity.identityHashes.length) {
+    const identityValue = String(row.fingerprint || '').trim();
+    const isIdentityRecord = Number(row.created_at || 0) >= identityCutoverAt;
+    if (!ip && !identityValue) {
       return res.status(400).json({ error: '无法获取可封禁的身份标识（IP/身份）' });
     }
 
@@ -200,18 +194,24 @@ export const registerAdminFeedbackRoutes = (app, deps) => {
     }
 
     let identityBanned = false;
-    identity.identityHashes.forEach((identityHash) => {
-      upsertBan('banned_fingerprints', 'fingerprint', identityHash, banOptions || {});
-      identityBanned = true;
+    let fingerprintBanned = false;
+    if (identityValue) {
+      if (isIdentityRecord) {
+        upsertBan('banned_identities', 'identity', identityValue, banOptions || {});
+        identityBanned = true;
+      } else {
+        upsertBan('banned_fingerprints', 'fingerprint', identityValue, banOptions || {});
+        fingerprintBanned = true;
+      }
       logAdminAction(req, {
-        action: 'ban_identity',
-        targetType: 'identity',
-        targetId: identityHash,
+        action: isIdentityRecord ? 'ban_identity' : 'ban_fingerprint',
+        targetType: isIdentityRecord ? 'identity' : 'fingerprint',
+        targetId: identityValue,
         before: null,
         after: { banned: true, permissions: banOptions?.permissions || BAN_PERMISSIONS, expiresAt: banOptions?.expiresAt || null },
         reason,
       });
-    });
+    }
 
     logAdminAction(req, {
       action: 'feedback_ban',
@@ -220,8 +220,8 @@ export const registerAdminFeedbackRoutes = (app, deps) => {
       before: null,
       after: {
         ip: ip || null,
-        identityKey: identity.identityKey || null,
-        identityHashes: identity.identityHashes,
+        identityKey: isIdentityRecord ? identityValue || null : null,
+        identityHashes: identityValue ? [identityValue] : [],
       },
       reason,
     });
@@ -230,7 +230,7 @@ export const registerAdminFeedbackRoutes = (app, deps) => {
       id: feedbackId,
       ipBanned: Boolean(ip),
       identityBanned,
-      fingerprintBanned: identityBanned,
+      fingerprintBanned,
     });
   });
 };

@@ -1,4 +1,4 @@
-import { buildAdminIdentity } from '../admin-identity-utils.js';
+import { resolveIdentityStorageType } from '../identity-cutover.js';
 
 const uniqueNonEmpty = (values) => Array.from(new Set(values.filter(Boolean)));
 
@@ -8,13 +8,23 @@ const buildBanAuditState = (banOptions, defaultPermissions) => ({
   expiresAt: banOptions?.expiresAt || null,
 });
 
+const normalizeStoredTarget = (value, createdAt, identityCutoverAt) => {
+  const normalizedValue = String(value || '').trim();
+  if (!normalizedValue) {
+    return null;
+  }
+  return {
+    type: resolveIdentityStorageType(createdAt, identityCutoverAt),
+    value: normalizedValue,
+  };
+};
+
 export const createAdminModerationService = ({
   repository,
   upsertBan,
   BAN_PERMISSIONS,
   logAdminAction,
-  getLookupHashesForIdentityHash,
-  getStableLegacyFingerprintHashForIdentityHashes,
+  identityCutoverAt,
 }) => {
   const getBanActionName = (type, action) => {
     if (type === 'ip') {
@@ -53,22 +63,44 @@ export const createAdminModerationService = ({
       upsertBan('banned_ips', 'ip', value, banOptions || {});
       return;
     }
+    if (type === 'identity') {
+      upsertBan('banned_identities', 'identity', value, banOptions || {});
+      return;
+    }
     upsertBan('banned_fingerprints', 'fingerprint', value, banOptions || {});
   };
 
-  const resolveIdentityHashes = (value) => {
-    const summary = buildAdminIdentity({
-      identityHash: value,
-      fingerprint: value,
-      getLookupHashesForIdentityHash,
-      getStableLegacyFingerprintHashForIdentityHashes,
-    });
-    return uniqueNonEmpty(summary.identityHashes || []);
+  const removeBan = (type, value) => {
+    if (type === 'ip') {
+      repository.unbanIp(value);
+      return;
+    }
+    if (type === 'identity') {
+      repository.unbanIdentity(value);
+      return;
+    }
+    repository.unbanFingerprint(value);
   };
 
-  const resolveFingerprintsToIdentityHashes = (fingerprints) => uniqueNonEmpty(
-    fingerprints.flatMap((fingerprint) => resolveIdentityHashes(fingerprint))
-  );
+  const collectStoredTargets = (rows) => uniqueNonEmpty(
+    rows
+      .map((row) => normalizeStoredTarget(row?.fingerprint, row?.created_at, identityCutoverAt))
+      .filter(Boolean)
+      .map((item) => `${item.type}:${item.value}`)
+  ).map((item) => {
+    const separatorIndex = item.indexOf(':');
+    return {
+      type: item.slice(0, separatorIndex),
+      value: item.slice(separatorIndex + 1),
+    };
+  });
+
+  const summarizeTargets = (targets) => ({
+    fingerprints: targets.filter((item) => item.type === 'legacy_fingerprint').length,
+    identities: targets.filter((item) => item.type === 'identity').length,
+  });
+
+  const mapStoredTypeToBanType = (type) => (type === 'identity' ? 'identity' : 'fingerprint');
 
   return {
     executePostBatchAction({ req, action, ids, reason, banOptions, now = Date.now() }) {
@@ -94,73 +126,61 @@ export const createAdminModerationService = ({
       }
 
       const ips = uniqueNonEmpty(rows.map((row) => row.ip));
-      const identities = resolveFingerprintsToIdentityHashes(rows.map((row) => row.fingerprint));
+      const targets = collectStoredTargets(rows);
+      const summary = summarizeTargets(targets);
 
       if (action === 'ban') {
         ips.forEach((ip) => {
           applyBan('ip', ip, banOptions);
           logBan(req, 'ip', ip, reason, banOptions);
         });
-        identities.forEach((identityHash) => {
-          applyBan('identity', identityHash, banOptions);
-          logBan(req, 'identity', identityHash, reason, banOptions);
+        targets.forEach((target) => {
+          const banType = mapStoredTypeToBanType(target.type);
+          applyBan(banType, target.value, banOptions);
+          logBan(req, banType, target.value, reason, banOptions);
         });
         logAdminAction(req, {
           action: 'post_batch_ban',
           targetType: 'post_batch',
           targetId: ids.join(','),
           before: null,
-          after: { posts: ids.length, ips: ips.length, identities: identities.length },
+          after: { posts: ids.length, ips: ips.length, ...summary },
           reason,
         });
-        return { updated: ids.length, ips: ips.length, identities: identities.length };
+        return { updated: ids.length, ips: ips.length, ...summary };
       }
 
       ips.forEach((ip) => {
-        repository.unbanIp(ip);
+        removeBan('ip', ip);
         logUnban(req, 'ip', ip, reason);
       });
-      identities.forEach((identityHash) => {
-        repository.unbanFingerprint(identityHash);
-        logUnban(req, 'identity', identityHash, reason);
+      targets.forEach((target) => {
+        const banType = mapStoredTypeToBanType(target.type);
+        removeBan(banType, target.value);
+        logUnban(req, banType, target.value, reason);
       });
       logAdminAction(req, {
         action: 'post_batch_unban',
         targetType: 'post_batch',
         targetId: ids.join(','),
         before: null,
-        after: { posts: ids.length, ips: ips.length, identities: identities.length },
+        after: { posts: ids.length, ips: ips.length, ...summary },
         reason,
       });
-      return { updated: ids.length, ips: ips.length, identities: identities.length };
+      return { updated: ids.length, ips: ips.length, ...summary };
     },
 
     executeBanAction({ req, action, type, value, reason, banOptions }) {
-      const normalizedType = type === 'identity' ? 'identity' : type;
-      const identityHashes = normalizedType === 'identity' ? resolveIdentityHashes(value) : [value];
+      const normalizedType = type === 'identity' ? 'identity' : type === 'fingerprint' ? 'fingerprint' : 'ip';
 
       if (action === 'ban') {
-        if (normalizedType === 'ip') {
-          applyBan('ip', value, banOptions);
-          logBan(req, 'ip', value, reason, banOptions);
-        } else {
-          identityHashes.forEach((identityHash) => {
-            applyBan('identity', identityHash, banOptions);
-            logBan(req, 'identity', identityHash, reason, banOptions);
-          });
-        }
+        applyBan(normalizedType, value, banOptions);
+        logBan(req, normalizedType, value, reason, banOptions);
         return { ok: true };
       }
 
-      if (normalizedType === 'ip') {
-        repository.unbanIp(value);
-        logUnban(req, 'ip', value, reason);
-      } else {
-        identityHashes.forEach((identityHash) => {
-          repository.unbanFingerprint(identityHash);
-          logUnban(req, 'identity', identityHash, reason);
-        });
-      }
+      removeBan(normalizedType, value);
+      logUnban(req, normalizedType, value, reason);
       return { ok: true };
     },
 
@@ -186,7 +206,8 @@ export const createAdminModerationService = ({
             }
             targetIdentity = {
               ip: commentRow.ip || null,
-              fingerprint: commentRow.fingerprint || null,
+              value: commentRow.fingerprint || null,
+              createdAt: commentRow.created_at,
             };
           }
         } else {
@@ -195,7 +216,8 @@ export const createAdminModerationService = ({
           if (postRow) {
             targetIdentity = {
               ip: postRow.ip || null,
-              fingerprint: postRow.fingerprint || null,
+              value: postRow.fingerprint || null,
+              createdAt: postRow.created_at,
             };
           }
         }
@@ -205,9 +227,10 @@ export const createAdminModerationService = ({
         if (targetIdentity.ip) {
           applyBan('ip', targetIdentity.ip, banOptions);
         }
-        resolveIdentityHashes(targetIdentity.fingerprint).forEach((identityHash) => {
-          applyBan('identity', identityHash, banOptions);
-        });
+        const target = normalizeStoredTarget(targetIdentity.value, targetIdentity.createdAt, identityCutoverAt);
+        if (target) {
+          applyBan(mapStoredTypeToBanType(target.type), target.value, banOptions);
+        }
       }
 
       logAdminAction(req, {
@@ -223,9 +246,10 @@ export const createAdminModerationService = ({
         if (targetIdentity.ip) {
           logBan(req, 'ip', targetIdentity.ip, reason, banOptions);
         }
-        resolveIdentityHashes(targetIdentity.fingerprint).forEach((identityHash) => {
-          logBan(req, 'identity', identityHash, reason, banOptions);
-        });
+        const target = normalizeStoredTarget(targetIdentity.value, targetIdentity.createdAt, identityCutoverAt);
+        if (target) {
+          logBan(req, mapStoredTypeToBanType(target.type), target.value, reason, banOptions);
+        }
       }
 
       return { status: nextStatus, action };
@@ -252,3 +276,4 @@ export const createAdminModerationService = ({
     },
   };
 };
+

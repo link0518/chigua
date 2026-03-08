@@ -13,8 +13,7 @@ export const registerAdminReportsRoutes = (app, deps) => {
     upsertBan,
     BAN_PERMISSIONS,
     chatRealtime,
-    getLookupHashesForIdentityHash,
-    getStableLegacyFingerprintHashForIdentityHashes,
+    identityCutoverAt,
   } = deps;
 
   const moderationRepository = createModerationRepository(db);
@@ -23,16 +22,13 @@ export const registerAdminReportsRoutes = (app, deps) => {
     upsertBan,
     BAN_PERMISSIONS,
     logAdminAction,
-    getLookupHashesForIdentityHash,
-    getStableLegacyFingerprintHashForIdentityHashes,
+    identityCutoverAt,
   });
 
   const resolveAdminIdentity = ({ fingerprint, sessionId = '', ip = '' }) => buildAdminIdentity({
     fingerprint,
     sessionId,
     ip,
-    getLookupHashesForIdentityHash,
-    getStableLegacyFingerprintHashForIdentityHashes,
   });
 
   app.get('/api/reports', requireAdmin, (req, res) => {
@@ -190,7 +186,7 @@ export const registerAdminReportsRoutes = (app, deps) => {
 
         const chatMessage = db.prepare(
           `
-            SELECT id, fingerprint_hash, ip_snapshot
+            SELECT id, fingerprint_hash, ip_snapshot, created_at
             FROM chat_messages
             WHERE id = ?
             LIMIT 1
@@ -228,6 +224,7 @@ export const registerAdminReportsRoutes = (app, deps) => {
               expiresAt: banOptions?.expiresAt || null,
               scope,
               permissions,
+              identityType: Number(chatMessage.created_at || 0) >= identityCutoverAt ? 'identity' : 'fingerprint',
             });
           } else {
             chatRealtime.muteByAdmin({

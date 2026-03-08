@@ -3,6 +3,8 @@
     db,
     checkBanFor,
     getIdentityLookupHashes,
+    getRequestIdentityContext,
+    getRequestIdentityValueForCreatedAt,
     requireFingerprint,
     enforceRateLimit,
     getClientIp,
@@ -10,7 +12,6 @@
     verifyTurnstile,
     createNotification,
     trimPreview,
-    sharesIdentityHashes,
     mapCommentRow,
     buildCommentTree,
     crypto,
@@ -73,7 +74,7 @@ app.get('/api/posts/:id/comments', (req, res) => {
   const viewerIdentityHashes = getIdentityLookupHashes(req, res);
   const viewerLikedSelect = buildViewerLikedSelect(viewerIdentityHashes);
 
-  const post = db.prepare('SELECT id, fingerprint FROM posts WHERE id = ? AND deleted = 0').get(postId);
+  const post = db.prepare('SELECT id, fingerprint, created_at FROM posts WHERE id = ? AND deleted = 0').get(postId);
   if (!post) {
     return res.status(404).json({ error: '内容不存在' });
   }
@@ -235,7 +236,7 @@ app.post('/api/posts/:id/comments', async (req, res) => {
   let parentRow = null;
   if (parentId) {
     parentRow = db
-      .prepare('SELECT id, post_id, parent_id FROM comments WHERE id = ? AND deleted = 0')
+      .prepare('SELECT id, post_id, parent_id, created_at FROM comments WHERE id = ? AND deleted = 0')
       .get(parentId);
     if (!parentRow) {
       return res.status(400).json({ error: '回复的评论不存在' });
@@ -263,34 +264,40 @@ app.post('/api/posts/:id/comments', async (req, res) => {
   db.prepare('UPDATE posts SET comments_count = comments_count + 1 WHERE id = ?').run(postId);
 
   const commentPreview = trimPreview(content);
+  const actorIdentityContext = getRequestIdentityContext(req, res);
   let replyRecipient = '';
   if (finalReplyToId) {
-    const replyTarget = db.prepare('SELECT fingerprint FROM comments WHERE id = ?').get(finalReplyToId);
+    const replyTarget = db.prepare('SELECT fingerprint, created_at FROM comments WHERE id = ?').get(finalReplyToId);
     replyRecipient = replyTarget?.fingerprint || '';
-    if (replyRecipient && !sharesIdentityHashes(replyRecipient, fingerprint)) {
+    const isReplyTargetSelf = replyRecipient
+      && getRequestIdentityValueForCreatedAt(req, res, replyTarget?.created_at) === replyRecipient;
+    if (replyRecipient && !isReplyTargetSelf) {
       createNotification({
         recipientFingerprint: replyRecipient,
+        recipientCreatedAt: replyTarget?.created_at,
         type: 'comment_reply',
         postId,
         commentId: commentId,
         preview: commentPreview,
-        actorFingerprint: fingerprint,
+        actorIdentityContext,
       });
     }
   }
 
+  const postIdentityValue = getRequestIdentityValueForCreatedAt(req, res, post.created_at);
   if (
     post.fingerprint
-    && !sharesIdentityHashes(post.fingerprint, fingerprint)
-    && !sharesIdentityHashes(post.fingerprint, replyRecipient)
+    && post.fingerprint !== postIdentityValue
+    && post.fingerprint !== replyRecipient
   ) {
     createNotification({
       recipientFingerprint: post.fingerprint,
+      recipientCreatedAt: post.created_at,
       type: 'post_comment',
       postId,
       commentId: commentId,
       preview: commentPreview,
-      actorFingerprint: fingerprint,
+      actorIdentityContext,
     });
   }
 

@@ -79,6 +79,31 @@ const normalizeIdentityHashes = (value) => {
       .filter(Boolean)
   ));
 };
+
+export const resolveJoinIdentity = ({
+  resolvedIdentity = null,
+  rawFingerprint = '',
+  hashFingerprint = null,
+}) => {
+  const resolvedFingerprintHash = String(
+    resolvedIdentity?.stableIdentityHash
+    || resolvedIdentity?.preferredFingerprintHash
+    || resolvedIdentity?.canonicalHash
+    || ''
+  ).trim();
+  const fallbackFingerprintHash = String(rawFingerprint || '').trim() && typeof hashFingerprint === 'function'
+    ? String(hashFingerprint(rawFingerprint) || '').trim()
+    : '';
+  const identityHashes = normalizeIdentityHashes([
+    Array.isArray(resolvedIdentity?.lookupHashes) ? resolvedIdentity.lookupHashes : [],
+    fallbackFingerprintHash,
+  ]);
+  return {
+    fingerprintHash: resolvedFingerprintHash || fallbackFingerprintHash,
+    identityHashes,
+  };
+};
+
 const hasSharedIdentityHashes = (left, right) => {
   const leftHashes = normalizeIdentityHashes(left);
   const rightHashes = new Set(normalizeIdentityHashes(right));
@@ -89,12 +114,10 @@ const hasSharedIdentityHashes = (left, right) => {
 };
 export const findPresenceByIdentityHashes = (presences, fingerprintHash, identityHashes = []) => {
   const normalizedFingerprintHash = String(fingerprintHash || '').trim();
-  const candidateHashes = normalizeIdentityHashes([normalizedFingerprintHash, identityHashes]);
-  if (!candidateHashes.length) {
+  if (!normalizedFingerprintHash) {
     return null;
   }
   const iterable = presences instanceof Map ? presences.values() : presences;
-  let sharedPresence = null;
   for (const presence of iterable || []) {
     if (!presence) {
       continue;
@@ -103,14 +126,8 @@ export const findPresenceByIdentityHashes = (presences, fingerprintHash, identit
     if (normalizedFingerprintHash && presenceFingerprintHash === normalizedFingerprintHash) {
       return presence;
     }
-    if (!sharedPresence && hasSharedIdentityHashes(
-      [presenceFingerprintHash, presence.identityHashes],
-      candidateHashes
-    )) {
-      sharedPresence = presence;
-    }
   }
-  return sharedPresence;
+  return null;
 };
 export const getChatMessageRateLimitKey = (connection, presence) => {
   const sessionId = String(presence?.sessionId || connection?.sessionId || '').trim();
@@ -225,6 +242,7 @@ export const createChatRealtimeService = (deps) => {
     logAdminAction,
     getAdminFromRequest,
     adminNickname,
+    identityCutoverAt,
   } = deps;
   const ADMIN_NICKNAME = String(adminNickname || '闰土').trim() || '闰土';
 
@@ -371,6 +389,7 @@ export const createChatRealtimeService = (deps) => {
   );
   const deleteMuteStmt = db.prepare('DELETE FROM chat_mutes WHERE fingerprint_hash = ?');
   const deleteBanStmt = db.prepare('DELETE FROM banned_fingerprints WHERE fingerprint = ?');
+  const deleteIdentityBanStmt = db.prepare('DELETE FROM banned_identities WHERE identity = ?');
   const deleteIpBanStmt = db.prepare('DELETE FROM banned_ips WHERE ip = ?');
   const upsertChatBanSyncStmt = db.prepare(
     `
@@ -399,11 +418,29 @@ export const createChatRealtimeService = (deps) => {
       LIMIT 1
     `
   );
+  const getLatestMessageCreatedAtByFingerprintStmt = db.prepare(
+    `
+      SELECT created_at
+      FROM chat_messages
+      WHERE fingerprint_hash = ?
+      ORDER BY created_at DESC
+      LIMIT 1
+    `
+  );
   const getSessionByIdStmt = db.prepare(
     `
       SELECT id, fingerprint_hash, nickname, joined_at
       FROM chat_sessions
       WHERE id = ?
+      ORDER BY joined_at DESC
+      LIMIT 1
+    `
+  );
+  const getLatestSessionJoinedAtByFingerprintStmt = db.prepare(
+    `
+      SELECT joined_at
+      FROM chat_sessions
+      WHERE fingerprint_hash = ?
       ORDER BY joined_at DESC
       LIMIT 1
     `
@@ -735,26 +772,16 @@ export const createChatRealtimeService = (deps) => {
     broadcastOnlineChanged();
   };
 
-  const getPresenceIdentityHashes = (presence) => normalizeIdentityHashes([
-    presence?.fingerprintHash,
-    presence?.identityHashes,
-  ]);
-
   const getConnectionsByFingerprintHash = (fingerprintHash) => {
-    const identityHashes = resolveAdminIdentityHashes({ fingerprintHash });
-    if (!identityHashes.length) {
+    const normalizedFingerprintHash = String(fingerprintHash || '').trim();
+    if (!normalizedFingerprintHash) {
       return [];
     }
-    const targets = new Set();
-    presenceByFingerprint.forEach((presence) => {
-      if (!hasSharedIdentityHashes(getPresenceIdentityHashes(presence), identityHashes)) {
-        return;
-      }
-      presence.connections.forEach((connection) => {
-        targets.add(connection);
-      });
-    });
-    return Array.from(targets);
+    const presence = presenceByFingerprint.get(normalizedFingerprintHash);
+    if (!presence) {
+      return [];
+    }
+    return Array.from(presence.connections);
   };
 
   const disconnectFingerprintConnections = (fingerprintHash, event, payload, closeCode, closeReason) => {
@@ -1051,25 +1078,13 @@ export const createChatRealtimeService = (deps) => {
     const resolvedIdentity = typeof resolveSocketIdentity === 'function'
       ? resolveSocketIdentity(connection.request)
       : null;
-    let resolvedFingerprintHash = String(
-      resolvedIdentity?.stableIdentityHash
-      || resolvedIdentity?.preferredFingerprintHash
-      || resolvedIdentity?.canonicalHash
-      || ''
-    ).trim();
-    let resolvedIdentityHashes = Array.isArray(resolvedIdentity?.lookupHashes)
-      ? resolvedIdentity.lookupHashes.filter(Boolean)
-      : [];
-    if (!resolvedFingerprintHash) {
-      const rawFingerprint = String(payload?.fingerprint || '').trim();
-      const fallbackFingerprintHash = typeof hashFingerprint === 'function'
-        ? hashFingerprint(rawFingerprint)
-        : '';
-      if (fallbackFingerprintHash) {
-        resolvedFingerprintHash = fallbackFingerprintHash;
-        resolvedIdentityHashes = [fallbackFingerprintHash];
-      }
-    }
+    const joinIdentity = resolveJoinIdentity({
+      resolvedIdentity,
+      rawFingerprint: payload?.fingerprint,
+      hashFingerprint,
+    });
+    const resolvedFingerprintHash = joinIdentity.fingerprintHash;
+    const resolvedIdentityHashes = joinIdentity.identityHashes;
     if (!resolvedFingerprintHash) {
       sendEvent(connection.socket, 'chat.error', { message: '缺少身份标识，请刷新页面后重试' });
       closeSocket(connection.socket, CHAT_JOIN_CLOSE_CODE, 'identity_required');
@@ -1399,6 +1414,27 @@ export const createChatRealtimeService = (deps) => {
     return '';
   };
 
+  const resolveChatBanType = (fingerprintHash, requestedType = '') => {
+    const normalizedRequestedType = String(requestedType || '').trim();
+    if (normalizedRequestedType === 'identity' || normalizedRequestedType === 'fingerprint') {
+      return normalizedRequestedType;
+    }
+    const normalizedFingerprintHash = String(fingerprintHash || '').trim();
+    if (!normalizedFingerprintHash) {
+      return 'identity';
+    }
+    const latestMessageRow = getLatestMessageCreatedAtByFingerprintStmt.get(normalizedFingerprintHash);
+    const latestSessionRow = getLatestSessionJoinedAtByFingerprintStmt.get(normalizedFingerprintHash);
+    const latestTimestamp = Math.max(
+      Number(latestMessageRow?.created_at || 0),
+      Number(latestSessionRow?.joined_at || 0)
+    );
+    if (!latestTimestamp) {
+      return 'identity';
+    }
+    return latestTimestamp >= Number(identityCutoverAt || 0) ? 'identity' : 'fingerprint';
+  };
+
   return {
     getPublicOnlineSnapshot,
     getPublicHistory({ beforeId, limit }) {
@@ -1580,6 +1616,7 @@ export const createChatRealtimeService = (deps) => {
       scope = "chat",
       permissions: requestedPermissions,
       ip = "",
+      identityType = "",
     }) {
       const identity = resolveAdminIdentity({ fingerprintHash });
       const identityKey = String(identity.identityKey || fingerprintHash || '').trim();
@@ -1589,8 +1626,9 @@ export const createChatRealtimeService = (deps) => {
       const permissions = normalizeBanPermissions(requestedPermissions, normalizedScope);
       const effectiveExpiresAt = typeof expiresAt === "number" && expiresAt > now ? expiresAt : null;
       const resolvedIp = resolveBanIp(identityKey, ip, identityHashes);
+      const banType = resolveChatBanType(identityKey, identityType);
       identityHashes.forEach((identityHash) => {
-        upsertBan("banned_fingerprints", "fingerprint", identityHash, {
+        upsertBan(banType === "identity" ? "banned_identities" : "banned_fingerprints", banType === "identity" ? "identity" : "fingerprint", identityHash, {
           permissions,
           expiresAt: effectiveExpiresAt,
           reason: reason || null,
@@ -1623,6 +1661,7 @@ export const createChatRealtimeService = (deps) => {
           after: {
             identityKey,
             identityHashes,
+            identityType: banType,
             permissions,
             kickedConnections: kicked,
             syncedBan: {
@@ -1637,6 +1676,7 @@ export const createChatRealtimeService = (deps) => {
         fingerprintHash: identityKey,
         identityKey,
         identityHashes,
+        identityType: banType,
         ip: resolvedIp || null,
         permissions,
         kickedConnections: kicked,
@@ -1646,14 +1686,19 @@ export const createChatRealtimeService = (deps) => {
         },
       };
     },
-    unbanByAdmin({ req, fingerprintHash, reason, ip = "" }) {
+    unbanByAdmin({ req, fingerprintHash, reason, ip = "", identityType = "" }) {
       const identity = resolveAdminIdentity({ fingerprintHash });
       const identityKey = String(identity.identityKey || fingerprintHash || '').trim();
       const identityHashes = identity.identityHashes.length ? identity.identityHashes : [identityKey].filter(Boolean);
+      const banType = resolveChatBanType(identityKey, identityType);
       let removed = false;
       const syncedIps = [];
       identityHashes.forEach((identityHash) => {
-        removed = deleteBanStmt.run(identityHash).changes > 0 || removed;
+        removed = (
+          banType === "identity"
+            ? deleteIdentityBanStmt.run(identityHash).changes > 0
+            : deleteBanStmt.run(identityHash).changes > 0
+        ) || removed;
         const syncedIpRow = getChatBanSyncIpStmt.get(identityHash);
         const syncedIp = syncedIpRow?.ip ? String(syncedIpRow.ip).trim() : "";
         if (syncedIp) {
@@ -1676,6 +1721,7 @@ export const createChatRealtimeService = (deps) => {
           after: {
             identityKey,
             identityHashes,
+            identityType: banType,
             removed,
             removedIp,
             ip: candidateIps[0] || null,
@@ -1688,6 +1734,7 @@ export const createChatRealtimeService = (deps) => {
         fingerprintHash: identityKey,
         identityKey,
         identityHashes,
+        identityType: banType,
         removed,
         removedIp,
         ip: candidateIps[0] || null,
@@ -1736,5 +1783,3 @@ export const createChatRealtimeService = (deps) => {
     },
   };
 };
-
-

@@ -1,6 +1,5 @@
 ﻿import { createModerationRepository } from '../../repositories/moderation-repository.js';
 import { createAdminModerationService } from '../../services/admin-moderation-service.js';
-import { buildAdminIdentity } from '../../admin-identity-utils.js';
 
 export const registerAdminBansRoutes = (app, deps) => {
   const {
@@ -13,8 +12,7 @@ export const registerAdminBansRoutes = (app, deps) => {
     upsertBan,
     BAN_PERMISSIONS,
     logAdminAction,
-    getLookupHashesForIdentityHash,
-    getStableLegacyFingerprintHashForIdentityHashes,
+    identityCutoverAt,
   } = deps;
 
   const moderationRepository = createModerationRepository(db);
@@ -23,19 +21,13 @@ export const registerAdminBansRoutes = (app, deps) => {
     upsertBan,
     BAN_PERMISSIONS,
     logAdminAction,
-    getLookupHashesForIdentityHash,
-    getStableLegacyFingerprintHashForIdentityHashes,
-  });
-
-  const resolveAdminIdentity = (fingerprint) => buildAdminIdentity({
-    fingerprint,
-    getLookupHashesForIdentityHash,
-    getStableLegacyFingerprintHashForIdentityHashes,
+    identityCutoverAt,
   });
 
   app.get('/api/admin/bans', requireAdmin, (req, res) => {
     pruneExpiredBans('banned_ips');
     pruneExpiredBans('banned_fingerprints');
+    pruneExpiredBans('banned_identities');
 
     const ips = moderationRepository
       .listBannedIps()
@@ -49,20 +41,31 @@ export const registerAdminBansRoutes = (app, deps) => {
 
     const fingerprints = moderationRepository
       .listBannedFingerprints()
-      .map((row) => {
-        const identity = resolveAdminIdentity(row.fingerprint);
-        return {
-          fingerprint: row.fingerprint,
-          identityKey: identity.identityKey,
-          identityHashes: identity.identityHashes,
-          bannedAt: row.banned_at,
-          expiresAt: row.expires_at || null,
-          permissions: normalizePermissions(row.permissions),
-          reason: row.reason || null,
-        };
-      });
+      .map((row) => ({
+        type: 'fingerprint',
+        fingerprint: row.fingerprint,
+        identityKey: null,
+        identityHashes: [row.fingerprint],
+        bannedAt: row.banned_at,
+        expiresAt: row.expires_at || null,
+        permissions: normalizePermissions(row.permissions),
+        reason: row.reason || null,
+      }));
 
-    return res.json({ ips, fingerprints });
+    const identities = moderationRepository
+      .listBannedIdentities()
+      .map((row) => ({
+        type: 'identity',
+        fingerprint: row.identity,
+        identityKey: row.identity,
+        identityHashes: [row.identity],
+        bannedAt: row.banned_at,
+        expiresAt: row.expires_at || null,
+        permissions: normalizePermissions(row.permissions),
+        reason: row.reason || null,
+      }));
+
+    return res.json({ ips, fingerprints: [...fingerprints, ...identities] });
   });
 
   app.post('/api/admin/bans/action', requireAdmin, requireAdminCsrf, (req, res) => {

@@ -1,5 +1,5 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
+import test from 'node:test';
 import Database from 'better-sqlite3';
 import { createIdentityService } from '../identity-service.js';
 
@@ -70,45 +70,34 @@ const createHarness = () => {
   return { db, service };
 };
 
-test('同一 legacy 指纹在 Cookie 轮换后仍能找回历史 canonical', () => {
+test('请求身份上下文只保留当前 canonical 与当前 legacy 两个键', () => {
   const { db, service } = createHarness();
 
-  const firstResponse = createResponse();
-  const firstContext = service.ensureRequestIdentity({
+  const response = createResponse();
+  const context = service.ensureRequestIdentity({
     headers: { 'x-client-fingerprint': 'legacy-device-fingerprint' },
-  }, firstResponse);
+  }, response);
 
-  const secondResponse = createResponse();
-  const secondContext = service.ensureRequestIdentity({
-    headers: { 'x-client-fingerprint': 'legacy-device-fingerprint' },
-  }, secondResponse);
-
-  assert.notEqual(firstContext.canonicalHash, secondContext.canonicalHash);
-  assert.ok(secondContext.lookupHashes.includes(firstContext.canonicalHash));
-  assert.ok(secondContext.lookupHashes.includes(secondContext.canonicalHash));
-  assert.ok(secondContext.lookupHashes.includes(firstContext.legacyFingerprintHash));
+  assert.equal(context.lookupHashes.length, 2);
+  assert.deepEqual(context.lookupHashes, [
+    context.canonicalHash,
+    context.legacyFingerprintHash,
+  ]);
 
   const legacyOnlyLookupHashes = service.getRequestIdentityLookupHashes({
     headers: { 'x-client-fingerprint': 'legacy-device-fingerprint' },
   }, null);
 
-  assert.ok(legacyOnlyLookupHashes.includes(firstContext.canonicalHash));
-  assert.ok(legacyOnlyLookupHashes.includes(secondContext.canonicalHash));
-  assert.ok(legacyOnlyLookupHashes.includes(firstContext.legacyFingerprintHash));
-
-  const socketIdentity = service.resolveSocketIdentity({
-    headers: { cookie: buildCookieHeader(secondResponse) },
-  });
-
-  assert.equal(socketIdentity.preferredFingerprintHash, firstContext.legacyFingerprintHash);
-  assert.ok(socketIdentity.lookupHashes.includes(firstContext.canonicalHash));
-  assert.ok(socketIdentity.lookupHashes.includes(secondContext.canonicalHash));
-  assert.ok(socketIdentity.lookupHashes.includes(firstContext.legacyFingerprintHash));
+  assert.deepEqual(legacyOnlyLookupHashes, [context.legacyFingerprintHash]);
+  assert.equal(
+    db.prepare('SELECT COUNT(1) AS count FROM identity_aliases').get().count,
+    1
+  );
 
   db.close();
 });
 
-test('共享同一 legacy 指纹的 canonical 会被识别为同一身份', () => {
+test('sharesIdentityHashes 改为严格相等判断，不再按 alias 图扩散', () => {
   const { db, service } = createHarness();
 
   const firstResponse = createResponse();
@@ -123,25 +112,25 @@ test('共享同一 legacy 指纹的 canonical 会被识别为同一身份', () =
 
   assert.equal(
     service.sharesIdentityHashes(firstContext.canonicalHash, secondContext.canonicalHash),
-    true
+    false
   );
   assert.equal(
-    service.sharesIdentityHashes(firstContext.canonicalHash, firstContext.legacyFingerprintHash),
+    service.sharesIdentityHashes(firstContext.canonicalHash, firstContext.canonicalHash),
     true
   );
 
   db.close();
 });
 
-test('稳定身份键会复用整个 identity graph 中最早关联的 legacy 指纹', () => {
+test('稳定身份键优先返回当前 canonical，socket 侧也只复用当前 canonical', () => {
   const { db, service } = createHarness();
 
-  const firstResponse = createResponse();
+  const response = createResponse();
   const firstContext = service.ensureRequestIdentity({
     headers: { 'x-client-fingerprint': 'legacy-old' },
-  }, firstResponse);
+  }, response);
+  const cookieHeader = buildCookieHeader(response);
 
-  const cookieHeader = buildCookieHeader(firstResponse);
   const secondContext = service.ensureRequestIdentity({
     headers: {
       cookie: cookieHeader,
@@ -160,9 +149,9 @@ test('稳定身份键会复用整个 identity graph 中最早关联的 legacy �
   });
 
   assert.equal(secondContext.canonicalHash, firstContext.canonicalHash);
-  assert.notEqual(secondContext.legacyFingerprintHash, firstContext.legacyFingerprintHash);
-  assert.equal(stableIdentityKey, firstContext.legacyFingerprintHash);
-  assert.equal(socketIdentity.stableIdentityHash, firstContext.legacyFingerprintHash);
+  assert.equal(stableIdentityKey, firstContext.canonicalHash);
+  assert.equal(socketIdentity.stableIdentityHash, firstContext.canonicalHash);
+  assert.deepEqual(socketIdentity.lookupHashes, [firstContext.canonicalHash]);
 
   db.close();
 });

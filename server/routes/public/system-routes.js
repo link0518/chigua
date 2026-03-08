@@ -3,6 +3,7 @@
     db,
     requireFingerprint,
     getIdentityLookupHashes,
+    getRequestIdentityContext,
     checkBanFor,
     touchOnlineSession,
     getOnlineCount,
@@ -60,6 +61,10 @@
     return streak;
   };
 
+  const buildNotificationMatch = (identityContext) => (
+    buildIdentityMatch('recipient_fingerprint', getNotificationRecipientValues(identityContext))
+  );
+
   app.get('/api/health', (req, res) => {
     res.json({ status: 'ok' });
   });
@@ -74,7 +79,7 @@
     if (!fingerprint) {
       return;
     }
-    const identityHashes = getIdentityLookupHashes(req, res);
+    const identityContext = getRequestIdentityContext(req, res);
     if (!checkBanFor(req, res, 'like', '账号已被封禁，无法点赞', fingerprint)) {
       return;
     }
@@ -86,9 +91,9 @@
     const limit = Math.min(Math.max(Number(req.query.limit || 20), 1), 50);
     const offset = Math.max(Number(req.query.offset || 0), 0);
 
-    const recipientMatch = buildIdentityMatch('recipient_fingerprint', identityHashes);
-    const conditions = [recipientMatch.clause];
-    const params = [...recipientMatch.params];
+    const recipientMatch = buildNotificationMatch(identityContext);
+    const conditions = [`(${recipientMatch.clause})`];
+    const params = recipientMatch.params.slice();
 
     if (status === 'unread') {
       conditions.push('read_at IS NULL');
@@ -109,12 +114,12 @@
       )
       .all(...params, limit, offset);
 
-    const unreadMatch = buildIdentityMatch('recipient_fingerprint', identityHashes);
+    const unreadMatch = buildNotificationMatch(identityContext);
     const unreadCount = db
       .prepare(`SELECT COUNT(1) AS count FROM notifications WHERE ${unreadMatch.clause} AND read_at IS NULL`)
       .get(...unreadMatch.params)?.count ?? 0;
 
-    const totalMatch = buildIdentityMatch('recipient_fingerprint', identityHashes);
+    const totalMatch = buildNotificationMatch(identityContext);
     const total = db
       .prepare(`SELECT COUNT(1) AS count FROM notifications WHERE ${totalMatch.clause}`)
       .get(...totalMatch.params)?.count ?? 0;
@@ -137,7 +142,7 @@
     if (!fingerprint) {
       return;
     }
-    const identityHashes = getIdentityLookupHashes(req, res);
+    const identityContext = getRequestIdentityContext(req, res);
     if (!checkBanFor(req, res, 'like', '账号已被封禁，无法点踩', fingerprint)) {
       return;
     }
@@ -145,7 +150,7 @@
       return;
     }
     const now = Date.now();
-    const recipientMatch = buildIdentityMatch('recipient_fingerprint', identityHashes);
+    const recipientMatch = buildNotificationMatch(identityContext);
     const result = db
       .prepare(`UPDATE notifications SET read_at = ? WHERE ${recipientMatch.clause} AND read_at IS NULL`)
       .run(now, ...recipientMatch.params);
@@ -294,3 +299,8 @@
     return res.status(201).json({ ok: true });
   });
 };
+
+export const getNotificationRecipientValues = (identityContext) => Array.from(new Set([
+  String(identityContext?.legacyFingerprintHash || '').trim(),
+  String(identityContext?.canonicalHash || '').trim(),
+].filter(Boolean)));

@@ -20,6 +20,7 @@ const tables = [
   'banned_sessions',
   'banned_ips',
   'banned_fingerprints',
+  'banned_identities',
 ];
 
 const run = () => {

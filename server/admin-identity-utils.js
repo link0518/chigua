@@ -30,18 +30,8 @@ export const buildAdminIdentity = ({
   getLookupHashesForIdentityHash,
   getStableLegacyFingerprintHashForIdentityHashes,
 }) => {
-  const baseHashes = normalizeIdentityHashes(identityHash, identityHashes, fingerprint);
-  const linkedHashes = normalizeIdentityHashes(
-    baseHashes.map((hash) => (
-      typeof getLookupHashesForIdentityHash === 'function'
-        ? getLookupHashesForIdentityHash(hash)
-        : [hash]
-    ))
-  );
-  const mergedHashes = normalizeIdentityHashes(baseHashes, linkedHashes);
-  const stableIdentityKey = typeof getStableLegacyFingerprintHashForIdentityHashes === 'function'
-    ? normalizeString(getStableLegacyFingerprintHashForIdentityHashes(mergedHashes))
-    : '';
+  const mergedHashes = normalizeIdentityHashes(identityHash, identityHashes, fingerprint);
+  const stableIdentityKey = normalizeString(identityHash) || mergedHashes[0] || '';
   const normalizedFingerprint = normalizeString(fingerprint);
   const normalizedSessionId = normalizeString(sessionId);
   const normalizedIp = normalizeString(ip);

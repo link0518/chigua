@@ -143,6 +143,14 @@ CREATE TABLE IF NOT EXISTS banned_fingerprints (
   reason TEXT
 );
 
+CREATE TABLE IF NOT EXISTS banned_identities (
+  identity TEXT PRIMARY KEY,
+  banned_at INTEGER NOT NULL,
+  expires_at INTEGER,
+  permissions TEXT,
+  reason TEXT
+);
+
 CREATE TABLE IF NOT EXISTS report_fingerprints (
   post_id TEXT NOT NULL,
   fingerprint TEXT NOT NULL,
@@ -331,6 +339,7 @@ CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_action ON admin_audit_logs(actio
 CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_target ON admin_audit_logs(target_type, target_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_recipient_created_at ON notifications(recipient_fingerprint, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_notifications_recipient_read_at ON notifications(recipient_fingerprint, read_at);
+CREATE INDEX IF NOT EXISTS idx_banned_identities_expires_at ON banned_identities(expires_at);
 CREATE INDEX IF NOT EXISTS idx_fingerprint_login_days_fingerprint_date ON fingerprint_login_days(fingerprint, date DESC);
 CREATE INDEX IF NOT EXISTS idx_vocabulary_enabled ON vocabulary_words(enabled);
 CREATE INDEX IF NOT EXISTS idx_vocabulary_updated_at ON vocabulary_words(updated_at);
@@ -372,6 +381,9 @@ ensureColumn('banned_ips', 'reason', 'TEXT');
 ensureColumn('banned_fingerprints', 'expires_at', 'INTEGER');
 ensureColumn('banned_fingerprints', 'permissions', 'TEXT');
 ensureColumn('banned_fingerprints', 'reason', 'TEXT');
+ensureColumn('banned_identities', 'expires_at', 'INTEGER');
+ensureColumn('banned_identities', 'permissions', 'TEXT');
+ensureColumn('banned_identities', 'reason', 'TEXT');
 ensureColumn('feedback_messages', 'fingerprint', 'TEXT');
 ensureColumn('chat_messages', 'reply_to_message_id', 'INTEGER');
 ensureColumn('chat_messages', 'reply_to_nickname', 'TEXT');
