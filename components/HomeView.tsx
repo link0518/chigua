@@ -406,6 +406,7 @@ const HomeView: React.FC = () => {
 
   useEffect(() => {
     const handleRefresh = () => {
+      closeCommentModal();
       if (loading) {
         return;
       }
@@ -426,7 +427,7 @@ const HomeView: React.FC = () => {
     return () => {
       window.removeEventListener('home:refresh', handleRefresh as EventListener);
     };
-  }, [effectiveViewMode, loadHomePosts, loading, routePostId]);
+  }, [closeCommentModal, effectiveViewMode, loadHomePosts, loading, routePostId]);
 
   useEffect(() => {
     if (state.homeTotal > 0) {

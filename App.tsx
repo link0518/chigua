@@ -313,13 +313,15 @@ const App: React.FC = () => {
       return;
     }
     const targetPath = getPathForView(view);
-    if (view === ViewType.HOME && currentView === ViewType.HOME) {
-      window.dispatchEvent(new CustomEvent('home:refresh'));
-    }
+    const shouldRefreshHome = view === ViewType.HOME && currentView === ViewType.HOME;
     setCurrentView(view);
     setMobileMenuOpen(false);
     if (window.location.pathname !== targetPath) {
       window.history.pushState({}, '', targetPath);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    }
+    if (shouldRefreshHome) {
+      window.dispatchEvent(new CustomEvent('home:refresh'));
     }
   }, [chatEnabled, currentView]);
 
