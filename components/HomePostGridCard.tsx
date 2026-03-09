@@ -129,7 +129,7 @@ const HomePostGridCard: React.FC<HomePostGridCardProps> = ({
             className="flex flex-1 flex-col rounded-[20px] border-2 border-dashed border-black/20 bg-[#fcfbf7] p-4 text-left transition-all hover:border-black/35 hover:bg-white"
           >
             <div className="mb-3 flex items-center justify-between gap-2 text-[11px] font-bold tracking-[0.18em] text-pencil/70">
-              <span>新标签打开</span>
+              <span>点击查看详情</span>
               <ArrowUpRight className="h-4 w-4 text-pencil/70 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
             </div>
             <p className="line-clamp-6 whitespace-pre-line break-all text-sm leading-7 text-ink sm:text-[15px]">
