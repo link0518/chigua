@@ -2,6 +2,7 @@ import React from 'react';
 import {
   ArrowUpRight,
   Flag,
+  MessageCircle,
   Share2,
   Star,
   ThumbsDown,
@@ -152,6 +153,13 @@ const HomePostGridCard: React.FC<HomePostGridCardProps> = ({
                 <ThumbsDown className="h-4 w-4" fill={isDisliked ? 'currentColor' : 'none'} />
                 <span>{formatCompactCount(post.dislikes)}</span>
               </button>
+              <span
+                className="inline-flex items-center gap-1.5 text-pencil"
+                aria-label={`评论 ${formatCompactCount(post.comments)} 条`}
+              >
+                <MessageCircle className="h-4 w-4" />
+                <span>{formatCompactCount(post.comments)}</span>
+              </span>
             </div>
 
             <div className="flex items-center gap-2">
