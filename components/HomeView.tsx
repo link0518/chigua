@@ -261,6 +261,23 @@ const HomeView: React.FC = () => {
     setFeedbackQq('');
   }, []);
 
+  const isCommentModalActiveForPost = useCallback((postId: string) => (
+    commentModalOpen && commentPostId === postId
+  ), [commentModalOpen, commentPostId]);
+
+  const toggleCommentModal = useCallback((postId: string, commentId?: string | null) => {
+    const nextFocusCommentId = commentId || null;
+    if (
+      commentModalOpen
+      && commentPostId === postId
+      && (!nextFocusCommentId || focusCommentId === nextFocusCommentId)
+    ) {
+      closeCommentModal();
+      return;
+    }
+    openCommentModal(postId, nextFocusCommentId);
+  }, [closeCommentModal, commentModalOpen, commentPostId, focusCommentId, openCommentModal]);
+
   const loadMorePosts = useCallback(async (limit?: number) => {
     if (loading || loadingMore || !hasMore) {
       return;
@@ -726,8 +743,8 @@ const HomeView: React.FC = () => {
               <div className="flex items-center gap-8 pl-2">
                 <button
                   type="button"
-                  onClick={() => openCommentModal(currentPost.id)}
-                  className={`flex items-center gap-1.5 transition-colors ${commentModalOpen ? 'text-blue-600' : 'hover:text-blue-600'}`}
+                  onClick={() => toggleCommentModal(currentPost.id)}
+                  className={`flex items-center gap-1.5 transition-colors ${isCommentModalActiveForPost(currentPost.id) ? 'text-blue-600' : 'hover:text-blue-600'}`}
                 >
                   <MessageCircle className="h-[22px] w-[22px]" />
                   <span className="font-hand text-base font-bold">{currentPost.comments}</span>
@@ -785,11 +802,12 @@ const HomeView: React.FC = () => {
             isLiked={isLiked(post.id)}
             isDisliked={isDisliked(post.id)}
             isFavorited={isFavorited(post.id)}
+            commentActive={isCommentModalActiveForPost(post.id)}
             onOpen={() => openPostInNewTab(post.id)}
             onLike={() => handleLike(post.id)}
             onDislike={() => handleDislike(post.id)}
             onFavorite={() => handleFavorite(post.id)}
-            onComment={() => openCommentModal(post.id)}
+            onComment={() => toggleCommentModal(post.id)}
             onShare={() => copyShareLink(post.id)}
             onReport={() => setReportModal({ isOpen: true, postId: post.id, content: post.content })}
             onTagClick={openTagSearch}

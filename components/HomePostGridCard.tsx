@@ -42,6 +42,7 @@ interface HomePostGridCardProps {
   isLiked: boolean;
   isDisliked: boolean;
   isFavorited: boolean;
+  commentActive: boolean;
   onOpen: () => void;
   onLike: () => void;
   onDislike: () => void;
@@ -57,6 +58,7 @@ const HomePostGridCard: React.FC<HomePostGridCardProps> = ({
   isLiked,
   isDisliked,
   isFavorited,
+  commentActive,
   onOpen,
   onLike,
   onDislike,
@@ -158,7 +160,7 @@ const HomePostGridCard: React.FC<HomePostGridCardProps> = ({
               <button
                 type="button"
                 onClick={onComment}
-                className="inline-flex items-center gap-1.5 transition-colors hover:text-ink"
+                className={`inline-flex items-center gap-1.5 transition-colors ${commentActive ? 'text-blue-600' : 'hover:text-ink'}`}
               >
                 <MessageCircle className="h-4 w-4" />
                 <span>{formatCompactCount(post.comments)}</span>
