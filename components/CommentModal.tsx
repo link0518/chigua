@@ -89,6 +89,34 @@ const getMostLikedComment = (items: Comment[]): Comment | null => {
   return best?.comment || null;
 };
 
+const sortCommentsByCreatedAt = (a: Comment, b: Comment) => (a.createdAt || 0) - (b.createdAt || 0);
+
+const mergeCommentLists = (current: Comment[], incoming: Comment[]): Comment[] => {
+  const map = new Map<string, Comment>();
+
+  const upsert = (items: Comment[]) => {
+    items.forEach((item) => {
+      const normalizedReplies = mergeCommentLists([], item.replies || []);
+      const existing = map.get(item.id);
+      map.set(
+        item.id,
+        existing
+          ? {
+            ...existing,
+            ...item,
+            replies: mergeCommentLists(existing.replies || [], normalizedReplies),
+          }
+          : { ...item, replies: normalizedReplies }
+      );
+    });
+  };
+
+  upsert(current);
+  upsert(incoming);
+
+  return Array.from(map.values()).sort(sortCommentsByCreatedAt);
+};
+
 const CommentModal: React.FC<CommentModalProps> = ({
   isOpen,
   onClose,
@@ -114,6 +142,11 @@ const CommentModal: React.FC<CommentModalProps> = ({
     commentId: '',
     content: '',
   });
+  const commentsRef = useRef<Comment[]>([]);
+  const pageRef = useRef(0);
+  const hasMoreRef = useRef(true);
+  const loadingMoreRef = useRef(false);
+  const requestTokenRef = useRef(0);
   const listRef = useRef<HTMLDivElement | null>(null);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const turnstileRef = useRef<TurnstileHandle | null>(null);
@@ -135,6 +168,26 @@ const CommentModal: React.FC<CommentModalProps> = ({
 
   const isMobile = typeof window !== 'undefined' ? window.matchMedia('(max-width: 767px)').matches : false;
   // debugComment 调试输出已移除
+
+  useEffect(() => {
+    commentsRef.current = comments;
+  }, [comments]);
+
+  useEffect(() => {
+    pageRef.current = page;
+  }, [page]);
+
+  useEffect(() => {
+    hasMoreRef.current = hasMore;
+  }, [hasMore]);
+
+  const writeCommentsCache = (items: Comment[], nextPage: number, nextHasMore: boolean) => {
+    sessionStorage.setItem(`comments:${postId}`, JSON.stringify({
+      items,
+      page: nextPage,
+      hasMore: nextHasMore,
+    }));
+  };
 
   const handlePickUpload = () => {
     if (uploading) {
@@ -277,6 +330,12 @@ const CommentModal: React.FC<CommentModalProps> = ({
 
   useEffect(() => {
     if (!isOpen || !postId) return;
+    const requestToken = requestTokenRef.current + 1;
+    requestTokenRef.current = requestToken;
+    loadingMoreRef.current = false;
+    commentsRef.current = [];
+    pageRef.current = 0;
+    hasMoreRef.current = true;
     setComments([]);
     setReplyToId(null);
     setExpandedThreads(new Set());
@@ -286,15 +345,22 @@ const CommentModal: React.FC<CommentModalProps> = ({
     setPage(0);
     setHasMore(true);
     setLoading(true);
+    setLoadingMore(false);
     const cacheKey = `comments:${postId}`;
     const cached = sessionStorage.getItem(cacheKey);
     if (cached) {
       try {
         const parsed = JSON.parse(cached);
         if (Array.isArray(parsed.items)) {
-          setComments(parsed.items);
-          setPage(Number(parsed.page || 0));
-          setHasMore(Boolean(parsed.hasMore));
+          const cachedItems = mergeCommentLists([], parsed.items);
+          const cachedPage = Number(parsed.page || 0);
+          const cachedHasMore = Boolean(parsed.hasMore);
+          commentsRef.current = cachedItems;
+          pageRef.current = cachedPage;
+          hasMoreRef.current = cachedHasMore;
+          setComments(cachedItems);
+          setPage(cachedPage);
+          setHasMore(cachedHasMore);
         }
       } catch {
         // ignore cache errors
@@ -304,45 +370,63 @@ const CommentModal: React.FC<CommentModalProps> = ({
     api
       .getComments(postId, 0, pageSize)
       .then((data) => {
+        if (requestTokenRef.current !== requestToken) {
+          return;
+        }
         const items = data.items || [];
         const total = Number(data.total || 0);
         const nextHasMore = items.length + 0 < total;
-        setComments(items);
+        const mergedItems = mergeCommentLists([], items);
+        commentsRef.current = mergedItems;
+        pageRef.current = 1;
+        hasMoreRef.current = nextHasMore;
+        setComments(mergedItems);
         setPage(1);
         setHasMore(nextHasMore);
-        sessionStorage.setItem(cacheKey, JSON.stringify({
-          items,
-          page: 1,
-          hasMore: nextHasMore,
-        }));
+        writeCommentsCache(mergedItems, 1, nextHasMore);
       })
       .catch((error) => {
+        if (requestTokenRef.current !== requestToken) {
+          return;
+        }
         const message = error instanceof Error ? error.message : '评论加载失败';
         showToast(message, 'error');
       })
       .finally(() => {
-        setLoading(false);
+        if (requestTokenRef.current === requestToken) {
+          setLoading(false);
+        }
       });
+    return () => {
+      if (requestTokenRef.current === requestToken) {
+        requestTokenRef.current += 1;
+      }
+      loadingMoreRef.current = false;
+    };
   }, [isOpen, postId, showToast]);
 
   useEffect(() => {
     if (!isOpen || !postId || !focusCommentId) {
       return;
     }
+    const requestToken = requestTokenRef.current;
     const loadThread = async () => {
       try {
         const data = await api.getCommentThread(postId, focusCommentId);
+        if (requestTokenRef.current !== requestToken) {
+          return;
+        }
         const thread = data?.thread;
         if (!thread?.id) {
           return;
         }
+        let nextComments: Comment[] = [];
         setComments((prev) => {
-          const exists = prev.find((item) => item.id === thread.id);
-          if (exists) {
-            return prev.map((item) => (item.id === thread.id ? { ...item, replies: thread.replies || [] } : item));
-          }
-          return [thread, ...prev];
+          nextComments = mergeCommentLists(prev, [thread]);
+          commentsRef.current = nextComments;
+          return nextComments;
         });
+        writeCommentsCache(nextComments, pageRef.current, hasMoreRef.current);
         setExpandedThreads((prev) => {
           const next = new Set(prev);
           next.add(thread.id);
@@ -357,30 +441,42 @@ const CommentModal: React.FC<CommentModalProps> = ({
   }, [isOpen, postId, focusCommentId]);
 
   const handleLoadMore = async () => {
-    if (loadingMore || !hasMore) {
+    if (loadingMoreRef.current || !hasMoreRef.current) {
       return;
     }
+    const requestToken = requestTokenRef.current;
+    const currentPage = pageRef.current;
+    const offset = currentPage * pageSize;
+    loadingMoreRef.current = true;
     setLoadingMore(true);
     try {
-      const offset = page * pageSize;
       const data = await api.getComments(postId, offset, pageSize);
+      if (requestTokenRef.current !== requestToken) {
+        return;
+      }
       const items = data.items || [];
       const total = Number(data.total || 0);
-      setComments((prev) => [...prev, ...items]);
-      const nextPage = page + 1;
+      const mergedItems = mergeCommentLists(commentsRef.current, items);
+      const nextPage = currentPage + 1;
       const nextHasMore = offset + items.length < total;
+      commentsRef.current = mergedItems;
+      pageRef.current = nextPage;
+      hasMoreRef.current = nextHasMore;
+      setComments(mergedItems);
       setPage(nextPage);
       setHasMore(nextHasMore);
-      sessionStorage.setItem(`comments:${postId}`, JSON.stringify({
-        items: [...comments, ...items],
-        page: nextPage,
-        hasMore: nextHasMore,
-      }));
+      writeCommentsCache(mergedItems, nextPage, nextHasMore);
     } catch (error) {
+      if (requestTokenRef.current !== requestToken) {
+        return;
+      }
       const message = error instanceof Error ? error.message : '加载更多失败';
       showToast(message, 'error');
     } finally {
-      setLoadingMore(false);
+      loadingMoreRef.current = false;
+      if (requestTokenRef.current === requestToken) {
+        setLoadingMore(false);
+      }
     }
   };
 
@@ -420,8 +516,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
   const insertReply = (items: Comment[], parentId: string, comment: Comment): Comment[] => {
     return items.map((item) => {
       if (item.id === parentId) {
-        const replies = item.replies ? [comment, ...item.replies] : [comment];
-        return { ...item, replies };
+        return { ...item, replies: mergeCommentLists(item.replies || [], [comment]) };
       }
       if (item.replies?.length) {
         return { ...item, replies: insertReply(item.replies, parentId, comment) };
@@ -483,6 +578,9 @@ const CommentModal: React.FC<CommentModalProps> = ({
   };
 
   const submitText = async (nextText: string) => {
+    if (submitting) {
+      return false;
+    }
     const trimmed = nextText.trim();
     if (!trimmed) {
       showToast('评论不能为空', 'warning');
@@ -515,18 +613,15 @@ const CommentModal: React.FC<CommentModalProps> = ({
       const expandedTargets = effectiveParentId
         ? findAncestorChain(comments, effectiveParentId) || [effectiveParentId]
         : [];
-      setComments((prev) => (
-        effectiveParentId
+      let nextComments: Comment[] = [];
+      setComments((prev) => {
+        nextComments = effectiveParentId
           ? insertReply(prev, effectiveParentId, nextComment)
-          : [nextComment, ...prev]
-      ));
-      sessionStorage.setItem(`comments:${postId}`, JSON.stringify({
-        items: effectiveParentId
-          ? insertReply(comments, effectiveParentId, nextComment)
-          : [nextComment, ...comments],
-        page,
-        hasMore,
-      }));
+          : mergeCommentLists(prev, [nextComment]);
+        commentsRef.current = nextComments;
+        return nextComments;
+      });
+      writeCommentsCache(nextComments, pageRef.current, hasMoreRef.current);
       setLastAddedId(nextComment.id);
       if (expandedTargets.length) {
         setExpandedThreads((prev) => {
