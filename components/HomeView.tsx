@@ -241,10 +241,13 @@ const HomeView: React.FC = () => {
   }, [showToast, toggleFavoritePost]);
 
   const openCommentModal = useCallback((postId: string, commentId?: string | null) => {
+    if (effectiveViewMode === 'grid') {
+      return;
+    }
     setCommentPostId(postId);
     setFocusCommentId(commentId || null);
     setCommentModalOpen(true);
-  }, []);
+  }, [effectiveViewMode]);
 
   const closeCommentModal = useCallback(() => {
     setCommentModalOpen(false);
@@ -802,12 +805,10 @@ const HomeView: React.FC = () => {
             isLiked={isLiked(post.id)}
             isDisliked={isDisliked(post.id)}
             isFavorited={isFavorited(post.id)}
-            commentActive={isCommentModalActiveForPost(post.id)}
             onOpen={() => openPostInNewTab(post.id)}
             onLike={() => handleLike(post.id)}
             onDislike={() => handleDislike(post.id)}
             onFavorite={() => handleFavorite(post.id)}
-            onComment={() => toggleCommentModal(post.id)}
             onShare={() => copyShareLink(post.id)}
             onReport={() => setReportModal({ isOpen: true, postId: post.id, content: post.content })}
             onTagClick={openTagSearch}

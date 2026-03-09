@@ -2,7 +2,6 @@ import React from 'react';
 import {
   ArrowUpRight,
   Flag,
-  MessageCircle,
   Share2,
   Star,
   ThumbsDown,
@@ -42,12 +41,10 @@ interface HomePostGridCardProps {
   isLiked: boolean;
   isDisliked: boolean;
   isFavorited: boolean;
-  commentActive: boolean;
   onOpen: () => void;
   onLike: () => void;
   onDislike: () => void;
   onFavorite: () => void;
-  onComment: () => void;
   onShare: () => void;
   onReport: () => void;
   onTagClick: (tag: string) => void;
@@ -58,12 +55,10 @@ const HomePostGridCard: React.FC<HomePostGridCardProps> = ({
   isLiked,
   isDisliked,
   isFavorited,
-  commentActive,
   onOpen,
   onLike,
   onDislike,
   onFavorite,
-  onComment,
   onShare,
   onReport,
   onTagClick,
@@ -156,14 +151,6 @@ const HomePostGridCard: React.FC<HomePostGridCardProps> = ({
               >
                 <ThumbsDown className="h-4 w-4" fill={isDisliked ? 'currentColor' : 'none'} />
                 <span>{formatCompactCount(post.dislikes)}</span>
-              </button>
-              <button
-                type="button"
-                onClick={onComment}
-                className={`inline-flex items-center gap-1.5 transition-colors ${commentActive ? 'text-blue-600' : 'hover:text-ink'}`}
-              >
-                <MessageCircle className="h-4 w-4" />
-                <span>{formatCompactCount(post.comments)}</span>
               </button>
             </div>
 
