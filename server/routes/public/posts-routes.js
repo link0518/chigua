@@ -575,7 +575,7 @@ const toggleReaction = db.transaction((postId, identityKey, identityHashes, reac
 
 app.post('/api/posts/:id/like', (req, res) => {
   const postId = req.params.id;
-  const post = db.prepare('SELECT id, fingerprint, content, created_at FROM posts WHERE id = ? AND deleted = 0').get(postId);
+  const post = db.prepare('SELECT id, fingerprint, content FROM posts WHERE id = ? AND deleted = 0').get(postId);
   if (!post) {
     return res.status(404).json({ error: '内容不存在' });
   }
@@ -590,7 +590,6 @@ app.post('/api/posts/:id/like', (req, res) => {
   if (result.reaction === 'like') {
     createNotification({
       recipientFingerprint: post.fingerprint,
-      recipientCreatedAt: post.created_at,
       type: 'post_like',
       postId,
       preview: trimPreview(post.content),

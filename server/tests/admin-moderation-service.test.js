@@ -1,11 +1,17 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import Database from 'better-sqlite3';
+import { createIdentityService } from '../identity-service.js';
 import { createModerationRepository } from '../repositories/moderation-repository.js';
 import { createAdminModerationService } from '../services/admin-moderation-service.js';
 
 const BAN_PERMISSIONS = ['post', 'comment', 'like', 'view', 'site'];
-const IDENTITY_CUTOVER_AT = Date.UTC(2026, 2, 8, 0, 0, 0, 0);
+
+const createCookieLib = () => ({
+  parse() {
+    return {};
+  },
+});
 
 const createSchema = (db) => {
   db.exec(`
@@ -64,6 +70,16 @@ const createSchema = (db) => {
       expires_at INTEGER,
       permissions TEXT,
       reason TEXT
+    );
+
+    CREATE TABLE identity_aliases (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      canonical_hash TEXT NOT NULL,
+      legacy_fingerprint_hash TEXT NOT NULL,
+      source TEXT NOT NULL DEFAULT 'request',
+      first_seen_at INTEGER NOT NULL,
+      last_seen_at INTEGER NOT NULL,
+      UNIQUE (canonical_hash, legacy_fingerprint_hash)
     );
   `);
 };
@@ -127,6 +143,13 @@ const createUpsertBan = (db) => (table, _column, value, options = {}) => {
 const createHarness = () => {
   const db = new Database(':memory:');
   createSchema(db);
+  const identityService = createIdentityService({
+    db,
+    cookie: createCookieLib(),
+    sessionSecret: 'test-session-secret',
+    fingerprintSalt: 'test-fingerprint-salt',
+    fingerprintHeader: 'x-client-fingerprint',
+  });
 
   const logs = [];
   const repository = createModerationRepository(db);
@@ -137,7 +160,7 @@ const createHarness = () => {
     logAdminAction: (_req, payload) => {
       logs.push(payload);
     },
-    identityCutoverAt: IDENTITY_CUTOVER_AT,
+    resolveStoredIdentityHash: identityService.resolveStoredIdentityHash,
   });
 
   const req = {
@@ -146,16 +169,17 @@ const createHarness = () => {
     ip: '127.0.0.1',
   };
 
-  return { db, logs, service, req };
+  return { db, logs, service, req, identityService };
 };
 
-test('帖子批量封禁会把旧记录写入指纹封禁，新记录写入身份封禁', () => {
-  const { db, service, logs, req } = createHarness();
+test('帖子批量封禁会优先使用新身份，未关联新身份的仍落到指纹封禁', () => {
+  const { db, service, logs, req, identityService } = createHarness();
 
+  identityService.upsertIdentityAlias('canonical-2', 'legacy-fp-2', 'test');
   db.prepare('INSERT INTO posts (id, content, deleted, ip, fingerprint, created_at) VALUES (?, ?, 0, ?, ?, ?)')
-    .run('post-1', 'a', '10.0.0.1', 'legacy-fp-1', IDENTITY_CUTOVER_AT - 1000);
+    .run('post-1', 'a', '10.0.0.1', 'legacy-fp-1', 1700000000000);
   db.prepare('INSERT INTO posts (id, content, deleted, ip, fingerprint, created_at) VALUES (?, ?, 0, ?, ?, ?)')
-    .run('post-2', 'b', '10.0.0.1', 'canonical-2', IDENTITY_CUTOVER_AT + 1000);
+    .run('post-2', 'b', '10.0.0.1', 'legacy-fp-2', 1700000001000);
 
   const result = service.executePostBatchAction({
     req,
@@ -177,13 +201,13 @@ test('帖子批量封禁会把旧记录写入指纹封禁，新记录写入身�
   db.close();
 });
 
-test('举报处置 ban 会按目标记录的新旧类型写入不同封禁表', () => {
+test('举报处理 ban 会按是否解析到新身份选择封禁表', () => {
   const { db, service, logs, req } = createHarness();
 
   db.prepare('INSERT INTO posts (id, content, deleted, comments_count, ip, fingerprint, created_at) VALUES (?, ?, 0, ?, ?, ?, ?)')
-    .run('post-1', 'post', 1, '10.0.0.2', 'canonical-post', IDENTITY_CUTOVER_AT + 1000);
+    .run('post-1', 'post', 1, '10.0.0.2', 'canonical-post', 1700000001000);
   db.prepare('INSERT INTO comments (id, post_id, content, deleted, ip, fingerprint, created_at) VALUES (?, ?, ?, 0, ?, ?, ?)')
-    .run('comment-1', 'post-1', 'comment', '10.0.0.3', 'legacy-comment', IDENTITY_CUTOVER_AT - 1000);
+    .run('comment-1', 'post-1', 'comment', '10.0.0.3', 'legacy-comment', 1700000000000);
   db.prepare('INSERT INTO reports (id, status, action, target_type, post_id, comment_id) VALUES (?, ?, ?, ?, ?, ?)')
     .run('report-1', 'pending', null, 'comment', 'post-1', 'comment-1');
 
@@ -206,13 +230,14 @@ test('举报处置 ban 会按目标记录的新旧类型写入不同封禁表', 
   db.close();
 });
 
-test('举报处置 ban 在 deleteComment=true 时会删除评论并回收计数', () => {
-  const { db, service, req } = createHarness();
+test('举报处理 ban 在 deleteComment=true 时会删评论，并在有关联新身份时封到 identity', () => {
+  const { db, service, req, identityService } = createHarness();
 
+  identityService.upsertIdentityAlias('canonical-comment', 'legacy-comment', 'test');
   db.prepare('INSERT INTO posts (id, content, deleted, comments_count, ip, fingerprint, created_at) VALUES (?, ?, 0, ?, ?, ?, ?)')
-    .run('post-1', 'post', 1, '10.0.0.2', 'canonical-post', IDENTITY_CUTOVER_AT + 1000);
+    .run('post-1', 'post', 1, '10.0.0.2', 'canonical-post', 1700000001000);
   db.prepare('INSERT INTO comments (id, post_id, content, deleted, ip, fingerprint, created_at) VALUES (?, ?, ?, 0, ?, ?, ?)')
-    .run('comment-1', 'post-1', 'comment', '10.0.0.3', 'canonical-comment', IDENTITY_CUTOVER_AT + 2000);
+    .run('comment-1', 'post-1', 'comment', '10.0.0.3', 'legacy-comment', 1700000002000);
   db.prepare('INSERT INTO reports (id, status, action, target_type, post_id, comment_id) VALUES (?, ?, ?, ?, ?, ?)')
     .run('report-1', 'pending', null, 'comment', 'post-1', 'comment-1');
 
@@ -293,7 +318,7 @@ test('手动封禁与解封会命中对应封禁表', () => {
   db.close();
 });
 
-test('举报批量处置只更新 pending 记录', () => {
+test('举报批量处理只更新 pending 记录', () => {
   const { db, service, logs, req } = createHarness();
 
   db.prepare('INSERT INTO reports (id, status, action, target_type, post_id, comment_id) VALUES (?, ?, ?, ?, ?, ?)')

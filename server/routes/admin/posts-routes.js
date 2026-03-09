@@ -25,7 +25,7 @@ export const registerAdminPostsRoutes = (app, deps) => {
     BAN_PERMISSIONS,
     mapAdminCommentRow,
     formatRelativeTime,
-    identityCutoverAt,
+    resolveStoredIdentityHash,
   } = deps;
 
   const moderationRepository = createModerationRepository(db);
@@ -34,13 +34,14 @@ export const registerAdminPostsRoutes = (app, deps) => {
     upsertBan,
     BAN_PERMISSIONS,
     logAdminAction,
-    identityCutoverAt,
+    resolveStoredIdentityHash,
   });
 
   const resolveAdminIdentity = ({ fingerprint, sessionId = '', ip = '' }) => buildAdminIdentity({
     fingerprint,
     sessionId,
     ip,
+    resolveStoredIdentityHash,
   });
 
   const mapAdminCommentWithIdentity = (row) => ({
@@ -575,18 +576,20 @@ app.post('/api/admin/comments/:id/action', requireAdmin, requireAdminCsrf, (req,
     }
     const identityValue = String(row.fingerprint || '').trim();
     if (identityValue) {
-      const isIdentityRecord = Number(row.created_at || 0) >= identityCutoverAt;
+      const resolvedIdentity = resolveStoredIdentityHash(identityValue);
+      const isIdentityRecord = resolvedIdentity?.type === 'identity';
+      const banTargetValue = String(resolvedIdentity?.identityKey || identityValue).trim();
       if (isIdentityRecord) {
-        upsertBan('banned_identities', 'identity', identityValue, banOptions || {});
+        upsertBan('banned_identities', 'identity', banTargetValue, banOptions || {});
         identityBanned = true;
       } else {
-        upsertBan('banned_fingerprints', 'fingerprint', identityValue, banOptions || {});
+        upsertBan('banned_fingerprints', 'fingerprint', banTargetValue, banOptions || {});
         fingerprintBanned = true;
       }
       logAdminAction(req, {
         action: isIdentityRecord ? 'ban_identity' : 'ban_fingerprint',
         targetType: isIdentityRecord ? 'identity' : 'fingerprint',
-        targetId: identityValue,
+        targetId: banTargetValue,
         before: null,
         after: { banned: true, permissions: banOptions?.permissions || BAN_PERMISSIONS, expiresAt: banOptions?.expiresAt || null },
         reason,

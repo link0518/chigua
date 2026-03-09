@@ -27,21 +27,47 @@ export const buildAdminIdentity = ({
   fingerprint = '',
   sessionId = '',
   ip = '',
+  resolveStoredIdentityHash,
   getLookupHashesForIdentityHash,
   getStableLegacyFingerprintHashForIdentityHashes,
 }) => {
-  const mergedHashes = normalizeIdentityHashes(identityHash, identityHashes, fingerprint);
-  const stableIdentityKey = normalizeString(identityHash) || mergedHashes[0] || '';
   const normalizedFingerprint = normalizeString(fingerprint);
+  const normalizedIdentityHash = normalizeString(identityHash);
   const normalizedSessionId = normalizeString(sessionId);
   const normalizedIp = normalizeString(ip);
+  const baseIdentityHash = normalizedIdentityHash || normalizedFingerprint || '';
+  const resolvedIdentity = typeof resolveStoredIdentityHash === 'function'
+    ? resolveStoredIdentityHash(baseIdentityHash)
+    : null;
+  const resolvedHashes = resolvedIdentity?.identityHashes?.length
+    ? resolvedIdentity.identityHashes
+    : (typeof getLookupHashesForIdentityHash === 'function' && baseIdentityHash
+      ? getLookupHashesForIdentityHash(baseIdentityHash)
+      : []);
+  const mergedHashes = normalizeIdentityHashes(resolvedHashes, identityHashes, normalizedIdentityHash, normalizedFingerprint);
+  const resolvedFingerprint = normalizeString(
+    resolvedIdentity?.legacyFingerprintHash
+    || (typeof getStableLegacyFingerprintHashForIdentityHashes === 'function'
+      ? getStableLegacyFingerprintHashForIdentityHashes(mergedHashes)
+      : '')
+    || (resolvedIdentity?.type === 'fingerprint' ? resolvedIdentity.identityKey : '')
+    || normalizedFingerprint
+  );
+  const stableIdentityKey = normalizeString(resolvedIdentity?.identityKey || mergedHashes[0] || baseIdentityHash);
+  const identityType = normalizeString(
+    resolvedIdentity?.type
+    || (stableIdentityKey
+      ? (resolvedFingerprint && stableIdentityKey === resolvedFingerprint ? 'fingerprint' : 'identity')
+      : '')
+  );
 
   return {
-    identityKey: stableIdentityKey || normalizedFingerprint || mergedHashes[0] || null,
+    identityKey: stableIdentityKey || resolvedFingerprint || null,
     identityHashes: mergedHashes,
-    fingerprint: normalizedFingerprint || null,
+    fingerprint: resolvedFingerprint || normalizedFingerprint || null,
     sessionId: normalizedSessionId || null,
     ip: normalizedIp || null,
+    identityType: identityType || null,
   };
 };
 

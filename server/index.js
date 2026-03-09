@@ -11,8 +11,9 @@ import fs from 'fs';
 import path from 'path';
 import { spawn } from 'child_process';
 import { initializeRuntimeEnv, createRuntimeConfig } from './runtime-config.js';
-import { resolveIdentityStorageType, resolveIdentityV2CutoverAt } from './identity-cutover.js';
 import { createIdentityService } from './identity-service.js';
+import { resolveBanIdentityCandidates } from './ban-identity.js';
+import { matchesNotificationActor, resolveNotificationActorFingerprint } from './notification-identity.js';
 import { createSiteSettingsService } from './site-settings.js';
 import { registerPublicSiteRoutes } from './routes/public/site-routes.js';
 import { registerPublicPostsRoutes } from './routes/public/posts-routes.js';
@@ -57,8 +58,6 @@ const {
   adminEnabled,
   siteUrl: SITE_URL,
 } = createRuntimeConfig();
-
-const IDENTITY_V2_CUTOVER_AT = resolveIdentityV2CutoverAt(process.env.IDENTITY_V2_CUTOVER_AT);
 
 if (!sessionSecretConfigured) {
   console.warn('SESSION_SECRET 未配置，已生成临时密钥（后台将被禁用）');
@@ -614,38 +613,11 @@ const getFingerprintValue = identityService.getFingerprintValue;
 const hashFingerprint = identityService.hashLegacyFingerprint;
 const getIdentityLookupHashes = (req, res) => identityService.getRequestIdentityLookupHashes(req, res);
 const getRequestIdentityContext = (req, res) => identityService.getRequestIdentityContext(req, res);
+const resolveStoredIdentityHash = (identityHash) => identityService.resolveStoredIdentityHash(identityHash);
 
 const requireFingerprint = (req, res) => identityService.requireRequestIdentityHash(req, res);
 
 const getOptionalFingerprint = (req, res) => identityService.getOptionalRequestIdentityHash(req, res);
-
-const getIdentityValueForStorageType = (identityContext, storageType) => {
-  if (!identityContext || typeof identityContext !== 'object') {
-    return '';
-  }
-  if (storageType === 'identity') {
-    return String(identityContext.canonicalHash || '').trim()
-      || String(identityContext.effectiveHash || '').trim();
-  }
-  return String(identityContext.legacyFingerprintHash || '').trim()
-    || String(identityContext.effectiveHash || '').trim();
-};
-
-const getRequestIdentityValueForCreatedAt = (req, res, createdAt) => {
-  const identityContext = getRequestIdentityContext(req, res);
-  return getIdentityValueForStorageType(
-    identityContext,
-    resolveIdentityStorageType(createdAt, IDENTITY_V2_CUTOVER_AT)
-  );
-};
-
-const matchesRequestIdentityForCreatedAt = (req, res, targetValue, createdAt) => {
-  const normalizedTargetValue = String(targetValue || '').trim();
-  if (!normalizedTargetValue) {
-    return false;
-  }
-  return getRequestIdentityValueForCreatedAt(req, res, createdAt) === normalizedTargetValue;
-};
 
 const trimPreview = (value, maxLength = 120) => {
   const text = String(value || '').replace(/\s+/g, ' ').trim();
@@ -657,21 +629,20 @@ const trimPreview = (value, maxLength = 120) => {
 
 const createNotification = ({
   recipientFingerprint,
-  recipientCreatedAt,
   type,
   postId,
   commentId,
   preview,
   actorIdentityContext,
 }) => {
-  if (!recipientFingerprint) {
+  const normalizedRecipientFingerprint = String(recipientFingerprint || '').trim();
+  if (!normalizedRecipientFingerprint) {
     return;
   }
-  const storageType = resolveIdentityStorageType(recipientCreatedAt, IDENTITY_V2_CUTOVER_AT);
-  const actorValue = getIdentityValueForStorageType(actorIdentityContext, storageType);
-  if (actorValue && actorValue === recipientFingerprint) {
+  if (matchesNotificationActor(actorIdentityContext, normalizedRecipientFingerprint)) {
     return;
   }
+  const actorValue = resolveNotificationActorFingerprint(actorIdentityContext, normalizedRecipientFingerprint);
   const now = Date.now();
   db.prepare(
     `
@@ -680,7 +651,7 @@ const createNotification = ({
     `
   ).run(
     crypto.randomUUID(),
-    recipientFingerprint,
+    normalizedRecipientFingerprint,
     type,
     postId || null,
     commentId || null,
@@ -883,43 +854,35 @@ const getActiveBanRow = (table, column, value) => {
   };
 };
 
-const normalizeBanIdentityContext = (value) => {
-  if (value && typeof value === 'object' && !Array.isArray(value)) {
-    return {
-      canonicalHash: String(value.canonicalHash || '').trim(),
-      legacyFingerprintHash: String(value.legacyFingerprintHash || '').trim(),
-    };
-  }
-  const values = Array.from(new Set(
-    (Array.isArray(value) ? value : [value])
-      .map((item) => String(item || '').trim())
-      .filter(Boolean)
-  ));
-  return {
-    canonicalHash: values[0] || '',
-    legacyFingerprintHash: values[1] || values[0] || '',
-  };
-};
-
 const getActiveBans = (ip, fingerprint) => {
   const entries = [];
+  const seen = new Set();
+  const appendEntry = (type, row) => {
+    if (!row) {
+      return;
+    }
+    const key = `${type}:${row.value}`;
+    if (seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    entries.push({ type, ...row });
+  };
   const ipRow = getActiveBanRow('banned_ips', 'ip', ip);
-  if (ipRow) {
-    entries.push({ type: 'ip', ...ipRow });
-  }
-  const identityContext = normalizeBanIdentityContext(fingerprint);
-  if (identityContext.legacyFingerprintHash) {
-    const fingerprintRow = getActiveBanRow('banned_fingerprints', 'fingerprint', identityContext.legacyFingerprintHash);
-    if (fingerprintRow) {
-      entries.push({ type: 'fingerprint', ...fingerprintRow });
-    }
-  }
-  if (identityContext.canonicalHash) {
-    const identityRow = getActiveBanRow('banned_identities', 'identity', identityContext.canonicalHash);
-    if (identityRow) {
-      entries.push({ type: 'identity', ...identityRow });
-    }
-  }
+  appendEntry('ip', ipRow);
+  const identityCandidates = resolveBanIdentityCandidates(fingerprint, resolveStoredIdentityHash);
+  identityCandidates.legacyFingerprintHashes.forEach((fingerprintHash) => {
+    appendEntry(
+      'fingerprint',
+      getActiveBanRow('banned_fingerprints', 'fingerprint', fingerprintHash)
+    );
+  });
+  identityCandidates.canonicalHashes.forEach((canonicalHash) => {
+    appendEntry(
+      'identity',
+      getActiveBanRow('banned_identities', 'identity', canonicalHash)
+    );
+  });
   return entries;
 };
 
@@ -1186,6 +1149,7 @@ const chatRealtime = createChatRealtimeService({
   resolveSocketIdentity: identityService.resolveSocketIdentity,
   getLookupHashesForIdentityHash: identityService.getLookupHashesForIdentityHash,
   getStableLegacyFingerprintHashForIdentityHashes: identityService.getStableLegacyFingerprintHashForIdentityHashes,
+  resolveStoredIdentityHash,
   getClientIp,
   containsSensitiveWord,
   isBannedFor,
@@ -1194,7 +1158,6 @@ const chatRealtime = createChatRealtimeService({
   logAdminAction,
   getAdminFromRequest,
   adminNickname: '闰土',
-  identityCutoverAt: IDENTITY_V2_CUTOVER_AT,
 });
 
 registerPublicSystemRoutes(app, {
@@ -1215,7 +1178,6 @@ registerPublicChatRoutes(app, {
   db,
   requireFingerprint,
   getIdentityLookupHashes,
-  getRequestIdentityValueForCreatedAt,
   checkBanFor,
   enforceRateLimit,
   getClientIp,
@@ -1245,7 +1207,6 @@ registerPublicPostsRoutes(app, {
   getOptionalFingerprint,
   getIdentityLookupHashes,
   getRequestIdentityContext,
-  getRequestIdentityValueForCreatedAt,
   startOfDay,
   containsSensitiveWord,
   requireFingerprint,
@@ -1267,7 +1228,7 @@ registerPublicCommentsRoutes(app, {
   getOptionalFingerprint,
   getIdentityLookupHashes,
   getRequestIdentityContext,
-  getRequestIdentityValueForCreatedAt,
+  resolveStoredIdentityHash,
   requireFingerprint,
   enforceRateLimit,
   getClientIp,
@@ -1302,7 +1263,7 @@ registerAdminReportsRoutes(app, {
   upsertBan,
   BAN_PERMISSIONS,
   chatRealtime,
-  identityCutoverAt: IDENTITY_V2_CUTOVER_AT,
+  resolveStoredIdentityHash,
 });
 
 registerAdminPostsRoutes(app, {
@@ -1324,7 +1285,7 @@ registerAdminPostsRoutes(app, {
   BAN_PERMISSIONS,
   mapAdminCommentRow,
   formatRelativeTime,
-  identityCutoverAt: IDENTITY_V2_CUTOVER_AT,
+  resolveStoredIdentityHash,
 });
 registerAdminFeedbackRoutes(app, {
   db,
@@ -1334,7 +1295,7 @@ registerAdminFeedbackRoutes(app, {
   resolveBanOptions,
   upsertBan,
   BAN_PERMISSIONS,
-  identityCutoverAt: IDENTITY_V2_CUTOVER_AT,
+  resolveStoredIdentityHash,
 });
 
 registerAdminBansRoutes(app, {
@@ -1347,7 +1308,7 @@ registerAdminBansRoutes(app, {
   upsertBan,
   BAN_PERMISSIONS,
   logAdminAction,
-  identityCutoverAt: IDENTITY_V2_CUTOVER_AT,
+  resolveStoredIdentityHash,
 });
 registerAdminChatRoutes(app, {
   db,

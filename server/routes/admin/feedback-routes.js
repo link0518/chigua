@@ -13,13 +13,14 @@ export const registerAdminFeedbackRoutes = (app, deps) => {
     resolveBanOptions,
     upsertBan,
     BAN_PERMISSIONS,
-    identityCutoverAt,
+    resolveStoredIdentityHash,
   } = deps;
 
   const resolveAdminIdentity = ({ fingerprint, sessionId = '', ip = '' }) => buildAdminIdentity({
     fingerprint,
     sessionId,
     ip,
+    resolveStoredIdentityHash,
   });
 
   const buildFeedbackItem = (row) => ({
@@ -176,7 +177,9 @@ export const registerAdminFeedbackRoutes = (app, deps) => {
 
     const ip = String(row.ip || '').trim();
     const identityValue = String(row.fingerprint || '').trim();
-    const isIdentityRecord = Number(row.created_at || 0) >= identityCutoverAt;
+    const resolvedIdentity = identityValue ? resolveStoredIdentityHash(identityValue) : null;
+    const isIdentityRecord = resolvedIdentity?.type === 'identity';
+    const banTargetValue = String(resolvedIdentity?.identityKey || identityValue).trim();
     if (!ip && !identityValue) {
       return res.status(400).json({ error: '无法获取可封禁的身份标识（IP/身份）' });
     }
@@ -197,16 +200,16 @@ export const registerAdminFeedbackRoutes = (app, deps) => {
     let fingerprintBanned = false;
     if (identityValue) {
       if (isIdentityRecord) {
-        upsertBan('banned_identities', 'identity', identityValue, banOptions || {});
+        upsertBan('banned_identities', 'identity', banTargetValue, banOptions || {});
         identityBanned = true;
       } else {
-        upsertBan('banned_fingerprints', 'fingerprint', identityValue, banOptions || {});
+        upsertBan('banned_fingerprints', 'fingerprint', banTargetValue, banOptions || {});
         fingerprintBanned = true;
       }
       logAdminAction(req, {
         action: isIdentityRecord ? 'ban_identity' : 'ban_fingerprint',
         targetType: isIdentityRecord ? 'identity' : 'fingerprint',
-        targetId: identityValue,
+        targetId: banTargetValue,
         before: null,
         after: { banned: true, permissions: banOptions?.permissions || BAN_PERMISSIONS, expiresAt: banOptions?.expiresAt || null },
         reason,
@@ -220,8 +223,8 @@ export const registerAdminFeedbackRoutes = (app, deps) => {
       before: null,
       after: {
         ip: ip || null,
-        identityKey: isIdentityRecord ? identityValue || null : null,
-        identityHashes: identityValue ? [identityValue] : [],
+        identityKey: isIdentityRecord ? banTargetValue || null : null,
+        identityHashes: banTargetValue ? [banTargetValue] : [],
       },
       reason,
     });

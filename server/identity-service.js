@@ -55,6 +55,14 @@ export const createIdentityService = ({
       ORDER BY last_seen_at DESC
     `
   );
+  const getAliasRowsByHashStmt = db.prepare(
+    `
+      SELECT canonical_hash, legacy_fingerprint_hash, last_seen_at
+      FROM identity_aliases
+      WHERE canonical_hash = ? OR legacy_fingerprint_hash = ?
+      ORDER BY last_seen_at DESC
+    `
+  );
 
   const readClientIdFromRequest = (request) => {
     const parsedCookies = parseCookieHeader(request, cookie);
@@ -140,12 +148,52 @@ export const createIdentityService = ({
     });
   };
 
-  const getLookupHashesForIdentityHash = (identityHash) => {
+  const resolveStoredIdentityHash = (identityHash) => {
     const normalizedIdentityHash = String(identityHash || '').trim();
     if (!normalizedIdentityHash) {
-      return [];
+      return {
+        type: 'fingerprint',
+        identityKey: '',
+        identityHashes: [],
+        canonicalHash: '',
+        legacyFingerprintHash: '',
+      };
     }
-    return [normalizedIdentityHash];
+    const directRows = getAliasRowsByHashStmt.all(normalizedIdentityHash, normalizedIdentityHash);
+    const canonicalHash = String(
+      directRows.find((row) => String(row?.canonical_hash || '').trim() === normalizedIdentityHash)?.canonical_hash
+      || directRows[0]?.canonical_hash
+      || ''
+    ).trim();
+    if (!canonicalHash) {
+      return {
+        type: 'fingerprint',
+        identityKey: normalizedIdentityHash,
+        identityHashes: [normalizedIdentityHash],
+        canonicalHash: '',
+        legacyFingerprintHash: normalizedIdentityHash,
+      };
+    }
+    const aliasRows = getAliasRowsByCanonicalStmt.all(canonicalHash);
+    const legacyFingerprintHashes = normalizeHashList([
+      ...aliasRows
+        .map((row) => row?.legacy_fingerprint_hash)
+        .filter((value) => String(value || '').trim() !== canonicalHash),
+      ...directRows
+        .map((row) => row?.legacy_fingerprint_hash)
+        .filter((value) => String(value || '').trim() !== canonicalHash),
+    ]);
+    return {
+      type: 'identity',
+      identityKey: canonicalHash,
+      identityHashes: normalizeHashList([canonicalHash, legacyFingerprintHashes]),
+      canonicalHash,
+      legacyFingerprintHash: legacyFingerprintHashes[0] || '',
+    };
+  };
+
+  const getLookupHashesForIdentityHash = (identityHash) => {
+    return resolveStoredIdentityHash(identityHash).identityHashes;
   };
 
   const getPreferredFingerprintHashForCanonicalHash = (canonicalHash) => {
@@ -156,7 +204,19 @@ export const createIdentityService = ({
     return normalizedCanonicalHash;
   };
 
-  const getStableLegacyFingerprintHashForIdentityHashes = (identityHashes) => normalizeHashList(identityHashes)[0] || '';
+  const getStableLegacyFingerprintHashForIdentityHashes = (identityHashes) => {
+    const normalizedHashes = normalizeHashList(identityHashes);
+    for (const identityHash of normalizedHashes) {
+      const resolved = resolveStoredIdentityHash(identityHash);
+      if (resolved.type === 'fingerprint') {
+        return resolved.identityKey || '';
+      }
+      if (resolved.legacyFingerprintHash) {
+        return resolved.legacyFingerprintHash;
+      }
+    }
+    return '';
+  };
 
   const getStableIdentityKeyFromContext = (context) => {
     return String(context?.canonicalHash || '').trim()
@@ -185,6 +245,8 @@ export const createIdentityService = ({
 
     if (canonicalHash && legacyFingerprintHash) {
       upsertIdentityAlias(canonicalHash, legacyFingerprintHash);
+    } else if (canonicalHash) {
+      upsertIdentityAlias(canonicalHash, canonicalHash, 'canonical_only');
     }
 
     const lookupHashes = getLookupHashesForCanonicalHash(canonicalHash, legacyFingerprintHash);
@@ -273,6 +335,7 @@ export const createIdentityService = ({
     upsertIdentityAlias,
     getLookupHashesForCanonicalHash,
     getLookupHashesForIdentityHash,
+    resolveStoredIdentityHash,
     getPreferredFingerprintHashForCanonicalHash,
     getStableLegacyFingerprintHashForIdentityHashes,
     sharesIdentityHashes,

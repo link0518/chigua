@@ -155,3 +155,33 @@ test('稳定身份键优先返回当前 canonical，socket 侧也只复用当前
 
   db.close();
 });
+
+test('resolveStoredIdentityHash 会在 legacy 已关联 canonical 时返回新身份摘要', () => {
+  const { db, service } = createHarness();
+
+  service.upsertIdentityAlias('canonical-1', 'legacy-1', 'test');
+
+  const resolved = service.resolveStoredIdentityHash('legacy-1');
+  assert.equal(resolved.type, 'identity');
+  assert.equal(resolved.identityKey, 'canonical-1');
+  assert.equal(resolved.legacyFingerprintHash, 'legacy-1');
+  assert.deepEqual(resolved.identityHashes, ['canonical-1', 'legacy-1']);
+  assert.deepEqual(service.getLookupHashesForIdentityHash('legacy-1'), ['canonical-1', 'legacy-1']);
+
+  db.close();
+});
+
+test('canonical-only 身份也会被识别为新身份而不是回落到指纹', () => {
+  const { db, service } = createHarness();
+
+  const response = createResponse();
+  const context = service.ensureRequestIdentity({ headers: {} }, response);
+  const resolved = service.resolveStoredIdentityHash(context.canonicalHash);
+
+  assert.equal(resolved.type, 'identity');
+  assert.equal(resolved.identityKey, context.canonicalHash);
+  assert.equal(resolved.legacyFingerprintHash, '');
+  assert.deepEqual(resolved.identityHashes, [context.canonicalHash]);
+
+  db.close();
+});

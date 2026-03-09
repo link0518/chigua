@@ -23,7 +23,6 @@ export const registerPublicChatRoutes = (app, deps) => {
     db,
     requireFingerprint,
     getIdentityLookupHashes,
-    getRequestIdentityValueForCreatedAt,
     checkBanFor,
     enforceRateLimit,
     getClientIp,
@@ -135,7 +134,7 @@ export const registerPublicChatRoutes = (app, deps) => {
       return res.status(404).json({ error: '消息不存在或已删除' });
     }
 
-    if (getRequestIdentityValueForCreatedAt(req, res, row.created_at) === String(row.fingerprint_hash || '')) {
+    if (identityHashes.includes(String(row.fingerprint_hash || '').trim())) {
       return res.status(400).json({ error: '不能举报自己的消息' });
     }
 

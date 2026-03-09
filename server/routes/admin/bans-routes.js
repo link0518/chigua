@@ -12,7 +12,7 @@ export const registerAdminBansRoutes = (app, deps) => {
     upsertBan,
     BAN_PERMISSIONS,
     logAdminAction,
-    identityCutoverAt,
+    resolveStoredIdentityHash,
   } = deps;
 
   const moderationRepository = createModerationRepository(db);
@@ -21,7 +21,7 @@ export const registerAdminBansRoutes = (app, deps) => {
     upsertBan,
     BAN_PERMISSIONS,
     logAdminAction,
-    identityCutoverAt,
+    resolveStoredIdentityHash,
   });
 
   app.get('/api/admin/bans', requireAdmin, (req, res) => {

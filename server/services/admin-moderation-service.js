@@ -1,5 +1,3 @@
-import { resolveIdentityStorageType } from '../identity-cutover.js';
-
 const uniqueNonEmpty = (values) => Array.from(new Set(values.filter(Boolean)));
 
 const buildBanAuditState = (banOptions, defaultPermissions) => ({
@@ -8,14 +6,17 @@ const buildBanAuditState = (banOptions, defaultPermissions) => ({
   expiresAt: banOptions?.expiresAt || null,
 });
 
-const normalizeStoredTarget = (value, createdAt, identityCutoverAt) => {
+const normalizeStoredTarget = (value, resolveStoredIdentityHash) => {
   const normalizedValue = String(value || '').trim();
   if (!normalizedValue) {
     return null;
   }
+  const resolved = typeof resolveStoredIdentityHash === 'function'
+    ? resolveStoredIdentityHash(normalizedValue)
+    : null;
   return {
-    type: resolveIdentityStorageType(createdAt, identityCutoverAt),
-    value: normalizedValue,
+    type: resolved?.type === 'identity' ? 'identity' : 'legacy_fingerprint',
+    value: String(resolved?.identityKey || normalizedValue).trim(),
   };
 };
 
@@ -24,7 +25,7 @@ export const createAdminModerationService = ({
   upsertBan,
   BAN_PERMISSIONS,
   logAdminAction,
-  identityCutoverAt,
+  resolveStoredIdentityHash,
 }) => {
   const getBanActionName = (type, action) => {
     if (type === 'ip') {
@@ -84,7 +85,7 @@ export const createAdminModerationService = ({
 
   const collectStoredTargets = (rows) => uniqueNonEmpty(
     rows
-      .map((row) => normalizeStoredTarget(row?.fingerprint, row?.created_at, identityCutoverAt))
+      .map((row) => normalizeStoredTarget(row?.fingerprint, resolveStoredIdentityHash))
       .filter(Boolean)
       .map((item) => `${item.type}:${item.value}`)
   ).map((item) => {
@@ -227,7 +228,7 @@ export const createAdminModerationService = ({
         if (targetIdentity.ip) {
           applyBan('ip', targetIdentity.ip, banOptions);
         }
-        const target = normalizeStoredTarget(targetIdentity.value, targetIdentity.createdAt, identityCutoverAt);
+        const target = normalizeStoredTarget(targetIdentity.value, resolveStoredIdentityHash);
         if (target) {
           applyBan(mapStoredTypeToBanType(target.type), target.value, banOptions);
         }
@@ -246,7 +247,7 @@ export const createAdminModerationService = ({
         if (targetIdentity.ip) {
           logBan(req, 'ip', targetIdentity.ip, reason, banOptions);
         }
-        const target = normalizeStoredTarget(targetIdentity.value, targetIdentity.createdAt, identityCutoverAt);
+        const target = normalizeStoredTarget(targetIdentity.value, resolveStoredIdentityHash);
         if (target) {
           logBan(req, mapStoredTypeToBanType(target.type), target.value, reason, banOptions);
         }
@@ -276,4 +277,3 @@ export const createAdminModerationService = ({
     },
   };
 };
-

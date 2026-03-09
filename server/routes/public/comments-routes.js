@@ -4,7 +4,7 @@
     checkBanFor,
     getIdentityLookupHashes,
     getRequestIdentityContext,
-    getRequestIdentityValueForCreatedAt,
+    resolveStoredIdentityHash,
     requireFingerprint,
     enforceRateLimit,
     getClientIp,
@@ -62,6 +62,17 @@ const findExistingCommentLike = (db, commentId, identityHashes) => {
       `
     )
     .get(commentId, ...match.params);
+};
+
+const resolveIdentityKey = (value, resolveStoredIdentityHashFn) => {
+  const normalizedValue = String(value || '').trim();
+  if (!normalizedValue) {
+    return '';
+  }
+  if (typeof resolveStoredIdentityHashFn !== 'function') {
+    return normalizedValue;
+  }
+  return String(resolveStoredIdentityHashFn(normalizedValue)?.identityKey || normalizedValue).trim();
 };
 
 app.get('/api/posts/:id/comments', (req, res) => {
@@ -265,16 +276,17 @@ app.post('/api/posts/:id/comments', async (req, res) => {
 
   const commentPreview = trimPreview(content);
   const actorIdentityContext = getRequestIdentityContext(req, res);
+  const actorIdentityHashes = getIdentityLookupHashes(req, res);
   let replyRecipient = '';
+  let replyRecipientIdentityKey = '';
   if (finalReplyToId) {
-    const replyTarget = db.prepare('SELECT fingerprint, created_at FROM comments WHERE id = ?').get(finalReplyToId);
+    const replyTarget = db.prepare('SELECT fingerprint FROM comments WHERE id = ?').get(finalReplyToId);
     replyRecipient = replyTarget?.fingerprint || '';
-    const isReplyTargetSelf = replyRecipient
-      && getRequestIdentityValueForCreatedAt(req, res, replyTarget?.created_at) === replyRecipient;
+    replyRecipientIdentityKey = resolveIdentityKey(replyRecipient, resolveStoredIdentityHash);
+    const isReplyTargetSelf = replyRecipient && actorIdentityHashes.includes(replyRecipient);
     if (replyRecipient && !isReplyTargetSelf) {
       createNotification({
         recipientFingerprint: replyRecipient,
-        recipientCreatedAt: replyTarget?.created_at,
         type: 'comment_reply',
         postId,
         commentId: commentId,
@@ -284,15 +296,15 @@ app.post('/api/posts/:id/comments', async (req, res) => {
     }
   }
 
-  const postIdentityValue = getRequestIdentityValueForCreatedAt(req, res, post.created_at);
+  const isPostOwnerSelf = post.fingerprint && actorIdentityHashes.includes(post.fingerprint);
+  const postRecipientIdentityKey = resolveIdentityKey(post.fingerprint, resolveStoredIdentityHash);
   if (
     post.fingerprint
-    && post.fingerprint !== postIdentityValue
-    && post.fingerprint !== replyRecipient
+    && !isPostOwnerSelf
+    && postRecipientIdentityKey !== replyRecipientIdentityKey
   ) {
     createNotification({
       recipientFingerprint: post.fingerprint,
-      recipientCreatedAt: post.created_at,
       type: 'post_comment',
       postId,
       commentId: commentId,

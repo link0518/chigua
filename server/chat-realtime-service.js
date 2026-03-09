@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { WebSocket, WebSocketServer } from 'ws';
 import { buildAdminIdentity } from './admin-identity-utils.js';
+import { resolveBanStorageHashes } from './ban-identity.js';
 
 const CHAT_PATH = '/ws/chat';
 const CHAT_TEXT_MAX_LENGTH = 2000;
@@ -234,6 +235,7 @@ export const createChatRealtimeService = (deps) => {
     resolveSocketIdentity,
     getLookupHashesForIdentityHash,
     getStableLegacyFingerprintHashForIdentityHashes,
+    resolveStoredIdentityHash,
     getClientIp,
     containsSensitiveWord,
     isBannedFor,
@@ -242,7 +244,6 @@ export const createChatRealtimeService = (deps) => {
     logAdminAction,
     getAdminFromRequest,
     adminNickname,
-    identityCutoverAt,
   } = deps;
   const ADMIN_NICKNAME = String(adminNickname || '闰土').trim() || '闰土';
 
@@ -252,6 +253,7 @@ export const createChatRealtimeService = (deps) => {
     fingerprint: fingerprintHash,
     sessionId,
     ip,
+    resolveStoredIdentityHash,
     getLookupHashesForIdentityHash,
     getStableLegacyFingerprintHashForIdentityHashes,
   });
@@ -799,6 +801,43 @@ export const createChatRealtimeService = (deps) => {
       sendEvent(connection.socket, event, payload);
     });
     return targets.length;
+  };
+
+  const disconnectIdentityConnections = (identityHashes, event, payload, closeCode, closeReason) => {
+    const normalizedIdentityHashes = normalizeIdentityHashes(identityHashes);
+    const seenConnectionIds = new Set();
+    let disconnected = 0;
+    normalizedIdentityHashes.forEach((identityHash) => {
+      const targets = getConnectionsByFingerprintHash(identityHash);
+      targets.forEach((connection) => {
+        if (seenConnectionIds.has(connection.id)) {
+          return;
+        }
+        seenConnectionIds.add(connection.id);
+        sendEvent(connection.socket, event, payload);
+        closeSocket(connection.socket, closeCode, closeReason);
+        disconnected += 1;
+      });
+    });
+    return disconnected;
+  };
+
+  const notifyIdentityConnections = (identityHashes, event, payload) => {
+    const normalizedIdentityHashes = normalizeIdentityHashes(identityHashes);
+    const seenConnectionIds = new Set();
+    let notified = 0;
+    normalizedIdentityHashes.forEach((identityHash) => {
+      const targets = getConnectionsByFingerprintHash(identityHash);
+      targets.forEach((connection) => {
+        if (seenConnectionIds.has(connection.id)) {
+          return;
+        }
+        seenConnectionIds.add(connection.id);
+        sendEvent(connection.socket, event, payload);
+        notified += 1;
+      });
+    });
+    return notified;
   };
 
   const disconnectAllConnections = (event, payload, closeCode, closeReason) => {
@@ -1421,18 +1460,12 @@ export const createChatRealtimeService = (deps) => {
     }
     const normalizedFingerprintHash = String(fingerprintHash || '').trim();
     if (!normalizedFingerprintHash) {
-      return 'identity';
+      return 'fingerprint';
     }
-    const latestMessageRow = getLatestMessageCreatedAtByFingerprintStmt.get(normalizedFingerprintHash);
-    const latestSessionRow = getLatestSessionJoinedAtByFingerprintStmt.get(normalizedFingerprintHash);
-    const latestTimestamp = Math.max(
-      Number(latestMessageRow?.created_at || 0),
-      Number(latestSessionRow?.joined_at || 0)
-    );
-    if (!latestTimestamp) {
-      return 'identity';
-    }
-    return latestTimestamp >= Number(identityCutoverAt || 0) ? 'identity' : 'fingerprint';
+    const resolvedIdentity = typeof resolveStoredIdentityHash === 'function'
+      ? resolveStoredIdentityHash(normalizedFingerprintHash)
+      : null;
+    return resolvedIdentity?.type === 'identity' ? 'identity' : 'fingerprint';
   };
 
   return {
@@ -1511,8 +1544,8 @@ export const createChatRealtimeService = (deps) => {
         mutedUntil,
         reason: reason || null,
       };
-      disconnectFingerprintConnections(
-        identityKey,
+      disconnectIdentityConnections(
+        identityHashes,
         "chat.muted",
         payload,
         CHAT_KICK_CLOSE_CODE,
@@ -1549,8 +1582,8 @@ export const createChatRealtimeService = (deps) => {
       identityHashes.forEach((identityHash) => {
         removed = deleteMuteStmt.run(identityHash).changes > 0 || removed;
       });
-      const notifiedConnections = notifyFingerprintConnections(
-        identityKey,
+      const notifiedConnections = notifyIdentityConnections(
+        identityHashes,
         "chat.unmuted",
         {
           fingerprintHash: identityKey,
@@ -1581,8 +1614,8 @@ export const createChatRealtimeService = (deps) => {
     kickByAdmin({ req, fingerprintHash, reason }) {
       const identity = resolveAdminIdentity({ fingerprintHash });
       const identityKey = String(identity.identityKey || fingerprintHash || '').trim();
-      const kicked = disconnectFingerprintConnections(
-        identityKey,
+      const kicked = disconnectIdentityConnections(
+        identity.identityHashes,
         "chat.kicked",
         { message: reason || '你已被管理员移出聊天室' },
         CHAT_KICK_CLOSE_CODE,
@@ -1627,12 +1660,20 @@ export const createChatRealtimeService = (deps) => {
       const effectiveExpiresAt = typeof expiresAt === "number" && expiresAt > now ? expiresAt : null;
       const resolvedIp = resolveBanIp(identityKey, ip, identityHashes);
       const banType = resolveChatBanType(identityKey, identityType);
-      identityHashes.forEach((identityHash) => {
-        upsertBan(banType === "identity" ? "banned_identities" : "banned_fingerprints", banType === "identity" ? "identity" : "fingerprint", identityHash, {
+      const banStorageHashes = resolveBanStorageHashes({
+        value: identityHashes,
+        banType,
+        fallbackHash: banType === "identity" ? identityKey : (fingerprintHash || identityKey),
+        resolveStoredIdentityHash,
+      });
+      banStorageHashes.forEach((storageHash) => {
+        upsertBan(banType === "identity" ? "banned_identities" : "banned_fingerprints", banType === "identity" ? "identity" : "fingerprint", storageHash, {
           permissions,
           expiresAt: effectiveExpiresAt,
           reason: reason || null,
         });
+      });
+      identityHashes.forEach((identityHash) => {
         if (resolvedIp) {
           upsertChatBanSyncStmt.run(identityHash, resolvedIp, now);
         } else {
@@ -1646,8 +1687,8 @@ export const createChatRealtimeService = (deps) => {
           reason: reason || null,
         });
       }
-      const kicked = disconnectFingerprintConnections(
-        identityKey,
+      const kicked = disconnectIdentityConnections(
+        identityHashes,
         "chat.banned",
         { message: reason || '你已被封禁，无法进入聊天室' },
         CHAT_JOIN_CLOSE_CODE,
@@ -1665,7 +1706,7 @@ export const createChatRealtimeService = (deps) => {
             permissions,
             kickedConnections: kicked,
             syncedBan: {
-              identity: identityHashes.length,
+              identity: banStorageHashes.length,
               ip: Boolean(resolvedIp),
             },
           },
@@ -1681,7 +1722,7 @@ export const createChatRealtimeService = (deps) => {
         permissions,
         kickedConnections: kicked,
         syncedBan: {
-          identity: identityHashes.length,
+          identity: banStorageHashes.length,
           ip: Boolean(resolvedIp),
         },
       };
@@ -1691,14 +1732,22 @@ export const createChatRealtimeService = (deps) => {
       const identityKey = String(identity.identityKey || fingerprintHash || '').trim();
       const identityHashes = identity.identityHashes.length ? identity.identityHashes : [identityKey].filter(Boolean);
       const banType = resolveChatBanType(identityKey, identityType);
+      const banStorageHashes = resolveBanStorageHashes({
+        value: identityHashes,
+        banType,
+        fallbackHash: banType === "identity" ? identityKey : (fingerprintHash || identityKey),
+        resolveStoredIdentityHash,
+      });
       let removed = false;
       const syncedIps = [];
-      identityHashes.forEach((identityHash) => {
+      banStorageHashes.forEach((storageHash) => {
         removed = (
           banType === "identity"
-            ? deleteIdentityBanStmt.run(identityHash).changes > 0
-            : deleteBanStmt.run(identityHash).changes > 0
+            ? deleteIdentityBanStmt.run(storageHash).changes > 0
+            : deleteBanStmt.run(storageHash).changes > 0
         ) || removed;
+      });
+      identityHashes.forEach((identityHash) => {
         const syncedIpRow = getChatBanSyncIpStmt.get(identityHash);
         const syncedIp = syncedIpRow?.ip ? String(syncedIpRow.ip).trim() : "";
         if (syncedIp) {
