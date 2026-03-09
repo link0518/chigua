@@ -760,14 +760,14 @@ const HomeView: React.FC = () => {
             className="group relative flex items-center justify-center gap-2 rounded-full border-[3px] border-black bg-white px-4 py-3 shadow-sketch-lg transition-all duration-200 hover:-translate-y-1 hover:bg-highlight hover:shadow-sketch-hover active:translate-y-[4px] active:shadow-sketch-active md:gap-3 md:px-10 md:py-4"
           >
             <ArrowLeft className="h-[24px] w-[24px] transition-transform group-hover:rotate-12 md:h-[30px] md:w-[30px]" />
-            <span className="hidden font-hand text-base font-bold tracking-widest md:inline md:text-2xl">上一条</span>
+            <span className="hidden font-hand text-base font-bold tracking-widest md:inline md:text-2xl">上一个瓜</span>
           </button>
           <button
             type="button"
             onClick={handleNext}
             className="group relative flex flex-1 items-center justify-center gap-3 rounded-full border-[3px] border-black bg-white px-6 py-4 shadow-sketch-lg transition-all duration-200 hover:-translate-y-1 hover:bg-highlight hover:shadow-sketch-hover active:translate-y-[4px] active:shadow-sketch-active md:flex-none md:px-10 md:py-4"
           >
-            <span className="font-hand text-2xl font-bold tracking-widest">下一条</span>
+            <span className="font-hand text-2xl font-bold tracking-widest">下一个瓜</span>
             <ArrowRight className="h-[30px] w-[30px] transition-transform group-hover:rotate-12" />
           </button>
         </div>
