@@ -2,6 +2,15 @@
 
 ### Changed
 
+- 投稿页输入区升级为基于 `CodeMirror 6` 的 Markdown 编辑器，保留原有手绘卡片 UI、预览切换、图片上传、表情插入、标签选择与提交流程；涉及 `components/MarkdownEditor.tsx`、`components/SubmissionView.tsx`、`package.json`。
+- 投稿页快捷格式栏改为中文短文案，并针对移动端收敛为更紧凑的两行布局。
+
+### Fixed
+
+- Markdown 预览补齐单次回车换行解析，避免输入内容后必须连续两次回车才能在预览区换行；涉及 `components/MarkdownRenderer.tsx`。
+
+### Changed
+
 - 首页新增“单帖 / 列表”双浏览模式，支持记住用户选择，并在分享路由下保持单帖聚焦浏览。
 - 首页列表模式改为高密度卡片浏览：支持新标签页打开单帖、首次加载 20 条并通过底部按钮继续按 20 条加载，兼顾桌面端与移动端快速扫帖体验；涉及 `components/HomeView.tsx`、`components/HomePostGridCard.tsx`。
 - 管理后台接入新身份体系：帖子、评论、反馈、举报、封禁列表与聊天室管理统一返回并展示 `identityKey` / `identityHashes`，搜索支持按主身份与关联身份命中。

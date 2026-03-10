@@ -19,13 +19,15 @@ const escapeHtml = (value: unknown) => {
     .replace(/'/g, '&#39;');
 };
 
+const parseInlineMarkdown = (value: string) => marked.parseInline(value, { gfm: true, breaks: true });
+
 const createRenderer = () => {
   const renderer = new marked.Renderer();
 
   renderer.heading = function (token) {
     const safeLevel = Math.min(Math.max(token.depth || 1, 1), 3);
     const sizeClass = safeLevel === 1 ? 'text-2xl' : safeLevel === 2 ? 'text-xl' : 'text-lg';
-    const text = token.tokens ? this.parser.parseInline(token.tokens) : marked.parseInline(token.text || '');
+    const text = token.tokens ? this.parser.parseInline(token.tokens) : parseInlineMarkdown(token.text || '');
     return `<h${safeLevel} class="font-display ${sizeClass} text-ink mt-3 mb-1">${text}</h${safeLevel}>`;
   };
 
@@ -47,7 +49,7 @@ const createRenderer = () => {
   };
 
   renderer.listitem = function (token) {
-    const content = token.tokens ? this.parser.parse(token.tokens) : marked.parseInline(token.text || '');
+    const content = token.tokens ? this.parser.parse(token.tokens) : parseInlineMarkdown(token.text || '');
     return `<li class="my-1">${content}</li>`;
   };
 
@@ -69,20 +71,20 @@ const createRenderer = () => {
   };
 
   renderer.paragraph = function (token) {
-    const text = token.tokens ? this.parser.parseInline(token.tokens) : marked.parseInline(token.text || '');
+    const text = token.tokens ? this.parser.parseInline(token.tokens) : parseInlineMarkdown(token.text || '');
     return `<p class="my-2">${text}</p>`;
   };
 
   renderer.strong = function (token) {
-    return `<strong>${token.tokens ? this.parser.parseInline(token.tokens) : marked.parseInline(token.text || '')}</strong>`;
+    return `<strong>${token.tokens ? this.parser.parseInline(token.tokens) : parseInlineMarkdown(token.text || '')}</strong>`;
   };
 
   renderer.em = function (token) {
-    return `<em>${token.tokens ? this.parser.parseInline(token.tokens) : marked.parseInline(token.text || '')}</em>`;
+    return `<em>${token.tokens ? this.parser.parseInline(token.tokens) : parseInlineMarkdown(token.text || '')}</em>`;
   };
 
   renderer.del = function (token) {
-    return `<del>${token.tokens ? this.parser.parseInline(token.tokens) : marked.parseInline(token.text || '')}</del>`;
+    return `<del>${token.tokens ? this.parser.parseInline(token.tokens) : parseInlineMarkdown(token.text || '')}</del>`;
   };
 
   renderer.image = function (token) {
@@ -383,7 +385,7 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, className 
   const rendered = useMemo(() => {
     if (!content) return '';
     const normalizedContent = expandMemeShortcodes(content);
-    const baseTokens: any = marked.lexer(normalizedContent);
+    const baseTokens: any = marked.lexer(normalizedContent, { gfm: true, breaks: true });
     const tokens = transformTokens(baseTokens, false) as any[] & { links?: Record<string, { href: string; title: string }> };
     if (baseTokens?.links) {
       tokens.links = baseTokens.links;
