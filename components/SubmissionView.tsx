@@ -232,6 +232,11 @@ const SubmissionView: React.FC = () => {
       return;
     }
 
+    if (selectedTags.length === 0) {
+      showToast('请选择至少 1 个标签', 'warning');
+      return;
+    }
+
     setIsSubmitting(true);
 
     let turnstileToken = '';

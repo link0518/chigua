@@ -4,10 +4,13 @@
 
 - 投稿页输入区升级为基于 `CodeMirror 6` 的 Markdown 编辑器，保留原有手绘卡片 UI、预览切换、图片上传、表情插入、标签选择与提交流程；涉及 `components/MarkdownEditor.tsx`、`components/SubmissionView.tsx`、`package.json`。
 - 投稿页快捷格式栏改为中文短文案，并针对移动端收敛为更紧凑的两行布局。
+- 前台投稿改为必须选择至少 1 个标签，未选标签时保持现有页面文案不变，并通过 toast 给出提交提示；涉及 `components/SubmissionView.tsx`。
+- 前台新增标签屏蔽设置：桌面端提供独立右上角入口，移动端入口折叠进菜单栏，并通过本地存储记住用户选择；涉及 `App.tsx`、`components/UserSettingsModal.tsx`、`store/AppContext.tsx`、`store/hiddenPostTags.ts`。
 
 ### Fixed
 
 - Markdown 预览补齐单次回车换行解析，避免输入内容后必须连续两次回车才能在预览区换行；涉及 `components/MarkdownRenderer.tsx`。
+- 首页与热门支持按已屏蔽标签过滤帖子，并修正首页列表模式在首批结果全部被屏蔽时的继续加载行为；涉及 `components/HomeView.tsx`、`components/FeedView.tsx`。
 
 ### Changed
 

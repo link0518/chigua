@@ -23,6 +23,7 @@ import Modal from './Modal';
 import ReportModal from './ReportModal';
 import { SketchButton } from './SketchUI';
 import Turnstile, { TurnstileHandle } from './Turnstile';
+import { postMatchesHiddenTags } from '../store/hiddenPostTags';
 
 type HomeViewMode = 'focus' | 'grid';
 
@@ -103,16 +104,28 @@ const HomeView: React.FC = () => {
   const [pendingGridPrefill, setPendingGridPrefill] = useState(false);
   const prevPostCountRef = useRef(0);
   const handledRouteCommentKeyRef = useRef('');
-  const posts = getHomePosts();
+  const routePostId = routeState.postId;
+  const routeCommentId = routeState.commentId;
+  const routeCommentKey = routePostId && routeCommentId ? `${routePostId}:${routeCommentId}` : '';
+  const allPosts = getHomePosts();
+  const hiddenPostTags = state.hiddenPostTags;
+  const posts = useMemo(
+    () => (
+      routePostId
+        ? allPosts
+        : allPosts.filter((post) => !postMatchesHiddenTags(post.tags, hiddenPostTags))
+    ),
+    [allPosts, hiddenPostTags, routePostId]
+  );
+  const loadedPostCount = allPosts.length;
+  const hasHiddenTagFilter = hiddenPostTags.length > 0;
+  const hiddenOnlyEmptyState = !routePostId && loadedPostCount > 0 && posts.length === 0 && hasHiddenTagFilter;
   const boundedIndex = posts.length ? Math.min(currentIndex, posts.length - 1) : 0;
   const currentPost = posts[boundedIndex];
   const commentTargetPost = useMemo(
     () => (commentPostId ? posts.find((post) => post.id === commentPostId) || null : currentPost || null),
     [commentPostId, currentPost, posts]
   );
-  const routePostId = routeState.postId;
-  const routeCommentId = routeState.commentId;
-  const routeCommentKey = routePostId && routeCommentId ? `${routePostId}:${routeCommentId}` : '';
   const effectiveViewMode: HomeViewMode = routePostId ? 'focus' : preferredViewMode;
   const containerWidthClass = effectiveViewMode === 'grid' ? 'max-w-6xl' : 'max-w-3xl';
   const shouldShowBanner = window.location.hostname === '933211.xyz';
@@ -288,13 +301,13 @@ const HomeView: React.FC = () => {
     const batchSize = limit ?? (effectiveViewMode === 'grid' ? HOME_GRID_PAGE_SIZE : HOME_FOCUS_PAGE_SIZE);
     setLoadingMore(true);
     try {
-      await loadHomePosts({ limit: batchSize, offset: posts.length, append: true });
+      await loadHomePosts({ limit: batchSize, offset: loadedPostCount, append: true });
     } catch {
       showToast('加载更多失败，请稍后重试', 'error');
     } finally {
       setLoadingMore(false);
     }
-  }, [effectiveViewMode, hasMore, loadHomePosts, loading, loadingMore, posts.length, showToast]);
+  }, [effectiveViewMode, hasMore, loadHomePosts, loadedPostCount, loading, loadingMore, showToast]);
 
   useEffect(() => {
     let cancelled = false;
@@ -371,7 +384,7 @@ const HomeView: React.FC = () => {
       return;
     }
     const shouldAutoOpenRouteComment = Boolean(routeCommentKey) && handledRouteCommentKeyRef.current !== routeCommentKey;
-    const existingIndex = posts.findIndex((post) => post.id === routePostId);
+    const existingIndex = allPosts.findIndex((post) => post.id === routePostId);
     if (existingIndex >= 0) {
       if (currentIndex !== existingIndex) {
         setCurrentIndex(existingIndex);
@@ -408,7 +421,7 @@ const HomeView: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [currentIndex, navigateToHomeRoot, openCommentModal, posts, routeCommentId, routeCommentKey, routePostId, showToast, upsertHomePost]);
+  }, [allPosts, currentIndex, navigateToHomeRoot, openCommentModal, routeCommentId, routeCommentKey, routePostId, showToast, upsertHomePost]);
 
   useEffect(() => {
     if (effectiveViewMode !== 'focus' || !currentPost?.id) {
@@ -451,11 +464,11 @@ const HomeView: React.FC = () => {
 
   useEffect(() => {
     if (state.homeTotal > 0) {
-      setHasMore(posts.length < state.homeTotal);
+      setHasMore(loadedPostCount < state.homeTotal);
       return;
     }
     setHasMore(false);
-  }, [posts.length, state.homeTotal]);
+  }, [loadedPostCount, state.homeTotal]);
 
   useEffect(() => {
     const prevCount = prevPostCountRef.current;
@@ -474,7 +487,7 @@ const HomeView: React.FC = () => {
   }, [currentIndex, hasMore, openPostInFocus, pendingAdvance, posts, routePostId]);
 
   useEffect(() => {
-    if (effectiveViewMode !== 'focus' || loadingMore || !hasMore) {
+    if (effectiveViewMode !== 'focus' || loadingMore || !hasMore || posts.length === 0) {
       return;
     }
     if (currentIndex >= posts.length - 3) {
@@ -839,6 +852,31 @@ const HomeView: React.FC = () => {
           <span className="mb-4 block text-6xl">🗂️</span>
           <h2 className="font-display text-3xl text-ink">正在加载帖子...</h2>
           <p className="mt-2 font-hand text-xl text-pencil">马上就能开始浏览</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (hiddenOnlyEmptyState) {
+    return (
+      <div className={`mx-auto flex min-h-[80vh] w-full ${containerWidthClass} flex-grow flex-col px-4 py-8`}>
+        {renderModeHeader()}
+        <div className="flex min-h-[55vh] flex-col items-center justify-center text-center">
+          <span className="mb-4 block text-6xl">??</span>
+          <h2 className="font-display text-3xl text-ink">当前批次都被屏蔽了</h2>
+          <p className="mt-2 font-hand text-xl text-pencil">
+            {hasMore ? '可以继续加载看看后面的帖子' : '目前没有未被屏蔽的帖子'}
+          </p>
+          {hasMore && (
+              <button
+                type="button"
+                disabled={loadingMore}
+                onClick={() => loadMorePosts(effectiveViewMode === 'grid' ? HOME_GRID_PAGE_SIZE : HOME_FOCUS_PAGE_SIZE)}
+                className="mt-6 inline-flex items-center justify-center rounded-full border-2 border-ink bg-white px-6 py-3 font-hand text-lg font-bold text-ink shadow-sketch transition-all hover:bg-highlight disabled:cursor-not-allowed disabled:opacity-60"
+              >
+              {loadingMore ? '加载中...' : '继续加载更多帖子'}
+            </button>
+          )}
         </div>
       </div>
     );

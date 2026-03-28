@@ -14,6 +14,7 @@ import {
   MessageCircle,
   Pencil,
   Reply,
+  Settings2,
   ThumbsUp,
   X,
 } from 'lucide-react';
@@ -23,6 +24,7 @@ import Lantern from './components/CNY/Lantern';
 import FallingDecorations from './components/CNY/FallingDecorations';
 import HeaderDecoration from './components/CNY/HeaderDecoration';
 import CNYAtmosphereBackground from './components/CNY/CNYAtmosphereBackground';
+import UserSettingsModal from './components/UserSettingsModal';
 
 const SubmissionView = React.lazy(() => import('./components/SubmissionView'));
 const FeedView = React.lazy(() => import('./components/FeedView'));
@@ -82,6 +84,7 @@ const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<ViewType>(() => resolveViewFromPath(window.location.pathname));
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [announcementOpen, setAnnouncementOpen] = useState(false);
+  const [userSettingsOpen, setUserSettingsOpen] = useState(false);
   const [announcementContent, setAnnouncementContent] = useState('');
   const [announcementUpdatedAt, setAnnouncementUpdatedAt] = useState<number | null>(null);
   const [announcementUnread, setAnnouncementUnread] = useState(false);
@@ -101,6 +104,7 @@ const App: React.FC = () => {
   const isChatView = currentView === ViewType.CHAT;
   const showSiteChrome = currentView !== ViewType.ADMIN && !isChatView;
   const isCnyTheme = currentView !== ViewType.ADMIN && state.settings.cnyThemeActive;
+  const showDesktopSettingsEntry = currentView !== ViewType.ADMIN;
 
   useEffect(() => {
     const timer = window.setTimeout(() => setBackgroundTasksReady(true), 15000);
@@ -241,6 +245,11 @@ const App: React.FC = () => {
       localStorage.setItem('announcement:lastSeen', String(announcementUpdatedAt));
       setAnnouncementUnread(false);
     }
+  };
+
+  const openUserSettings = () => {
+    setUserSettingsOpen(true);
+    setMobileMenuOpen(false);
   };
 
   const formatNotificationTime = (value?: number | null) => {
@@ -550,6 +559,20 @@ const App: React.FC = () => {
         title={`连续登录 ${streakCelebrationDays} 天！`}
         subtitle="彩纸礼花送给你～"
       />
+      {showDesktopSettingsEntry && (
+        <button
+          type="button"
+          onClick={openUserSettings}
+          className="fixed z-[55] hidden items-center gap-2 rounded-[20px] border-2 border-ink bg-white px-4 py-2 text-sm font-bold text-ink shadow-paper transition-all hover:-translate-y-0.5 hover:bg-highlight sm:flex"
+          style={{
+            top: 'calc(env(safe-area-inset-top, 0px) + 12px)',
+            right: 'calc(env(safe-area-inset-right, 0px) + 16px)',
+          }}
+        >
+          <Settings2 className="h-4 w-4" />
+          <span>设置</span>
+        </button>
+      )}
       {/* Top Navigation */}
       {showSiteChrome && (
         <header className={`sticky top-0 z-50 w-full border-b-2 px-4 md:px-6 py-3 shadow-[0_4px_0_0_rgba(0,0,0,0.1)] min-h-[96px] sm:min-h-[72px] bg-opacity-95 backdrop-blur-sm ${isCnyTheme ? 'border-cny-dark-red bg-gradient-to-r from-cny-dark-red via-cny-red to-cny-dark-red' : 'border-black bg-[#f9f7f1]'}`}>
@@ -695,6 +718,10 @@ const App: React.FC = () => {
           {mobileMenuOpen && (
             <div className={`sm:hidden absolute top-full left-0 w-full border-b-2 shadow-xl p-4 flex flex-col gap-3 animate-in slide-in-from-top-2 z-50 ${isCnyTheme ? 'bg-cny-paper border-cny-dark-red' : 'bg-paper border-ink'}`}>
               <MobileNavItem
+                label="设置"
+                onClick={openUserSettings}
+              />
+              <MobileNavItem
                 label="最新吃瓜"
                 onClick={() => {
                   navigate(ViewType.HOME);
@@ -787,6 +814,11 @@ const App: React.FC = () => {
           <p className="text-sm text-pencil">暂无公告</p>
         )}
       </Modal>
+
+      <UserSettingsModal
+        isOpen={userSettingsOpen}
+        onClose={() => setUserSettingsOpen(false)}
+      />
 
       {/* Footer only for non-admin */}
       {showSiteChrome && (
