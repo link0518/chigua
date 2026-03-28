@@ -85,6 +85,7 @@ const App: React.FC = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [announcementOpen, setAnnouncementOpen] = useState(false);
   const [userSettingsOpen, setUserSettingsOpen] = useState(false);
+  const [settingsChecked, setSettingsChecked] = useState(false);
   const [announcementContent, setAnnouncementContent] = useState('');
   const [announcementUpdatedAt, setAnnouncementUpdatedAt] = useState<number | null>(null);
   const [announcementUnread, setAnnouncementUnread] = useState(false);
@@ -100,7 +101,7 @@ const App: React.FC = () => {
   const [streakCelebrationDays, setStreakCelebrationDays] = useState(7);
   const streakCelebrationMarkedRef = useRef(false);
   const [backgroundTasksReady, setBackgroundTasksReady] = useState(false);
-  const chatEnabled = state.settings.chatEnabled;
+  const chatEnabled = settingsChecked ? state.settings.chatEnabled : false;
   const isChatView = currentView === ViewType.CHAT;
   const showSiteChrome = currentView !== ViewType.ADMIN && !isChatView;
   const isCnyTheme = currentView !== ViewType.ADMIN && state.settings.cnyThemeActive;
@@ -158,7 +159,11 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    loadSettings().catch(() => { });
+    loadSettings()
+      .catch(() => { })
+      .finally(() => {
+        setSettingsChecked(true);
+      });
   }, [loadSettings]);
 
   useEffect(() => {
@@ -188,6 +193,9 @@ const App: React.FC = () => {
   }, [isCnyTheme]);
 
   useEffect(() => {
+    if (!settingsChecked) {
+      return;
+    }
     if (chatEnabled) {
       return;
     }
@@ -198,7 +206,7 @@ const App: React.FC = () => {
     if (window.location.pathname !== '/') {
       window.history.replaceState({}, '', '/');
     }
-  }, [chatEnabled, currentView]);
+  }, [chatEnabled, currentView, settingsChecked]);
 
   useEffect(() => {
     let active = true;
