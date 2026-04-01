@@ -1,4 +1,4 @@
-import React, { useImperativeHandle, useMemo, useRef } from 'react';
+import React, { useCallback, useImperativeHandle, useMemo, useRef } from 'react';
 import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror';
 import { EditorSelection, Prec } from '@codemirror/state';
 import { EditorView, keymap } from '@codemirror/view';
@@ -27,6 +27,7 @@ interface MarkdownEditorProps {
   minHeight?: string;
   autoFocus?: boolean;
   ariaLabel?: string;
+  onPasteImage?: (file: File) => void;
 }
 
 type TransformInput = {
@@ -276,8 +277,34 @@ const MarkdownEditor = React.forwardRef<MarkdownEditorHandle, MarkdownEditorProp
   minHeight = '300px',
   autoFocus = false,
   ariaLabel = 'Markdown 编辑器',
+  onPasteImage,
 }, ref) => {
   const editorRef = useRef<ReactCodeMirrorRef | null>(null);
+  const onPasteImageRef = useRef(onPasteImage);
+  onPasteImageRef.current = onPasteImage;
+
+  const pasteImageHandler = useCallback(() => {
+    return EditorView.domEventHandlers({
+      paste(event) {
+        const cb = onPasteImageRef.current;
+        if (!cb) return false;
+        const items = event.clipboardData?.items;
+        if (!items) return false;
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          if (item.kind === 'file' && item.type.startsWith('image/')) {
+            const file = item.getAsFile();
+            if (file) {
+              event.preventDefault();
+              cb(file);
+              return true;
+            }
+          }
+        }
+        return false;
+      },
+    });
+  }, []);
 
   const extensions = useMemo(() => ([
     markdown(),
@@ -297,8 +324,9 @@ const MarkdownEditor = React.forwardRef<MarkdownEditorHandle, MarkdownEditorProp
         { key: 'Mod-k', run: (view) => runEditorCommand(view, 'link') },
       ])
     ),
+    pasteImageHandler(),
     editorTheme,
-  ]), [ariaLabel]);
+  ]), [ariaLabel, pasteImageHandler]);
 
   useImperativeHandle(ref, () => ({
     focus: () => {

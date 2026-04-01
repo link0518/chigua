@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Image, Send, Smile } from 'lucide-react';
 import Modal from './Modal';
 import { SketchButton } from './SketchUI';
@@ -180,7 +180,22 @@ const CommentInputModal: React.FC<CommentInputModalProps> = ({
             ref={textareaRef}
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder="留下你的评论...（支持 Markdown / 表情包）"
+            onPaste={(e) => {
+              const items = e.clipboardData?.items;
+              if (!items) return;
+              for (let i = 0; i < items.length; i++) {
+                const item = items[i];
+                if (item.kind === 'file' && item.type.startsWith('image/')) {
+                  const file = item.getAsFile();
+                  if (file) {
+                    e.preventDefault();
+                    void handleUploadFile(file);
+                    return;
+                  }
+                }
+              }
+            }}
+            placeholder="留下你的评论...（支持 Markdown / 表情包 / 粘贴图片）"
             maxLength={maxLength + 10}
             className="w-full flex-1 min-h-[72px] sm:min-h-[160px] p-3 border-2 border-ink rounded-lg resize-none font-sans bg-white focus:outline-none focus:shadow-sketch-sm transition-shadow"
           />

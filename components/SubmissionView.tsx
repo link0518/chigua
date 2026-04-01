@@ -416,6 +416,7 @@ const SubmissionView: React.FC = () => {
                       minHeight="300px"
                       autoFocus
                       ariaLabel="投稿 Markdown 编辑器"
+                      onPasteImage={handleUploadFile}
                     />
                   </div>
                 )}
