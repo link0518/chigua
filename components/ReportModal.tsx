@@ -43,11 +43,12 @@ const ReportModal: React.FC<ReportModalProps> = ({
 
     const reason = selectedReason === 'other' ? customReason : REPORT_REASONS.find(r => r.id === selectedReason)?.label || '';
     try {
+      let result = null;
       if (targetType === 'comment') {
         if (!commentId) {
           throw new Error('评论不存在');
         }
-        await reportComment(commentId, reason);
+        result = await reportComment(commentId, reason);
       } else if (targetType === 'chat') {
         if (!chatMessageId || chatMessageId <= 0) {
           throw new Error('消息不存在');
@@ -57,12 +58,16 @@ const ReportModal: React.FC<ReportModalProps> = ({
         if (!postId) {
           throw new Error('帖子不存在');
         }
-        await reportPost(postId, reason);
+        result = await reportPost(postId, reason);
       }
       setSelectedReason('');
       setCustomReason('');
       onClose();
-      showToast('举报已提交，感谢您的反馈！', 'success');
+      if (result?.autoHidden) {
+        showToast(targetType === 'comment' ? '举报已提交，该评论已暂时隐藏' : '举报已提交，该帖子已暂时隐藏', 'success');
+      } else {
+        showToast('举报已提交，感谢您的反馈！', 'success');
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : '举报失败，请稍后重试';
       showToast(message, 'error');

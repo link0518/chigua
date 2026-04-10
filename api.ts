@@ -182,6 +182,11 @@ export const api = {
     body: JSON.stringify({ content, reason }),
   }),
   getAdminPostComments: (postId, page = 1, limit = 100, search = '') => apiFetch(`/admin/posts/${postId}/comments${toQuery({ page, limit, search })}`),
+  getAdminHiddenContent: (params = {}) => apiFetch(`/admin/hidden-content${toQuery(params)}`),
+  handleAdminHiddenContent: (type, id, action, reason = '') => apiFetch(`/admin/hidden-content/${encodeURIComponent(type)}/${encodeURIComponent(id)}/action`, {
+    method: 'POST',
+    body: JSON.stringify({ action, reason }),
+  }),
   handleAdminComment: (commentId, action, reason = '', options = {}) => apiFetch(`/admin/comments/${commentId}/action`, {
     method: 'POST',
     body: JSON.stringify({ action, reason, ...options }),

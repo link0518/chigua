@@ -30,6 +30,9 @@ CREATE TABLE IF NOT EXISTS posts (
   updated_at INTEGER,
   deleted INTEGER NOT NULL DEFAULT 0,
   deleted_at INTEGER,
+  hidden INTEGER NOT NULL DEFAULT 0,
+  hidden_at INTEGER,
+  hidden_review_status TEXT,
   session_id TEXT,
   likes_count INTEGER NOT NULL DEFAULT 0,
   dislikes_count INTEGER NOT NULL DEFAULT 0,
@@ -80,6 +83,9 @@ CREATE TABLE IF NOT EXISTS comments (
   created_at INTEGER NOT NULL,
   deleted INTEGER NOT NULL DEFAULT 0,
   deleted_at INTEGER,
+  hidden INTEGER NOT NULL DEFAULT 0,
+  hidden_at INTEGER,
+  hidden_review_status TEXT,
   ip TEXT,
   FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
 );
@@ -321,38 +327,6 @@ CREATE TABLE IF NOT EXISTS identity_aliases (
   UNIQUE (canonical_hash, legacy_fingerprint_hash)
 );
 
-CREATE INDEX IF NOT EXISTS idx_posts_created_at ON posts(created_at);
-CREATE INDEX IF NOT EXISTS idx_posts_deleted ON posts(deleted);
-CREATE INDEX IF NOT EXISTS idx_post_reactions_fingerprint_post_id ON post_reactions_fingerprint(post_id);
-CREATE INDEX IF NOT EXISTS idx_post_reactions_fingerprint_fingerprint_created_at ON post_reactions_fingerprint(fingerprint, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_post_favorites_fingerprint_created_at ON post_favorites(fingerprint, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_comments_post_id ON comments(post_id);
-CREATE INDEX IF NOT EXISTS idx_comments_created_at ON comments(created_at);
-CREATE INDEX IF NOT EXISTS idx_comment_likes_comment_id ON comment_likes(comment_id);
-CREATE INDEX IF NOT EXISTS idx_comment_likes_fingerprint_created_at ON comment_likes(fingerprint, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status);
-CREATE INDEX IF NOT EXISTS idx_feedback_created_at ON feedback_messages(created_at);
-CREATE INDEX IF NOT EXISTS idx_feedback_read_at ON feedback_messages(read_at);
-CREATE INDEX IF NOT EXISTS idx_post_edits_post_id ON post_edits(post_id);
-CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_created_at ON admin_audit_logs(created_at);
-CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_action ON admin_audit_logs(action);
-CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_target ON admin_audit_logs(target_type, target_id);
-CREATE INDEX IF NOT EXISTS idx_notifications_recipient_created_at ON notifications(recipient_fingerprint, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_notifications_recipient_read_at ON notifications(recipient_fingerprint, read_at);
-CREATE INDEX IF NOT EXISTS idx_banned_identities_expires_at ON banned_identities(expires_at);
-CREATE INDEX IF NOT EXISTS idx_fingerprint_login_days_fingerprint_date ON fingerprint_login_days(fingerprint, date DESC);
-CREATE INDEX IF NOT EXISTS idx_vocabulary_enabled ON vocabulary_words(enabled);
-CREATE INDEX IF NOT EXISTS idx_vocabulary_updated_at ON vocabulary_words(updated_at);
-CREATE INDEX IF NOT EXISTS idx_chat_sessions_fingerprint_active ON chat_sessions(fingerprint_hash, left_at);
-CREATE INDEX IF NOT EXISTS idx_chat_sessions_joined_at ON chat_sessions(joined_at DESC);
-CREATE INDEX IF NOT EXISTS idx_chat_messages_session_created_at ON chat_messages(session_id, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_chat_messages_created_at ON chat_messages(created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_chat_messages_deleted_created_at ON chat_messages(deleted, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_chat_mutes_muted_until ON chat_mutes(muted_until);
-CREATE INDEX IF NOT EXISTS idx_chat_ban_sync_updated_at ON chat_ban_sync(updated_at DESC);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_messages_fingerprint_client_msg_id ON chat_messages(fingerprint_hash, client_msg_id);
-CREATE INDEX IF NOT EXISTS idx_identity_aliases_canonical_hash ON identity_aliases(canonical_hash, last_seen_at DESC);
-CREATE INDEX IF NOT EXISTS idx_identity_aliases_legacy_hash ON identity_aliases(legacy_fingerprint_hash, last_seen_at DESC);
 `);
 
 const ensureColumn = (table, column, definition) => {
@@ -365,11 +339,17 @@ const ensureColumn = (table, column, definition) => {
 
 ensureColumn('posts', 'ip', 'TEXT');
 ensureColumn('posts', 'fingerprint', 'TEXT');
+ensureColumn('posts', 'hidden', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('posts', 'hidden_at', 'INTEGER');
+ensureColumn('posts', 'hidden_review_status', 'TEXT');
 ensureColumn('comments', 'fingerprint', 'TEXT');
 ensureColumn('comments', 'parent_id', 'TEXT');
 ensureColumn('comments', 'reply_to_id', 'TEXT');
 ensureColumn('comments', 'deleted', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('comments', 'deleted_at', 'INTEGER');
+ensureColumn('comments', 'hidden', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('comments', 'hidden_at', 'INTEGER');
+ensureColumn('comments', 'hidden_review_status', 'TEXT');
 ensureColumn('comments', 'ip', 'TEXT');
 ensureColumn('reports', 'fingerprint', 'TEXT');
 ensureColumn('reports', 'reporter_ip', 'TEXT');
@@ -488,7 +468,49 @@ const migratePostReactionsFingerprintTable = () => {
 
 migratePostReactionsFingerprintTable();
 
-db.exec('CREATE INDEX IF NOT EXISTS idx_comments_parent_id ON comments(parent_id);');
+const ensureIndexes = () => {
+  db.exec(`
+  CREATE INDEX IF NOT EXISTS idx_posts_created_at ON posts(created_at);
+  CREATE INDEX IF NOT EXISTS idx_posts_deleted ON posts(deleted);
+  CREATE INDEX IF NOT EXISTS idx_posts_hidden_deleted_created_at ON posts(hidden, deleted, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_post_reactions_fingerprint_post_id ON post_reactions_fingerprint(post_id);
+  CREATE INDEX IF NOT EXISTS idx_post_reactions_fingerprint_fingerprint_created_at ON post_reactions_fingerprint(fingerprint, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_post_favorites_fingerprint_created_at ON post_favorites(fingerprint, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_comments_post_id ON comments(post_id);
+  CREATE INDEX IF NOT EXISTS idx_comments_created_at ON comments(created_at);
+  CREATE INDEX IF NOT EXISTS idx_comments_hidden_deleted_created_at ON comments(hidden, deleted, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_comments_parent_id ON comments(parent_id);
+  CREATE INDEX IF NOT EXISTS idx_comment_likes_comment_id ON comment_likes(comment_id);
+  CREATE INDEX IF NOT EXISTS idx_comment_likes_fingerprint_created_at ON comment_likes(fingerprint, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status);
+  CREATE INDEX IF NOT EXISTS idx_reports_post_status_created_at ON reports(post_id, status, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_reports_comment_status_created_at ON reports(comment_id, status, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_feedback_created_at ON feedback_messages(created_at);
+  CREATE INDEX IF NOT EXISTS idx_feedback_read_at ON feedback_messages(read_at);
+  CREATE INDEX IF NOT EXISTS idx_post_edits_post_id ON post_edits(post_id);
+  CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_created_at ON admin_audit_logs(created_at);
+  CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_action ON admin_audit_logs(action);
+  CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_target ON admin_audit_logs(target_type, target_id);
+  CREATE INDEX IF NOT EXISTS idx_notifications_recipient_created_at ON notifications(recipient_fingerprint, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_notifications_recipient_read_at ON notifications(recipient_fingerprint, read_at);
+  CREATE INDEX IF NOT EXISTS idx_banned_identities_expires_at ON banned_identities(expires_at);
+  CREATE INDEX IF NOT EXISTS idx_fingerprint_login_days_fingerprint_date ON fingerprint_login_days(fingerprint, date DESC);
+  CREATE INDEX IF NOT EXISTS idx_vocabulary_enabled ON vocabulary_words(enabled);
+  CREATE INDEX IF NOT EXISTS idx_vocabulary_updated_at ON vocabulary_words(updated_at);
+  CREATE INDEX IF NOT EXISTS idx_chat_sessions_fingerprint_active ON chat_sessions(fingerprint_hash, left_at);
+  CREATE INDEX IF NOT EXISTS idx_chat_sessions_joined_at ON chat_sessions(joined_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_chat_messages_session_created_at ON chat_messages(session_id, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_chat_messages_created_at ON chat_messages(created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_chat_messages_deleted_created_at ON chat_messages(deleted, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_chat_mutes_muted_until ON chat_mutes(muted_until);
+  CREATE INDEX IF NOT EXISTS idx_chat_ban_sync_updated_at ON chat_ban_sync(updated_at DESC);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_messages_fingerprint_client_msg_id ON chat_messages(fingerprint_hash, client_msg_id);
+  CREATE INDEX IF NOT EXISTS idx_identity_aliases_canonical_hash ON identity_aliases(canonical_hash, last_seen_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_identity_aliases_legacy_hash ON identity_aliases(legacy_fingerprint_hash, last_seen_at DESC);
+  `);
+};
+
+ensureIndexes();
 
 export const formatDateKey = (date = new Date()) => {
   const year = date.getFullYear();

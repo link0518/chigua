@@ -36,7 +36,7 @@ const formatDate = (timestamp) => {
 };
 
 const posts = db
-  .prepare('SELECT id, content, created_at FROM posts WHERE deleted = 0 ORDER BY created_at DESC')
+  .prepare('SELECT id, content, created_at FROM posts WHERE deleted = 0 AND hidden = 0 ORDER BY created_at DESC')
   .all();
 
 ensureDir(POSTS_DIR);

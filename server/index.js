@@ -33,6 +33,8 @@ import { registerAdminVocabularyRoutes } from './routes/admin/vocabulary-routes.
 import { registerAdminStatsRoutes } from './routes/admin/stats-routes.js';
 import { registerAdminChatRoutes } from './routes/admin/chat-routes.js';
 import { createChatRealtimeService } from './chat-realtime-service.js';
+import { registerAdminHiddenContentRoutes } from './routes/admin/hidden-content-routes.js';
+import { createHiddenContentService } from './services/hidden-content-service.js';
 import {
   db,
   formatDateKey,
@@ -116,6 +118,10 @@ const shouldServeSnapshot = (req) => {
   return rawId;
 };
 
+const canServeSnapshot = (postId) => Boolean(
+  db.prepare('SELECT 1 FROM posts WHERE id = ? AND deleted = 0 AND hidden = 0').get(postId)
+);
+
 const generateSnapshotForPost = (post) => {
   if (!post?.id) return;
   const encodedId = encodeURIComponent(post.id);
@@ -182,6 +188,7 @@ const scheduleSitemapGenerate = () => {
 app.use((req, res, next) => {
   const postId = shouldServeSnapshot(req);
   if (!postId) return next();
+  if (!canServeSnapshot(postId)) return next();
   const snapshotPath = path.join(SNAPSHOT_DIR, postId, 'index.html');
   if (!snapshotPath.startsWith(SNAPSHOT_DIR) || !isFilePath(snapshotPath)) {
     return next();
@@ -748,6 +755,11 @@ const logAdminAction = (req, payload) => {
   db.prepare('DELETE FROM admin_audit_logs WHERE created_at < ?').run(now - AUDIT_RETENTION_MS);
 };
 
+const hiddenContentService = createHiddenContentService({
+  db,
+  logAdminAction,
+});
+
 const allowRate = (key, limit, windowMs) => {
   const now = Date.now();
   const bucket = rateBuckets.get(key) || [];
@@ -1061,22 +1073,30 @@ const mapPostRow = (row, isHot) => ({
   isHot,
   imageUrl: row.image_url || '',
   createdAt: row.created_at,
+  hidden: row.hidden === 1,
   viewerReaction: row.viewer_reaction || null,
   viewerFavorited: Boolean(row.viewer_favorited),
 });
 
 const mapCommentRow = (row) => {
   const deleted = row.deleted === 1;
+  const hidden = row.hidden === 1;
   return {
     id: row.id,
     postId: row.post_id,
     parentId: row.parent_id || null,
     replyToId: row.reply_to_id || null,
-    content: deleted ? '该评论违规已处理' : row.content,
+    content: deleted
+      ? '该评论违规已处理'
+      : hidden
+        ? '该评论因举报过多暂时隐藏'
+        : row.content,
     author: row.author || '匿名',
     timestamp: formatRelativeTime(row.created_at),
     createdAt: row.created_at,
     deleted,
+    hidden,
+    hiddenAt: row.hidden_at || null,
     likes: Number(row.likes_count || 0),
     viewerLiked: Boolean(row.viewer_liked),
   };
@@ -1093,6 +1113,10 @@ const mapAdminCommentRow = (row) => ({
   createdAt: row.created_at,
   deleted: row.deleted === 1,
   deletedAt: row.deleted_at || null,
+  hidden: row.hidden === 1,
+  hiddenAt: row.hidden_at || null,
+  hiddenReviewStatus: row.hidden_review_status || null,
+  pendingReportCount: Number(row.pending_report_count || 0),
   ip: row.ip || null,
   fingerprint: row.fingerprint || null,
 });
@@ -1251,6 +1275,7 @@ registerPublicReportsRoutes(app, {
   crypto,
   incrementDailyStat,
   formatDateKey,
+  hiddenContentService,
 });
 
 registerAdminReportsRoutes(app, {
@@ -1315,6 +1340,14 @@ registerAdminChatRoutes(app, {
   requireAdmin,
   requireAdminCsrf,
   chatRealtime,
+});
+registerAdminHiddenContentRoutes(app, {
+  db,
+  requireAdmin,
+  requireAdminCsrf,
+  formatRelativeTime,
+  resolveStoredIdentityHash,
+  hiddenContentService,
 });
 registerAdminAuditRoutes(app, {
   db,

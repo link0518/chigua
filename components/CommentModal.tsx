@@ -11,6 +11,7 @@ import MemePicker, { useMemeInsert } from './MemePicker';
 import CommentInputModal from './CommentInputModal';
 import { useInsertAtCursor } from './useInsertAtCursor';
 import { consumeUploadQuota } from './uploadRateLimit';
+import { AUTO_HIDDEN_EVENT, HIDDEN_COMMENT_PLACEHOLDER, type AutoHiddenEventDetail } from '../store/contentVisibility';
 
 interface CommentModalProps {
   isOpen: boolean;
@@ -68,7 +69,7 @@ const getMostLikedComment = (items: Comment[]): Comment | null => {
 
   const walk = (list: Comment[]) => {
     list.forEach((item) => {
-      if (!item.deleted) {
+      if (!item.deleted && !item.hidden) {
         const likes = Number(item.likes || 0);
         const createdAt = Number(item.createdAt || 0);
         if (
@@ -440,6 +441,35 @@ const CommentModal: React.FC<CommentModalProps> = ({
     loadThread();
   }, [isOpen, postId, focusCommentId]);
 
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    const handleAutoHidden = (event: Event) => {
+      const detail = (event as CustomEvent<AutoHiddenEventDetail>).detail;
+      if (!detail?.autoHidden || detail.targetType !== 'comment' || !detail.targetId) {
+        return;
+      }
+
+      setComments((prev) => {
+        const next = markCommentHidden(prev, detail.targetId || '');
+        commentsRef.current = next;
+        writeCommentsCache(next, pageRef.current, hasMoreRef.current);
+        return next;
+      });
+
+      if (replyToId === detail.targetId) {
+        setReplyToId(null);
+      }
+    };
+
+    window.addEventListener(AUTO_HIDDEN_EVENT, handleAutoHidden as EventListener);
+    return () => {
+      window.removeEventListener(AUTO_HIDDEN_EVENT, handleAutoHidden as EventListener);
+    };
+  }, [isOpen, replyToId]);
+
   const handleLoadMore = async () => {
     if (loadingMoreRef.current || !hasMoreRef.current) {
       return;
@@ -560,6 +590,24 @@ const CommentModal: React.FC<CommentModalProps> = ({
       }
       if (item.replies?.length) {
         return { ...item, replies: updateCommentLike(item.replies, commentId, likes, viewerLiked) };
+      }
+      return item;
+    });
+  };
+
+  const markCommentHidden = (items: Comment[], commentId: string): Comment[] => {
+    return items.map((item) => {
+      if (item.id === commentId) {
+        return {
+          ...item,
+          hidden: true,
+          hiddenAt: Date.now(),
+          content: HIDDEN_COMMENT_PLACEHOLDER,
+          viewerLiked: false,
+        };
+      }
+      if (item.replies?.length) {
+        return { ...item, replies: markCommentHidden(item.replies, commentId) };
       }
       return item;
     });
@@ -791,6 +839,8 @@ const CommentModal: React.FC<CommentModalProps> = ({
                 const currentIndex = siblingOrderMap.get(item.id) || 1;
                 const threadLabel = parentLabel ? `${parentLabel}.${currentIndex}` : `${currentIndex}`;
                 const isDeleted = Boolean(item.deleted);
+                const isHidden = Boolean(item.hidden);
+                const isUnavailable = isDeleted || isHidden;
                 const replyLabel = depth > 0
                   ? (labelMap.get(item.replyToId || '') || parentLabel)
                   : '';
@@ -803,6 +853,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
                         <span className="text-[12px] font-mono text-gray-500">{threadLabel}楼</span>
                         <span className="text-gray-800">匿名用户</span>
                         {isDeleted && <span className="text-[11px] text-gray-400">已处理</span>}
+                        {isHidden && <span className="text-[11px] text-orange-500">已隐藏</span>}
                         {replyLabel && (
                           <span className="text-[11px] text-gray-500 sm:inline hidden">回复 {replyLabel}楼</span>
                         )}
@@ -815,7 +866,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
                           <span className="sm:inline hidden">{item.timestamp}</span>
                           <span className="sm:hidden inline">{formatCompactTime(item.createdAt) || item.timestamp}</span>
                         </span>
-                        {!isDeleted && (
+                        {!isUnavailable && (
                           <button
                             type="button"
                             onClick={() => handleToggleLike(item.id)}
@@ -827,7 +878,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
                             <span className="text-[12px] font-bold">{Number(item.likes || 0)}</span>
                           </button>
                         )}
-                        {!isDeleted && (
+                        {!isUnavailable && (
                           <button
                             type="button"
                             onClick={() => setReportModal({ isOpen: true, commentId: item.id, content: item.content })}
@@ -838,7 +889,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
                             举报
                           </button>
                         )}
-                        {!isDeleted && (
+                        {!isUnavailable && (
                           <button
                             type="button"
                             onClick={() => setReplyToId(item.id)}
@@ -851,7 +902,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
                         )}
                       </div>
                     </div>
-                    <div className={depth === 0 ? `text-[13px] mt-1 ${isDeleted ? 'text-gray-400 italic' : 'text-ink'}` : `text-[12px] mt-0.5 ${isDeleted ? 'text-gray-400 italic' : 'text-ink/90'}`}>
+                    <div className={depth === 0 ? `text-[13px] mt-1 ${isUnavailable ? 'text-gray-400 italic' : 'text-ink'}` : `text-[12px] mt-0.5 ${isUnavailable ? 'text-gray-400 italic' : 'text-ink/90'}`}>
                       <MarkdownRenderer
                         content={item.content}
                         className={`${depth === 0 ? 'leading-5' : 'leading-4'} [&_.markdown-image-link]:block [&_.markdown-image]:max-h-32 md:[&_.markdown-image]:max-h-44 [&_.markdown-image]:object-contain [&_.markdown-image]:mx-auto [&_.markdown-image]:w-auto [&_.markdown-image]:!max-w-52 md:[&_.markdown-image]:!max-w-64`}

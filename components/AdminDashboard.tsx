@@ -5,7 +5,7 @@ import {
 } from 'recharts';
 import { Flag, Gavel, BarChart2, Bell, Search, Trash2, Ban, Eye, EyeOff, LayoutDashboard, LogOut, CheckCircle, XCircle, FileText, PenSquare, Pencil, RotateCcw, Shield, ClipboardList, MessageSquare, Menu, X, Settings } from 'lucide-react';
 import { SketchButton, Badge, roughBorderClassSm } from './SketchUI';
-import { AdminAuditLog, AdminComment, AdminPost, FeedbackMessage, Report } from '../types';
+import { AdminAuditLog, AdminComment, AdminHiddenItem, AdminPost, FeedbackMessage, Report } from '../types';
 import { useApp } from '../store/AppContext';
 import Modal from './Modal';
 import { api } from '../api';
@@ -19,9 +19,12 @@ import {
 import MarkdownRenderer from './MarkdownRenderer';
 import AdminChatPanel from './AdminChatPanel';
 
-type AdminView = 'overview' | 'reports' | 'processed' | 'posts' | 'compose' | 'bans' | 'audit' | 'feedback' | 'announcement' | 'settings' | 'chat';
-type PostStatusFilter = 'all' | 'active' | 'deleted';
+type AdminView = 'overview' | 'reports' | 'processed' | 'posts' | 'hidden' | 'compose' | 'bans' | 'audit' | 'feedback' | 'announcement' | 'settings' | 'chat';
+type PostStatusFilter = 'all' | 'active' | 'hidden' | 'deleted';
 type PostSort = 'time' | 'hot' | 'reports';
+type HiddenTypeFilter = 'all' | 'post' | 'comment';
+type HiddenReviewFilter = 'all' | 'pending' | 'kept';
+type HiddenAction = 'keep' | 'restore';
 type ReportAction = 'ignore' | 'delete' | 'mute' | 'ban';
 type ReportConfirmModalState = {
   isOpen: boolean;
@@ -36,6 +39,7 @@ type ReportConfirmModalState = {
 
 const WEEK_DAYS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
 const POST_PAGE_SIZE = 10;
+const HIDDEN_PAGE_SIZE = 10;
 const AUDIT_PAGE_SIZE = 12;
 const FEEDBACK_PAGE_SIZE = 8;
 const VOCABULARY_PAGE_SIZE = 20;
@@ -196,6 +200,13 @@ const AdminDashboard: React.FC = () => {
   const [postTotal, setPostTotal] = useState(0);
   const [postItems, setPostItems] = useState<AdminPost[]>([]);
   const [postLoading, setPostLoading] = useState(false);
+  const [hiddenType, setHiddenType] = useState<HiddenTypeFilter>('all');
+  const [hiddenReview, setHiddenReview] = useState<HiddenReviewFilter>('pending');
+  const [hiddenSearch, setHiddenSearch] = useState('');
+  const [hiddenPage, setHiddenPage] = useState(1);
+  const [hiddenTotal, setHiddenTotal] = useState(0);
+  const [hiddenItems, setHiddenItems] = useState<AdminHiddenItem[]>([]);
+  const [hiddenLoading, setHiddenLoading] = useState(false);
   const [selectedPosts, setSelectedPosts] = useState<Set<string>>(new Set());
   const [selectedReports, setSelectedReports] = useState<Set<string>>(new Set());
   const [composeText, setComposeText] = useState('');
@@ -299,6 +310,12 @@ const AdminDashboard: React.FC = () => {
   }>({ isOpen: false, postId: '', content: '' });
   const [postComments, setPostComments] = useState<AdminComment[]>([]);
   const [postCommentsLoading, setPostCommentsLoading] = useState(false);
+  const [hiddenActionModal, setHiddenActionModal] = useState<{
+    isOpen: boolean;
+    item: AdminHiddenItem | null;
+    action: HiddenAction;
+    reason: string;
+  }>({ isOpen: false, item: null, action: 'keep', reason: '' });
   const [reportDetail, setReportDetail] = useState<{ isOpen: boolean; report: Report | null }>({ isOpen: false, report: null });
   const composeMaxLength = 2000;
   const appVersion = import.meta.env.VITE_APP_VERSION || '0.0.0';
@@ -459,6 +476,26 @@ const AdminDashboard: React.FC = () => {
     }
   }, [postPage, postSearch, postSort, postStatus, showToast]);
 
+  const fetchHiddenItems = useCallback(async () => {
+    setHiddenLoading(true);
+    try {
+      const data = await api.getAdminHiddenContent({
+        type: hiddenType,
+        review: hiddenReview,
+        search: hiddenSearch.trim(),
+        page: hiddenPage,
+        limit: HIDDEN_PAGE_SIZE,
+      });
+      setHiddenItems(data.items || []);
+      setHiddenTotal(data.total || 0);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '隐藏内容加载失败，请稍后重试';
+      showToast(message, 'error');
+    } finally {
+      setHiddenLoading(false);
+    }
+  }, [hiddenPage, hiddenReview, hiddenSearch, hiddenType, showToast]);
+
   const fetchPostComments = useCallback(async (postId: string, search = '') => {
     setPostCommentsLoading(true);
     try {
@@ -600,6 +637,16 @@ const AdminDashboard: React.FC = () => {
     }, 300);
     return () => clearTimeout(timer);
   }, [currentView, fetchAdminPosts]);
+
+  useEffect(() => {
+    if (currentView !== 'hidden') {
+      return;
+    }
+    const timer = setTimeout(() => {
+      fetchHiddenItems().catch(() => { });
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [currentView, fetchHiddenItems]);
 
   useEffect(() => {
     if (currentView !== 'bans') {
@@ -822,6 +869,40 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
+  const openHiddenActionModal = (item: AdminHiddenItem, action: HiddenAction) => {
+    setHiddenActionModal({
+      isOpen: true,
+      item,
+      action,
+      reason: '',
+    });
+  };
+
+  const getHiddenActionLabel = (action: HiddenAction) => (action === 'keep' ? '保持隐藏' : '恢复内容');
+
+  const confirmHiddenAction = async () => {
+    const { item, action, reason } = hiddenActionModal;
+    if (!item) {
+      return;
+    }
+    try {
+      await api.handleAdminHiddenContent(item.type, item.id, action, reason);
+      const targetLabel = item.type === 'post' ? '帖子' : '评论';
+      showToast(action === 'keep' ? `${targetLabel}将继续保持隐藏` : `${targetLabel}已恢复显示`, 'success');
+      setHiddenActionModal({ isOpen: false, item: null, action: 'keep', reason: '' });
+      await fetchHiddenItems();
+      await fetchAdminPosts();
+      await loadReports();
+      await loadStats();
+      if (postCommentsModal.isOpen && item.type === 'comment' && item.postId && item.postId === postCommentsModal.postId) {
+        await fetchPostComments(item.postId, postSearch.trim());
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '处理失败，请稍后重试';
+      showToast(message, 'error');
+    }
+  };
+
   const getPostActionLabel = (action: 'delete' | 'restore') => (action === 'delete' ? '删除帖子' : '恢复帖子');
   const getBulkActionLabel = (action: 'delete' | 'restore' | 'ban' | 'unban') => {
     switch (action) {
@@ -889,6 +970,11 @@ const AdminDashboard: React.FC = () => {
     if (currentView === 'posts') {
       setPostSearch(nextValue);
       setPostPage(1);
+      return;
+    }
+    if (currentView === 'hidden') {
+      setHiddenSearch(nextValue);
+      setHiddenPage(1);
       return;
     }
     if (currentView === 'audit') {
@@ -981,7 +1067,7 @@ const AdminDashboard: React.FC = () => {
 
   const renderAdminCommentItem = (item: AdminComment, depth = 0): React.ReactNode => {
     const indent = Math.min(depth * 16, 48);
-    const contentClass = item.deleted ? 'text-pencil line-through' : 'text-ink';
+    const contentClass = item.deleted ? 'text-pencil line-through' : item.hidden ? 'text-pencil' : 'text-ink';
     const content = postSearch.trim()
       ? getHighlightedText(item.content || '（无内容）', postSearch.trim())
       : (item.content || '（无内容）');
@@ -991,6 +1077,7 @@ const AdminDashboard: React.FC = () => {
           <span className="bg-gray-100 border border-ink text-ink text-[10px] font-bold px-2 py-0.5 rounded font-sans">#{item.id}</span>
           <span>{item.timestamp}</span>
           {item.deleted && <Badge color="bg-gray-200">已删除</Badge>}
+          {!item.deleted && item.hidden && <Badge color="bg-yellow-100">已隐藏</Badge>}
           {renderIdentity(item)}
         </div>
         <p className={`text-sm font-sans leading-6 ${contentClass}`}>{content}</p>
@@ -1528,8 +1615,10 @@ const AdminDashboard: React.FC = () => {
   );
 
   const totalPostPages = Math.max(Math.ceil(postTotal / POST_PAGE_SIZE), 1);
+  const totalHiddenPages = Math.max(Math.ceil(hiddenTotal / HIDDEN_PAGE_SIZE), 1);
   const isReportView = currentView === 'reports' || currentView === 'processed';
   const isPostView = currentView === 'posts';
+  const isHiddenView = currentView === 'hidden';
   const isBanView = currentView === 'bans';
   const isAuditView = currentView === 'audit';
   const isFeedbackView = currentView === 'feedback';
@@ -1554,6 +1643,7 @@ const AdminDashboard: React.FC = () => {
             <nav className="flex flex-col gap-3 font-sans font-bold text-sm">
               <NavItem view="overview" icon={<LayoutDashboard size={18} />} label="概览" />
               <NavItem view="posts" icon={<FileText size={18} />} label="帖子管理" />
+              <NavItem view="hidden" icon={<EyeOff size={18} />} label="隐藏内容" />
               <NavItem view="compose" icon={<PenSquare size={18} />} label="后台投稿" />
               <NavItem view="announcement" icon={<Bell size={18} />} label="公告发布" />
               <NavItem view="settings" icon={<Settings size={18} />} label="系统设置" />
@@ -1592,29 +1682,33 @@ const AdminDashboard: React.FC = () => {
             </button>
             <h2 className="text-xl sm:text-2xl font-display flex items-center gap-2 flex-wrap">
               {currentView === 'overview' && <><LayoutDashboard /> 概览</>}
-                {currentView === 'posts' && <><FileText /> 帖子管理</>}
-                {currentView === 'compose' && <><PenSquare /> 后台投稿</>}
-                {currentView === 'announcement' && <><Bell /> 公告发布</>}
-                {currentView === 'settings' && <><Settings /> 系统设置</>}
-                {currentView === 'feedback' && <><MessageSquare /> 留言管理</>}
-                {currentView === 'chat' && <><MessageSquare /> 聊天室管理</>}
-                {currentView === 'reports' && <><Flag /> 待处理举报</>}
-                {currentView === 'processed' && <><Gavel /> 已处理</>}
-                {currentView === 'bans' && <><Shield /> 封禁管理</>}
-                {currentView === 'audit' && <><ClipboardList /> 操作审计</>}
+              {currentView === 'posts' && <><FileText /> 帖子管理</>}
+              {currentView === 'hidden' && <><EyeOff /> 隐藏内容</>}
+              {currentView === 'compose' && <><PenSquare /> 后台投稿</>}
+              {currentView === 'announcement' && <><Bell /> 公告发布</>}
+              {currentView === 'settings' && <><Settings /> 系统设置</>}
+              {currentView === 'feedback' && <><MessageSquare /> 留言管理</>}
+              {currentView === 'chat' && <><MessageSquare /> 聊天室管理</>}
+              {currentView === 'reports' && <><Flag /> 待处理举报</>}
+              {currentView === 'processed' && <><Gavel /> 已处理</>}
+              {currentView === 'bans' && <><Shield /> 封禁管理</>}
+              {currentView === 'audit' && <><ClipboardList /> 操作审计</>}
             </h2>
           </div>
           <div className="flex flex-wrap sm:flex-nowrap items-center gap-3 w-full sm:w-auto">
-            {(isReportView || isPostView || isAuditView || isFeedbackView) && (
+            {(isReportView || isPostView || isHiddenView || isAuditView || isFeedbackView) && (
               <div className="relative w-full sm:w-64">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-pencil w-4 h-4" />
                 <input
                   type="text"
-                  value={isPostView ? postSearch : isAuditView ? auditSearch : isFeedbackView ? feedbackSearch : searchQuery}
+                  value={isPostView ? postSearch : isHiddenView ? hiddenSearch : isAuditView ? auditSearch : isFeedbackView ? feedbackSearch : searchQuery}
                   onChange={(e) => {
                     if (isPostView) {
                       setPostSearch(e.target.value);
                       setPostPage(1);
+                    } else if (isHiddenView) {
+                      setHiddenSearch(e.target.value);
+                      setHiddenPage(1);
                     } else if (isAuditView) {
                       setAuditSearch(e.target.value);
                       setAuditPage(1);
@@ -1625,7 +1719,7 @@ const AdminDashboard: React.FC = () => {
                       setSearchQuery(e.target.value);
                     }
                   }}
-                  placeholder={isPostView ? '搜索 ID/内容/IP/身份...' : isAuditView ? '搜索操作/目标/管理员...' : isFeedbackView ? '搜索内容或联系方式/IP/身份...' : '搜索 ID/内容/IP/身份...'}
+                  placeholder={isPostView ? '搜索帖子或评论内容/ID/IP/身份...' : isHiddenView ? '搜索隐藏帖子或评论/ID/IP/身份...' : isAuditView ? '搜索操作/目标/管理员...' : isFeedbackView ? '搜索内容或联系方式/IP/身份...' : '搜索 ID/内容/IP/身份...'}
                   className="pl-9 pr-4 py-2 rounded-full border-2 border-ink bg-white text-sm focus:shadow-sketch-sm outline-none transition-all w-full font-sans"
                 />
               </div>
@@ -1670,6 +1764,7 @@ const AdminDashboard: React.FC = () => {
                 <nav className="flex flex-col gap-3 font-sans font-bold text-sm">
                   <NavItem view="overview" icon={<LayoutDashboard size={18} />} label="概览" onSelect={() => setMobileNavOpen(false)} />
                   <NavItem view="posts" icon={<FileText size={18} />} label="帖子管理" onSelect={() => setMobileNavOpen(false)} />
+                  <NavItem view="hidden" icon={<EyeOff size={18} />} label="隐藏内容" onSelect={() => setMobileNavOpen(false)} />
                   <NavItem view="compose" icon={<PenSquare size={18} />} label="后台投稿" onSelect={() => setMobileNavOpen(false)} />
                   <NavItem view="announcement" icon={<Bell size={18} />} label="公告发布" onSelect={() => setMobileNavOpen(false)} />
                   <NavItem view="settings" icon={<Settings size={18} />} label="系统设置" onSelect={() => setMobileNavOpen(false)} />
@@ -1833,7 +1928,7 @@ const AdminDashboard: React.FC = () => {
                 <div className="flex flex-col gap-3 mb-6">
                   <div className="flex flex-wrap items-center gap-3">
                     <span className="text-xs text-pencil font-sans">状态</span>
-                    {(['all', 'active', 'deleted'] as PostStatusFilter[]).map((status) => (
+                    {(['all', 'active', 'hidden', 'deleted'] as PostStatusFilter[]).map((status) => (
                       <button
                         key={status}
                         onClick={() => {
@@ -1843,7 +1938,7 @@ const AdminDashboard: React.FC = () => {
                         className={`px-3 py-1 text-xs font-bold rounded-full border-2 transition-all ${postStatus === status ? 'border-ink bg-highlight' : 'border-transparent bg-white hover:border-ink'
                           }`}
                       >
-                        {status === 'all' ? '全部' : status === 'active' ? '未删除' : '已删除'}
+                        {status === 'all' ? '全部' : status === 'active' ? '正常' : status === 'hidden' ? '已隐藏' : '已删除'}
                       </button>
                     ))}
                   </div>
@@ -1942,12 +2037,17 @@ const AdminDashboard: React.FC = () => {
                               />
                               <span className="bg-gray-100 border border-ink text-ink text-[10px] font-bold px-2 py-0.5 rounded font-sans">ID: #{post.id}</span>
                               <span className="text-pencil text-xs font-bold font-sans">{post.timestamp}</span>
-                              <Badge color={post.deleted ? 'bg-gray-200' : 'bg-highlight'}>
-                                {post.deleted ? '已删除' : '正常'}
+                              <Badge color={post.deleted ? 'bg-gray-200' : post.hidden ? 'bg-yellow-100' : 'bg-highlight'}>
+                                {post.deleted ? '已删除' : post.hidden ? '已隐藏' : '正常'}
                               </Badge>
                               <span className="text-ink text-xs flex items-center gap-1 border border-ink px-2 py-0.5 rounded font-bold font-sans">
                                 举报 {post.reports}
                               </span>
+                              {(post.pendingReportCount || 0) > 0 && (
+                                <span className="text-ink text-xs flex items-center gap-1 border border-ink px-2 py-0.5 rounded font-bold font-sans bg-yellow-50">
+                                  待处理 {post.pendingReportCount}
+                                </span>
+                              )}
                             </div>
                             <p className="text-ink text-base leading-relaxed font-sans font-semibold line-clamp-2">
                               "{postSearch.trim() ? getHighlightedText(post.content, postSearch.trim()) : post.content}"
@@ -1964,6 +2064,7 @@ const AdminDashboard: React.FC = () => {
                                         <span className="bg-gray-100 border border-ink text-ink text-[10px] font-bold px-2 py-0.5 rounded font-sans">#{comment.id}</span>
                                         <span className="ml-2">{comment.timestamp}</span>
                                         {comment.deleted && <span className="ml-2 text-xs text-pencil">已删除</span>}
+                                        {!comment.deleted && comment.hidden && <span className="ml-2 text-xs text-pencil">已隐藏</span>}
                                       </div>
                                       <p className="text-sm font-sans text-ink">
                                         {getHighlightedText(comment.content || '（无内容）', postSearch.trim())}
@@ -1984,6 +2085,7 @@ const AdminDashboard: React.FC = () => {
                               <span>点赞 {post.likes}</span>
                               <span>评论 {post.comments}</span>
                               <span>举报 {post.reports}</span>
+                              {(post.pendingReportCount || 0) > 0 && <span>待处理举报 {post.pendingReportCount}</span>}
                               {renderIdentity(post)}
                             </div>
                           </div>
@@ -2049,6 +2151,153 @@ const AdminDashboard: React.FC = () => {
                       className="px-4 py-2 text-sm"
                       disabled={postPage >= totalPostPages}
                       onClick={() => setPostPage((prev) => Math.min(prev + 1, totalPostPages))}
+                    >
+                      下一页
+                    </SketchButton>
+                  </div>
+                )}
+              </section>
+            )}
+
+            {/* Hidden Content View */}
+            {currentView === 'hidden' && (
+              <section>
+                <div className="flex flex-col gap-3 mb-6">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="text-xs text-pencil font-sans">类型</span>
+                    {(['all', 'post', 'comment'] as HiddenTypeFilter[]).map((type) => (
+                      <button
+                        key={type}
+                        onClick={() => {
+                          setHiddenType(type);
+                          setHiddenPage(1);
+                        }}
+                        className={`px-3 py-1 text-xs font-bold rounded-full border-2 transition-all ${hiddenType === type ? 'border-ink bg-highlight' : 'border-transparent bg-white hover:border-ink'
+                          }`}
+                      >
+                        {type === 'all' ? '全部' : type === 'post' ? '帖子' : '评论'}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="text-xs text-pencil font-sans">审核</span>
+                    {(['pending', 'kept', 'all'] as HiddenReviewFilter[]).map((review) => (
+                      <button
+                        key={review}
+                        onClick={() => {
+                          setHiddenReview(review);
+                          setHiddenPage(1);
+                        }}
+                        className={`px-3 py-1 text-xs font-bold rounded-full border-2 transition-all ${hiddenReview === review ? 'border-ink bg-highlight' : 'border-transparent bg-white hover:border-ink'
+                          }`}
+                      >
+                        {review === 'pending' ? '待处理' : review === 'kept' ? '已保持隐藏' : '全部'}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex items-center justify-between text-xs text-pencil font-sans">
+                    <span>共 {hiddenTotal} 条</span>
+                    <span>第 {hiddenPage} / {totalHiddenPages} 页</span>
+                  </div>
+                </div>
+
+                {hiddenLoading ? (
+                  <div className="text-center py-16 bg-white border-2 border-ink rounded-lg">
+                    <span className="text-6xl mb-4 block">🙈</span>
+                    <h3 className="font-display text-2xl text-ink mb-2">正在加载隐藏内容</h3>
+                    <p className="font-hand text-lg text-pencil">请稍等片刻</p>
+                  </div>
+                ) : hiddenItems.length === 0 ? (
+                  <div className="text-center py-16 bg-white border-2 border-ink rounded-lg">
+                    <span className="text-6xl mb-4 block">🧹</span>
+                    <h3 className="font-display text-2xl text-ink mb-2">暂无隐藏内容</h3>
+                    <p className="font-hand text-lg text-pencil">当前筛选条件下没有需要处理的内容</p>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-4">
+                    {hiddenItems.map((item) => (
+                      <div key={`${item.type}-${item.id}`} className="bg-white p-5 rounded-lg border-2 border-ink shadow-sketch-sm hover:shadow-sketch transition-all">
+                        <div className="flex flex-col md:flex-row gap-6 justify-between items-start">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-3 flex-wrap">
+                              <span className={`text-xs flex items-center gap-1 border border-ink px-2 py-0.5 rounded font-bold font-sans ${item.type === 'post' ? 'bg-blue-50 text-blue-700' : 'bg-orange-50 text-orange-700'}`}>
+                                {item.type === 'post' ? '隐藏帖子' : '隐藏评论'}
+                              </span>
+                              <span className="bg-gray-100 border border-ink text-ink text-[10px] font-bold px-2 py-0.5 rounded font-sans">ID: #{item.id}</span>
+                              <span className="text-pencil text-xs font-bold font-sans">{item.timestamp}</span>
+                              <Badge color={item.hiddenReviewStatus === 'kept' ? 'bg-yellow-100' : 'bg-highlight'}>
+                                {item.hiddenReviewStatus === 'kept' ? '已保持隐藏' : '待处理'}
+                              </Badge>
+                              <span className="text-ink text-xs flex items-center gap-1 border border-ink px-2 py-0.5 rounded font-bold font-sans">
+                                待处理举报 {item.pendingReportCount || 0}
+                              </span>
+                            </div>
+
+                            {item.type === 'comment' && (
+                              <div className="mb-3 rounded-lg border border-dashed border-ink/40 bg-gray-50 p-3">
+                                <div className="text-[11px] text-pencil font-sans mb-1">
+                                  <span>所属帖子 #{item.postId || '-'}</span>
+                                  {item.parentId && <span className="ml-3">父评论 #{item.parentId}</span>}
+                                  {item.replyToId && <span className="ml-3">回复 #{item.replyToId}</span>}
+                                </div>
+                                <p className="text-sm font-sans text-pencil line-clamp-2">
+                                  {hiddenSearch.trim()
+                                    ? getHighlightedText(item.postContent || '（无帖子内容）', hiddenSearch.trim())
+                                    : (item.postContent || '（无帖子内容）')}
+                                </p>
+                              </div>
+                            )}
+
+                            <p className="text-ink text-base leading-relaxed font-sans font-semibold whitespace-pre-wrap break-words">
+                              "{hiddenSearch.trim() ? getHighlightedText(item.content || '（无内容）', hiddenSearch.trim()) : (item.content || '（无内容）')}"
+                            </p>
+
+                            <div className="flex flex-wrap items-center gap-4 text-xs text-pencil font-sans mt-3">
+                              <span>隐藏时间 {formatTimestamp(item.hiddenAt || null)}</span>
+                              {item.type === 'post' && <span>内容类型 帖子</span>}
+                              {item.type === 'comment' && <span>内容类型 评论</span>}
+                              {renderIdentity(item)}
+                            </div>
+                          </div>
+
+                          <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 min-w-fit mt-2 md:mt-0 font-sans">
+                            <SketchButton
+                              variant="secondary"
+                              className="h-10 px-3 text-xs flex items-center gap-1"
+                              onClick={() => openHiddenActionModal(item, 'keep')}
+                            >
+                              <EyeOff size={14} /> 保持隐藏
+                            </SketchButton>
+                            <SketchButton
+                              variant="primary"
+                              className="h-10 px-3 text-xs flex items-center gap-1 text-white"
+                              onClick={() => openHiddenActionModal(item, 'restore')}
+                            >
+                              <RotateCcw size={14} /> 恢复
+                            </SketchButton>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {hiddenItems.length > 0 && (
+                  <div className="flex items-center justify-center gap-4 mt-6">
+                    <SketchButton
+                      variant="secondary"
+                      className="px-4 py-2 text-sm"
+                      disabled={hiddenPage <= 1}
+                      onClick={() => setHiddenPage((prev) => Math.max(prev - 1, 1))}
+                    >
+                      上一页
+                    </SketchButton>
+                    <span className="text-xs text-pencil font-sans">第 {hiddenPage} / {totalHiddenPages} 页</span>
+                    <SketchButton
+                      variant="secondary"
+                      className="px-4 py-2 text-sm"
+                      disabled={hiddenPage >= totalHiddenPages}
+                      onClick={() => setHiddenPage((prev) => Math.min(prev + 1, totalHiddenPages))}
                     >
                       下一页
                     </SketchButton>
@@ -3010,6 +3259,53 @@ const AdminDashboard: React.FC = () => {
               {buildAdminCommentTree(postComments).map((item) => renderAdminCommentItem(item))}
             </div>
           )}
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={hiddenActionModal.isOpen}
+        onClose={() => setHiddenActionModal({ isOpen: false, item: null, action: 'keep', reason: '' })}
+        title="隐藏内容处理"
+      >
+        <div className="flex flex-col gap-4">
+          <p className="font-hand text-lg text-ink">
+            确定要 <strong className="text-red-600">{getHiddenActionLabel(hiddenActionModal.action)}</strong> 吗？
+          </p>
+          {hiddenActionModal.item && (
+            <div className="p-3 bg-gray-50 border border-dashed border-ink rounded-lg">
+              <p className="text-xs text-pencil font-sans mb-2">
+                {hiddenActionModal.item.type === 'post' ? '帖子' : '评论'} #{hiddenActionModal.item.id}
+              </p>
+              <p className="text-sm text-pencil font-sans line-clamp-3">
+                "{hiddenActionModal.item.content || '（无内容）'}"
+              </p>
+            </div>
+          )}
+          <div>
+            <label className="text-xs text-pencil font-sans">处理理由（可选）</label>
+            <textarea
+              value={hiddenActionModal.reason}
+              onChange={(e) => setHiddenActionModal((prev) => ({ ...prev, reason: e.target.value }))}
+              className="w-full mt-2 h-20 resize-none border-2 border-gray-200 rounded-lg p-2 text-sm font-sans focus:border-ink outline-none"
+              placeholder="填写理由便于审计追踪"
+            />
+          </div>
+          <div className="flex flex-col sm:flex-row gap-3 mt-2">
+            <SketchButton
+              variant="secondary"
+              className="flex-1"
+              onClick={() => setHiddenActionModal({ isOpen: false, item: null, action: 'keep', reason: '' })}
+            >
+              取消
+            </SketchButton>
+            <SketchButton
+              variant={hiddenActionModal.action === 'restore' ? 'primary' : 'secondary'}
+              className={`flex-1 ${hiddenActionModal.action === 'restore' ? 'text-white' : ''}`}
+              onClick={confirmHiddenAction}
+            >
+              确认{hiddenActionModal.action === 'keep' ? '保持隐藏' : '恢复'}
+            </SketchButton>
+          </div>
         </div>
       </Modal>
 

@@ -224,7 +224,7 @@ app.get('/api/posts/home', (req, res) => {
       `
         SELECT COUNT(*) as count
         FROM posts
-        WHERE deleted = 0
+        WHERE deleted = 0 AND hidden = 0
       `
     )
     .get()?.count ?? 0;
@@ -235,7 +235,7 @@ app.get('/api/posts/home', (req, res) => {
         SELECT posts.*, ${hotScoreSql} AS hot_score,
           ${viewerSelect.sql}
       FROM posts
-        WHERE posts.deleted = 0
+        WHERE posts.deleted = 0 AND posts.hidden = 0
         ORDER BY posts.created_at DESC
         LIMIT ? OFFSET ?
         `
@@ -257,7 +257,7 @@ app.get('/api/posts/feed', (req, res) => {
   const viewerIdentityHashes = getIdentityLookupHashes(req, res);
   const viewerSelect = buildViewerSelect(viewerIdentityHashes);
 
-  const conditions = ['posts.deleted = 0'];
+  const conditions = ['posts.deleted = 0', 'posts.hidden = 0'];
   const params = [...viewerSelect.params];
 
   if (filter === 'today') {
@@ -309,7 +309,7 @@ app.get('/api/posts/tags', (req, res) => {
       `
       SELECT tags
       FROM posts
-      WHERE deleted = 0
+      WHERE deleted = 0 AND hidden = 0
         AND tags IS NOT NULL
         AND tags != ''
       ORDER BY created_at DESC
@@ -368,7 +368,7 @@ app.get('/api/posts/search', (req, res) => {
   }
 
   // 标签/关键字搜索：把 LIKE 的通配符当作字面量，避免用户输入 %/_ 导致意外匹配。
-  const conditions = ['posts.deleted = 0'];
+  const conditions = ['posts.deleted = 0', 'posts.hidden = 0'];
   const params = [];
   if (keywordRaw) {
     const keyword = `%${escapeLike(keywordRaw)}%`;
@@ -503,6 +503,7 @@ app.get('/api/posts/:id', (req, res) => {
       FROM posts
       WHERE posts.id = ?
         AND posts.deleted = 0
+        AND posts.hidden = 0
       `
     )
     .get(...viewerSelect.params, postId);
@@ -575,7 +576,7 @@ const toggleReaction = db.transaction((postId, identityKey, identityHashes, reac
 
 app.post('/api/posts/:id/like', (req, res) => {
   const postId = req.params.id;
-  const post = db.prepare('SELECT id, fingerprint, content FROM posts WHERE id = ? AND deleted = 0').get(postId);
+  const post = db.prepare('SELECT id, fingerprint, content FROM posts WHERE id = ? AND deleted = 0 AND hidden = 0').get(postId);
   if (!post) {
     return res.status(404).json({ error: '内容不存在' });
   }
@@ -605,7 +606,7 @@ app.post('/api/posts/:id/like', (req, res) => {
 
 app.post('/api/posts/:id/dislike', (req, res) => {
   const postId = req.params.id;
-  const post = db.prepare('SELECT id, fingerprint FROM posts WHERE id = ? AND deleted = 0').get(postId);
+  const post = db.prepare('SELECT id, fingerprint FROM posts WHERE id = ? AND deleted = 0 AND hidden = 0').get(postId);
   if (!post) {
     return res.status(404).json({ error: '内容不存在' });
   }
@@ -645,7 +646,7 @@ app.post('/api/posts/:id/favorite', (req, res) => {
     return res.status(400).json({ error: '帖子不存在' });
   }
 
-  const post = db.prepare('SELECT id FROM posts WHERE id = ? AND deleted = 0').get(postId);
+  const post = db.prepare('SELECT id FROM posts WHERE id = ? AND deleted = 0 AND hidden = 0').get(postId);
   if (!post) {
     return res.status(404).json({ error: '内容不存在' });
   }
@@ -703,6 +704,7 @@ app.get('/api/favorites', (req, res) => {
       ) pf
       JOIN posts ON posts.id = pf.post_id
       WHERE posts.deleted = 0
+        AND posts.hidden = 0
       ORDER BY pf.created_at DESC
       LIMIT ? OFFSET ?
       `
@@ -718,7 +720,7 @@ app.post('/api/posts/:id/view', (req, res) => {
     return;
   }
   const postId = req.params.id;
-  const post = db.prepare('SELECT id, views_count FROM posts WHERE id = ? AND deleted = 0').get(postId);
+  const post = db.prepare('SELECT id, views_count FROM posts WHERE id = ? AND deleted = 0 AND hidden = 0').get(postId);
   if (!post) {
     return res.status(404).json({ error: '内容不存在' });
   }

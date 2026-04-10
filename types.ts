@@ -23,8 +23,16 @@ export interface Post {
   isHot?: boolean;
   imageUrl?: string;
   createdAt?: number; // Unix timestamp for sorting
+  hidden?: boolean;
   viewerReaction?: 'like' | 'dislike' | null;
   viewerFavorited?: boolean;
+}
+
+export interface ReportSubmissionResult {
+  id: string;
+  autoHidden?: boolean;
+  targetType?: 'post' | 'comment';
+  targetId?: string;
 }
 
 export interface Report {
@@ -63,6 +71,8 @@ export interface Comment {
   createdAt?: number;
   replies?: Comment[];
   deleted?: boolean;
+  hidden?: boolean;
+  hiddenAt?: number | null;
   likes?: number;
   viewerLiked?: boolean;
 }
@@ -94,8 +104,12 @@ export interface AdminPost extends AdminIdentityInfo {
   likes: number;
   comments: number;
   reports: number;
+  pendingReportCount?: number;
   deleted: boolean;
   deletedAt?: number | null;
+  hidden?: boolean;
+  hiddenAt?: number | null;
+  hiddenReviewStatus?: 'pending' | 'kept' | null;
   hotScore?: number;
   matchedComments?: AdminComment[];
   matchedCommentCount?: number;
@@ -112,7 +126,27 @@ export interface AdminComment extends AdminIdentityInfo {
   createdAt: number;
   deleted: boolean;
   deletedAt?: number | null;
+  hidden?: boolean;
+  hiddenAt?: number | null;
+  hiddenReviewStatus?: 'pending' | 'kept' | null;
+  pendingReportCount?: number;
   replies?: AdminComment[];
+}
+
+export interface AdminHiddenItem extends AdminIdentityInfo {
+  type: 'post' | 'comment';
+  id: string;
+  postId?: string;
+  parentId?: string | null;
+  replyToId?: string | null;
+  postContent?: string;
+  content: string;
+  author: string;
+  timestamp: string;
+  createdAt: number;
+  hiddenAt?: number | null;
+  hiddenReviewStatus?: 'pending' | 'kept' | null;
+  pendingReportCount?: number;
 }
 
 export interface AdminAuditLog {

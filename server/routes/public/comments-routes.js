@@ -82,10 +82,14 @@ app.get('/api/posts/:id/comments', (req, res) => {
   const postId = req.params.id;
   const limit = Math.min(Number(req.query.limit || 10), 200);
   const offset = Math.max(Number(req.query.offset || 0), 0);
+  const visiblePost = db.prepare('SELECT id FROM posts WHERE id = ? AND deleted = 0 AND hidden = 0').get(postId);
+  if (!visiblePost) {
+    return res.status(404).json({ error: '内容不存在' });
+  }
   const viewerIdentityHashes = getIdentityLookupHashes(req, res);
   const viewerLikedSelect = buildViewerLikedSelect(viewerIdentityHashes);
 
-  const post = db.prepare('SELECT id, fingerprint, created_at FROM posts WHERE id = ? AND deleted = 0').get(postId);
+  const post = db.prepare('SELECT id, fingerprint, created_at FROM posts WHERE id = ? AND deleted = 0 AND hidden = 0').get(postId);
   if (!post) {
     return res.status(404).json({ error: '内容不存在' });
   }
@@ -153,6 +157,10 @@ app.get('/api/posts/:id/comment-thread', (req, res) => {
   const viewerIdentityHashes = getIdentityLookupHashes(req, res);
   const viewerLikedSelect = buildViewerLikedSelect(viewerIdentityHashes);
 
+  const post = db.prepare('SELECT id FROM posts WHERE id = ? AND deleted = 0 AND hidden = 0').get(postId);
+  if (!post) {
+    return res.status(404).json({ error: '内容不存在' });
+  }
   const commentRow = db
     .prepare('SELECT * FROM comments WHERE id = ?')
     .get(commentId);
@@ -239,7 +247,7 @@ app.post('/api/posts/:id/comments', async (req, res) => {
     return;
   }
 
-  const post = db.prepare('SELECT id, fingerprint FROM posts WHERE id = ? AND deleted = 0').get(postId);
+  const post = db.prepare('SELECT id, fingerprint FROM posts WHERE id = ? AND deleted = 0 AND hidden = 0').get(postId);
   if (!post) {
     return res.status(404).json({ error: '内容不存在' });
   }
@@ -247,7 +255,7 @@ app.post('/api/posts/:id/comments', async (req, res) => {
   let parentRow = null;
   if (parentId) {
     parentRow = db
-      .prepare('SELECT id, post_id, parent_id, created_at FROM comments WHERE id = ? AND deleted = 0')
+      .prepare('SELECT id, post_id, parent_id, created_at FROM comments WHERE id = ? AND deleted = 0 AND hidden = 0')
       .get(parentId);
     if (!parentRow) {
       return res.status(400).json({ error: '回复的评论不存在' });
@@ -329,7 +337,16 @@ app.post('/api/posts/:id/comments', async (req, res) => {
 });
 
 const toggleCommentLike = db.transaction((commentId, fingerprint, identityHashes) => {
-  const comment = db.prepare('SELECT id, post_id FROM comments WHERE id = ? AND deleted = 0').get(commentId);
+  const comment = db.prepare(`
+    SELECT comments.id, comments.post_id
+    FROM comments
+    INNER JOIN posts ON posts.id = comments.post_id
+    WHERE comments.id = ?
+      AND comments.deleted = 0
+      AND comments.hidden = 0
+      AND posts.deleted = 0
+      AND posts.hidden = 0
+  `).get(commentId);
   if (!comment) {
     return { status: 404, error: '评论不存在' };
   }

@@ -61,8 +61,12 @@ export const registerAdminPostsRoutes = (app, deps) => {
     likes: row.likes_count,
     comments: row.comments_count,
     reports: row.report_count || 0,
+    pendingReportCount: Number(row.pending_report_count || 0),
     deleted: row.deleted === 1,
     deletedAt: row.deleted_at || null,
+    hidden: row.hidden === 1,
+    hiddenAt: row.hidden_at || null,
+    hiddenReviewStatus: row.hidden_review_status || null,
     hotScore: row.hot_score,
     sessionId: row.session_id || null,
     ip: row.ip || null,
@@ -291,6 +295,10 @@ app.get('/api/admin/posts', requireAdmin, (req, res) => {
 
   if (status === 'active') {
     conditions.push('posts.deleted = 0');
+    conditions.push('posts.hidden = 0');
+  } else if (status === 'hidden') {
+    conditions.push('posts.deleted = 0');
+    conditions.push('posts.hidden = 1');
   } else if (status === 'deleted') {
     conditions.push('posts.deleted = 1');
   }
@@ -313,6 +321,14 @@ app.get('/api/admin/posts', requireAdmin, (req, res) => {
           FROM reports
           WHERE reports.post_id = posts.id
         ) AS report_count
+        ,
+        (
+          SELECT COUNT(1)
+          FROM reports
+          WHERE reports.post_id = posts.id
+            AND reports.target_type = 'post'
+            AND reports.status = 'pending'
+        ) AS pending_report_count
       FROM posts
       ${whereClause}
       ORDER BY ${orderClause}
@@ -538,7 +554,7 @@ app.post('/api/admin/comments/:id/action', requireAdmin, requireAdminCsrf, (req,
   const now = Date.now();
   const banOptions = action === 'ban' ? resolveBanOptions(req) : null;
 
-  const removedCount = row.deleted === 1 ? 0 : 1;
+  const removedCount = row.deleted === 1 || row.hidden === 1 ? 0 : 1;
 
   if (removedCount > 0) {
     db.prepare('UPDATE comments SET deleted = 1, deleted_at = ? WHERE id = ?')
@@ -552,7 +568,7 @@ app.post('/api/admin/comments/:id/action', requireAdmin, requireAdminCsrf, (req,
     action: action === 'ban' ? 'comment_ban' : 'comment_delete',
     targetType: 'comment',
     targetId: commentId,
-    before: { deleted: row.deleted === 1 },
+    before: { deleted: row.deleted === 1, hidden: row.hidden === 1 },
     after: { deleted: true, removed: removedCount },
     reason,
   });

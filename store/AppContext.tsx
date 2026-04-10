@@ -1,12 +1,13 @@
 ﻿import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import { api } from '../api';
-import { Comment, Post, Report } from '../types';
+import { Comment, Post, Report, ReportSubmissionResult } from '../types';
 import {
   normalizeHiddenPostTag,
   normalizeHiddenPostTagList,
   readHiddenPostTags,
   writeHiddenPostTags,
 } from './hiddenPostTags';
+import { dispatchAutoHiddenEvent } from './contentVisibility';
 
 export interface Toast {
   id: string;
@@ -64,8 +65,8 @@ interface AppContextType {
   dislikePost: (postId: string) => Promise<void>;
   toggleFavoritePost: (postId: string) => Promise<boolean>;
   deletePost: (postId: string) => void;
-  reportPost: (postId: string, reason: string) => Promise<void>;
-  reportComment: (commentId: string, reason: string) => Promise<void>;
+  reportPost: (postId: string, reason: string) => Promise<ReportSubmissionResult>;
+  reportComment: (commentId: string, reason: string) => Promise<ReportSubmissionResult>;
   reportChatMessage: (messageId: number, reason: string) => Promise<void>;
   handleReport: (reportId: string, action: 'ignore' | 'delete' | 'mute' | 'ban', reason?: string, options?: { permissions?: string[]; expiresAt?: number | null; deleteComment?: boolean; deleteChatMessage?: boolean }) => Promise<void>;
   showToast: (message: string, type?: Toast['type']) => void;
@@ -488,11 +489,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   const reportPost = useCallback(async (postId: string, reason: string) => {
-    await api.reportPost(postId, reason);
-  }, []);
+    const data: ReportSubmissionResult = await api.reportPost(postId, reason);
+    if (data?.autoHidden && data?.targetType === 'post' && data?.targetId) {
+      deletePost(data.targetId);
+    }
+    dispatchAutoHiddenEvent(data);
+    return data;
+  }, [deletePost]);
 
   const reportComment = useCallback(async (commentId: string, reason: string) => {
-    await api.reportComment(commentId, reason);
+    const data: ReportSubmissionResult = await api.reportComment(commentId, reason);
+    dispatchAutoHiddenEvent(data);
+    return data;
   }, []);
 
   const reportChatMessage = useCallback(async (messageId: number, reason: string) => {
