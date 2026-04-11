@@ -254,12 +254,22 @@ export const api = {
   getPublicSettings: () => apiFetch('/settings'),
   getAdminAuditLogs: (params = {}) => apiFetch(`/admin/audit-logs${toQuery(params)}`),
   getAnnouncement: () => apiFetch('/announcement'),
+  getUpdateAnnouncements: () => apiFetch('/update-announcements'),
+  getLatestUpdateAnnouncement: () => apiFetch('/update-announcements/latest'),
   getAdminAnnouncement: () => apiFetch('/admin/announcement'),
   updateAdminAnnouncement: (content) => apiFetch('/admin/announcement', {
     method: 'POST',
     body: JSON.stringify({ content }),
   }),
   clearAdminAnnouncement: () => apiFetch('/admin/announcement/clear', {
+    method: 'POST',
+  }),
+  getAdminUpdateAnnouncements: () => apiFetch('/admin/update-announcements'),
+  createAdminUpdateAnnouncement: (content) => apiFetch('/admin/update-announcements', {
+    method: 'POST',
+    body: JSON.stringify({ content }),
+  }),
+  deleteAdminUpdateAnnouncement: (id) => apiFetch(`/admin/update-announcements/${encodeURIComponent(String(id || ''))}/delete`, {
     method: 'POST',
   }),
   getAdminSettings: () => apiFetch('/admin/settings'),

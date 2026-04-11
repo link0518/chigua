@@ -1125,6 +1125,19 @@ const getAnnouncement = () => {
   return db.prepare('SELECT content, updated_at FROM announcements WHERE id = ?').get('current');
 };
 
+const getUpdateAnnouncements = () => {
+  return db
+    .prepare('SELECT id, content, updated_at FROM update_announcements ORDER BY updated_at DESC, id DESC')
+    .all();
+};
+
+const getLatestUpdateAnnouncementUpdatedAt = () => {
+  const row = db
+    .prepare('SELECT MAX(updated_at) AS updated_at FROM update_announcements')
+    .get();
+  return Number(row?.updated_at || 0);
+};
+
 const buildCommentTree = (rows) => {
   const nodes = new Map();
   rows.forEach((row) => {
@@ -1220,6 +1233,23 @@ registerPublicSiteRoutes(app, {
   buildSettingsResponse,
   getAnnouncement,
   chatRealtime,
+});
+
+app.get('/api/update-announcements', (req, res) => {
+  return res.json({
+    items: getUpdateAnnouncements().map((row) => ({
+      id: row.id,
+      content: row.content,
+      updatedAt: row.updated_at,
+    })),
+  });
+});
+
+app.get('/api/update-announcements/latest', (req, res) => {
+  const updatedAt = getLatestUpdateAnnouncementUpdatedAt();
+  return res.json({
+    updatedAt: updatedAt || null,
+  });
 });
 registerPublicPostsRoutes(app, {
   db,
@@ -1369,6 +1399,77 @@ registerAdminAnnouncementRoutes(app, {
   db,
   getAnnouncement,
   logAdminAction,
+});
+
+app.get('/api/admin/update-announcements', requireAdmin, (req, res) => {
+  return res.json({
+    items: getUpdateAnnouncements().map((row) => ({
+      id: row.id,
+      content: row.content,
+      updatedAt: row.updated_at,
+    })),
+  });
+});
+
+app.post('/api/admin/update-announcements', requireAdmin, requireAdminCsrf, (req, res) => {
+  const content = String(req.body?.content || '').trim();
+  if (!content) {
+    return res.status(400).json({ error: '更新公告内容不能为空' });
+  }
+  if (content.length > 5000) {
+    return res.status(400).json({ error: '更新公告内容过长' });
+  }
+
+  const now = Date.now();
+  const id = crypto.randomUUID();
+  db.prepare(
+    `
+    INSERT INTO update_announcements (id, content, created_at, updated_at)
+    VALUES (?, ?, ?, ?)
+    `
+  ).run(id, content, now, now);
+
+  logAdminAction(req, {
+    action: 'update_announcement_create',
+    targetType: 'update_announcement',
+    targetId: id,
+    before: null,
+    after: { updatedAt: now },
+    reason: null,
+  });
+
+  return res.status(201).json({
+    item: {
+      id,
+      content,
+      updatedAt: now,
+    },
+  });
+});
+
+app.post('/api/admin/update-announcements/:id/delete', requireAdmin, requireAdminCsrf, (req, res) => {
+  const id = String(req.params.id || '').trim();
+  if (!id) {
+    return res.status(400).json({ error: '更新公告不存在' });
+  }
+
+  const existing = db.prepare('SELECT id, updated_at FROM update_announcements WHERE id = ?').get(id);
+  if (!existing) {
+    return res.status(404).json({ error: '更新公告不存在' });
+  }
+
+  db.prepare('DELETE FROM update_announcements WHERE id = ?').run(id);
+
+  logAdminAction(req, {
+    action: 'update_announcement_delete',
+    targetType: 'update_announcement',
+    targetId: id,
+    before: { updatedAt: existing.updated_at },
+    after: null,
+    reason: null,
+  });
+
+  return res.json({ id });
 });
 
 registerAdminSettingsRoutes(app, {

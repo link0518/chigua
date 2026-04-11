@@ -185,6 +185,12 @@ export interface FeedbackMessage extends AdminIdentityInfo {
   readAt?: number | null;
 }
 
+export interface UpdateAnnouncementItem {
+  id: string;
+  content: string;
+  updatedAt: number;
+}
+
 export interface ChartDataPoint {
   name: string;
   value: number;

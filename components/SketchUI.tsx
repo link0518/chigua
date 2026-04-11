@@ -39,12 +39,24 @@ interface CardProps {
   children: React.ReactNode;
   className?: string;
   rotate?: boolean;
+  hoverStraighten?: boolean;
 }
 
-export const SketchCard: React.FC<CardProps> = ({ children, className = '', rotate = false }) => {
+export const SketchCard: React.FC<CardProps> = ({
+  children,
+  className = '',
+  rotate = false,
+  hoverStraighten = true,
+}) => {
+  const rotateClass = rotate
+    ? hoverStraighten
+      ? 'rotate-1 hover:rotate-0 transition-transform duration-300'
+      : 'rotate-1'
+    : '';
+
   return (
     <div 
-      className={`bg-white border-2 border-ink shadow-sketch p-6 ${roughBorderClass} ${rotate ? 'rotate-1 hover:rotate-0 transition-transform duration-300' : ''} ${className}`}
+      className={`bg-white border-2 border-ink shadow-sketch p-6 ${roughBorderClass} ${rotateClass} ${className}`}
     >
       {children}
     </div>

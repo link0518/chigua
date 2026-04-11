@@ -202,6 +202,13 @@ CREATE TABLE IF NOT EXISTS announcements (
   updated_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS update_announcements (
+  id TEXT PRIMARY KEY,
+  content TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS app_settings (
   key TEXT PRIMARY KEY,
   value TEXT,
@@ -365,12 +372,22 @@ ensureColumn('banned_identities', 'expires_at', 'INTEGER');
 ensureColumn('banned_identities', 'permissions', 'TEXT');
 ensureColumn('banned_identities', 'reason', 'TEXT');
 ensureColumn('feedback_messages', 'fingerprint', 'TEXT');
+ensureColumn('update_announcements', 'created_at', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('chat_messages', 'reply_to_message_id', 'INTEGER');
 ensureColumn('chat_messages', 'reply_to_nickname', 'TEXT');
 ensureColumn('chat_messages', 'reply_preview', 'TEXT');
 ensureColumn('chat_messages', 'is_admin', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('chat_messages', 'admin_anonymous', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('chat_messages', 'ip_snapshot', 'TEXT');
+
+db.prepare(`
+  UPDATE update_announcements
+  SET created_at = CASE
+    WHEN created_at IS NULL OR created_at = 0 THEN updated_at
+    ELSE created_at
+  END
+  WHERE created_at IS NULL OR created_at = 0
+`).run();
 
 const migrateReportsTableForChatTargets = () => {
   const tableSqlRow = db
@@ -487,6 +504,7 @@ const ensureIndexes = () => {
   CREATE INDEX IF NOT EXISTS idx_reports_comment_status_created_at ON reports(comment_id, status, created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_feedback_created_at ON feedback_messages(created_at);
   CREATE INDEX IF NOT EXISTS idx_feedback_read_at ON feedback_messages(read_at);
+  CREATE INDEX IF NOT EXISTS idx_update_announcements_updated_at ON update_announcements(updated_at DESC);
   CREATE INDEX IF NOT EXISTS idx_post_edits_post_id ON post_edits(post_id);
   CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_created_at ON admin_audit_logs(created_at);
   CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_action ON admin_audit_logs(action);

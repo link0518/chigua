@@ -89,6 +89,7 @@ const App: React.FC = () => {
   const [announcementContent, setAnnouncementContent] = useState('');
   const [announcementUpdatedAt, setAnnouncementUpdatedAt] = useState<number | null>(null);
   const [announcementUnread, setAnnouncementUnread] = useState(false);
+  const [updateAnnouncementUnread, setUpdateAnnouncementUnread] = useState(false);
   const [accessBlocked, setAccessBlocked] = useState(false);
   const [accessExpiresAt, setAccessExpiresAt] = useState<number | null>(null);
   const [accessChecked, setAccessChecked] = useState(false);
@@ -143,6 +144,43 @@ const App: React.FC = () => {
       })
       .catch(() => { });
   }, []);
+
+  const syncUpdateAnnouncementUnread = useCallback(() => {
+    api.getLatestUpdateAnnouncement()
+      .then((data) => {
+        const latestUpdatedAt = Number(data?.updatedAt || 0);
+        if (!latestUpdatedAt) {
+          setUpdateAnnouncementUnread(false);
+          return;
+        }
+        const lastSeen = Number(localStorage.getItem('updateAnnouncements:lastSeen') || '0');
+        setUpdateAnnouncementUnread(latestUpdatedAt > lastSeen);
+      })
+      .catch(() => { });
+  }, []);
+
+  useEffect(() => {
+    syncUpdateAnnouncementUnread();
+  }, [syncUpdateAnnouncementUnread]);
+
+  useEffect(() => {
+    const refreshUpdateAnnouncements = () => {
+      syncUpdateAnnouncementUnread();
+    };
+    const timer = window.setInterval(refreshUpdateAnnouncements, 5 * 60 * 1000);
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        refreshUpdateAnnouncements();
+      }
+    };
+    window.addEventListener('focus', refreshUpdateAnnouncements);
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('focus', refreshUpdateAnnouncements);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [syncUpdateAnnouncementUnread]);
 
   useEffect(() => {
     api.getAccessStatus()
@@ -259,6 +297,14 @@ const App: React.FC = () => {
     setUserSettingsOpen(true);
     setMobileMenuOpen(false);
   };
+
+  const markUpdateAnnouncementsSeen = useCallback((updatedAt: number) => {
+    if (!updatedAt) {
+      return;
+    }
+    localStorage.setItem('updateAnnouncements:lastSeen', String(updatedAt));
+    setUpdateAnnouncementUnread(false);
+  }, []);
 
   const formatNotificationTime = (value?: number | null) => {
     if (!value) {
@@ -577,7 +623,12 @@ const App: React.FC = () => {
             right: 'calc(env(safe-area-inset-right, 0px) + 16px)',
           }}
         >
-          <Settings2 className="h-4 w-4" />
+          <span className="relative inline-flex items-center">
+            <Settings2 className="h-4 w-4" />
+            {updateAnnouncementUnread && (
+              <span className="absolute -top-1.5 -right-1.5 h-2.5 w-2.5 rounded-full bg-red-500 border border-ink" />
+            )}
+          </span>
           <span>设置</span>
         </button>
       )}
@@ -705,7 +756,7 @@ const App: React.FC = () => {
                 aria-label="打开菜单"
               >
                 {mobileMenuOpen ? <X /> : <Menu />}
-                {(announcementUnread || notificationsUnread > 0) && (
+                {(announcementUnread || updateAnnouncementUnread || notificationsUnread > 0) && (
                   <span className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-red-500 border-2 border-ink" />
                 )}
               </button>
@@ -727,6 +778,7 @@ const App: React.FC = () => {
             <div className={`sm:hidden absolute top-full left-0 w-full border-b-2 shadow-xl p-4 flex flex-col gap-3 animate-in slide-in-from-top-2 z-50 ${isCnyTheme ? 'bg-cny-paper border-cny-dark-red' : 'bg-paper border-ink'}`}>
               <MobileNavItem
                 label="设置"
+                dot={updateAnnouncementUnread}
                 onClick={openUserSettings}
               />
               <MobileNavItem
@@ -826,6 +878,8 @@ const App: React.FC = () => {
       <UserSettingsModal
         isOpen={userSettingsOpen}
         onClose={() => setUserSettingsOpen(false)}
+        updateAnnouncementsUnread={updateAnnouncementUnread}
+        onUpdateAnnouncementsSeen={markUpdateAnnouncementsSeen}
       />
 
       {/* Footer only for non-admin */}

@@ -40,6 +40,8 @@
 - `GET /api/access`：访问控制状态（是否被封禁、过期时间等）
 - `GET /api/settings`：公开设置（`turnstileEnabled`、`cnyThemeEnabled`、`cnyThemeAutoActive`、`cnyThemeActive`、`chatEnabled`）
 - `GET /api/announcement`：公告内容
+- `GET /api/update-announcements`：更新公告历史列表
+- `GET /api/update-announcements/latest`：更新公告最新更新时间，用于前台未读红点轻量检查
 
 在线/通知/彩蛋：
 
@@ -140,6 +142,9 @@
 - `GET /api/admin/announcement`：获取后台公告（管理员）
 - `POST /api/admin/announcement`：更新公告（管理员 + CSRF）
 - `POST /api/admin/announcement/clear`：清空公告（管理员 + CSRF）
+- `GET /api/admin/update-announcements`：获取更新公告列表（管理员）
+- `POST /api/admin/update-announcements`：发布更新公告（管理员 + CSRF）
+- `POST /api/admin/update-announcements/:id/delete`：删除更新公告（管理员 + CSRF）
 - `GET /api/admin/settings`：获取设置（管理员）
 - `POST /api/admin/settings`：更新设置（管理员 + CSRF，支持 `turnstileEnabled` 与 `cnyThemeEnabled`）
 - `GET /api/admin/vocabulary`：敏感词列表（管理员）

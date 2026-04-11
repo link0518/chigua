@@ -2,6 +2,9 @@
 
 ### Changed
 
+- 设置弹窗改为“屏蔽标签 / 更新公告”双模块切换，更新公告支持展示历史记录；涉及 `components/UserSettingsModal.tsx`、`api.ts`、`types.ts`。
+- 新增轻量“更新公告”数据链路：前台新增 `GET /api/update-announcements` 和 `GET /api/update-announcements/latest`，后台新增更新公告发布与删除接口，并落库到 `update_announcements`；涉及 `server/db.js`、`server/index.js`、`api.ts`。
+- 抽出共享 Markdown 发布编辑器，前台投稿与后台投稿/站点公告/更新公告统一为同一套 Markdown 工具栏、预览、图片上传、粘贴上传与表情插入方案；涉及 `components/MarkdownComposeEditor.tsx`、`components/SubmissionView.tsx`、`components/AdminDashboard.tsx`。
 - 投稿页输入区升级为基于 `CodeMirror 6` 的 Markdown 编辑器，保留原有手绘卡片 UI、预览切换、图片上传、表情插入、标签选择与提交流程；涉及 `components/MarkdownEditor.tsx`、`components/SubmissionView.tsx`、`package.json`。
 - 投稿页快捷格式栏改为中文短文案，并针对移动端收敛为更紧凑的两行布局。
 - 前台投稿改为必须选择至少 1 个标签，未选标签时保持现有页面文案不变，并通过 toast 给出提交提示；涉及 `components/SubmissionView.tsx`。
@@ -11,8 +14,6 @@
 
 - Markdown 预览补齐单次回车换行解析，避免输入内容后必须连续两次回车才能在预览区换行；涉及 `components/MarkdownRenderer.tsx`。
 - 首页与热门支持按已屏蔽标签过滤帖子，并修正首页列表模式在首批结果全部被屏蔽时的继续加载行为；涉及 `components/HomeView.tsx`、`components/FeedView.tsx`。
-
-### Changed
 
 - 首页新增“单帖 / 列表”双浏览模式，支持记住用户选择，并在分享路由下保持单帖聚焦浏览。
 - 首页列表模式改为高密度卡片浏览：支持新标签页打开单帖、首次加载 20 条并通过底部按钮继续按 20 条加载，兼顾桌面端与移动端快速扫帖体验；涉及 `components/HomeView.tsx`、`components/HomePostGridCard.tsx`。
@@ -25,11 +26,7 @@
 - 修复列表模式下评论弹窗在原帖子被刷新移出当前列表后，错误回退到其他帖子的风险；涉及 `components/HomeView.tsx`。
 - 修复首页首屏加载过程中切换到列表模式时，初始请求与补量请求并发导致列表数量回退的问题；涉及 `components/HomeView.tsx`。
 
-### Changed
-
 - 指纹主身份切换为 `HttpOnly Cookie` `gs_client_id_v2`，服务端新增身份归一层与 `identity_aliases` 兼容映射；通知、封禁、举报、点赞/收藏、评论点赞、聊天室统一按新旧身份并行识别，涉及 `server/identity-service.js`、`server/index.js`、`server/chat-realtime-service.js`、`server/routes/public/*`、`components/ChatRoomView.tsx`。
-
-### Changed
 
 - 后台系统设置新增发帖、评论、举报、留言的限流配置，支持直接调整次数与时间窗口；涉及 `server/site-settings.js`、`server/routes/admin/settings-routes.js`、`components/AdminDashboard.tsx`、`api.ts`。
 
@@ -45,12 +42,8 @@
 - 新增标签搜索与跳转：帖子标签可点击跳转到 /search?tag=...，搜索页支持按关键字与标签组合筛选。
 - 新增后台系统设置项 defaultPostTags，用于集中管理默认帖子标签。
 
-### Changed
-
 - 标签规则统一收敛到前后端：单个标签最多 6 个字，超长/重复/空标签会被自动过滤。
 - 发帖页标签展示改为仅使用后台配置的默认标签，不再自动进入公共标签池。
-### Changed
-
 - 新增单聊天室入口 `/chat`，前端支持匿名实时聊天、在线人数/用户列表（按人去重）、退出重进随机“侠士编号”。
 - 后端新增 WebSocket 实时服务（`/ws/chat`），支持消息广播、在线状态广播、断线重连与心跳清理。
 - 聊天室管理新增规则配置：支持聊天室开关、全体禁言、仅管理员发言、发言频率与单条最大字数限制。
@@ -82,8 +75,6 @@
 - 新增春节主题能力：后端设置新增 `cny_theme_enabled`，公开/后台设置接口返回 `cnyThemeEnabled`、`cnyThemeAutoActive`、`cnyThemeActive`，并支持农历腊月十六至正月十五自动生效。
 - 新增春节视觉组件 `components/CNY/*`（灯笼、头部纹饰、红包/金币飘落），并扩展 Tailwind 与全局春节背景样式。
 - 新增春节氛围画布背景组件 `components/CNY/CNYAtmosphereBackground.tsx`，用于春节模式下的动态粒子背景。
-
-### Changed
 
 - 评论区体验调整：评论弹窗不再展示帖子详情；评论区图片展示尺寸更紧凑以适配布局。
 - 投稿页编辑工具条调整：预览/图片/表情按钮保持固定位置（`sticky`），避免滚动时跳动。
@@ -118,7 +109,10 @@
 - 新增 `.editorconfig`，统一使用 UTF-8 编码
 
 ### Changed
-- 关键页面改为懒加载，并延迟后台轮询/任务，降低首屏 JS 压力
+
+- 设置弹窗改为“屏蔽标签 / 更新公告”双模块切换，更新公告支持展示历史记录；涉及 `components/UserSettingsModal.tsx`、`api.ts`、`types.ts`。
+- 新增轻量“更新公告”数据链路：前台新增 `GET /api/update-announcements` 和 `GET /api/update-announcements/latest`，后台新增更新公告发布与删除接口，并落库到 `update_announcements`；涉及 `server/db.js`、`server/index.js`、`api.ts`。
+- 抽出共享 Markdown 发布编辑器，前台投稿与后台投稿/站点公告/更新公告统一为同一套 Markdown 工具栏、预览、图片上传、粘贴上传与表情插入方案；涉及 `components/MarkdownComposeEditor.tsx`、`components/SubmissionView.tsx`、`components/AdminDashboard.tsx`。- 关键页面改为懒加载，并延迟后台轮询/任务，降低首屏 JS 压力
 - 启用服务端响应压缩，并在生产环境提供 dist 静态资源以便本地预览与 Lighthouse 测量
 - Vite 分包策略调整（拆分 react-vendor、recharts），减少首屏阻塞
 - 图标改用 `lucide-react`，移除 Material Symbols 字体依赖
@@ -138,6 +132,4 @@
 - 修复后台概览“总访问量”误用本周访问量的问题（改为全量累计）
 - 修复搜索页点击“搜索”会触发重复请求的问题
 - 修复表情包弹窗在评论区内被压缩/裁切导致无法展示的问题
-
-
 

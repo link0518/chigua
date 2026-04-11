@@ -59,7 +59,7 @@ interface AppState {
 
 interface AppContextType {
   state: AppState;
-  addPost: (post: Omit<Post, 'id' | 'likes' | 'dislikes' | 'comments' | 'createdAt'>, turnstileToken: string) => Promise<void>;
+  addPost: (post: Omit<Post, 'id' | 'likes' | 'dislikes' | 'comments' | 'createdAt'>, turnstileToken: string) => Promise<Post>;
   addComment: (postId: string, content: string, turnstileToken: string, parentId?: string | null, replyToId?: string | null) => Promise<Comment>;
   likePost: (postId: string) => Promise<void>;
   dislikePost: (postId: string) => Promise<void>;
@@ -340,6 +340,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       feedPosts: [newPost, ...prev.feedPosts],
       feedTotal: prev.feedTotal + 1,
     }));
+    return newPost;
   }, []);
 
   const addComment = useCallback(async (postId: string, content: string, turnstileToken: string, parentId?: string | null, replyToId?: string | null) => {

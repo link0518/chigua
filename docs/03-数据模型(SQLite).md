@@ -1,4 +1,4 @@
-# 03｜数据模型（SQLite）
+﻿# 03｜数据模型（SQLite）
 
 数据库由 `server/db.js` 初始化，默认存储在 `server/data/app.db`。项目使用 `better-sqlite3`，并开启：
 
@@ -109,7 +109,13 @@ permissions 常见值（见服务端/前端映射）：
 - `content`
 - `updated_at`
 
-### 1.9 app_settings（站点设置）
+### 1.9 update_announcements（更新公告）
+
+- `id`
+- `content`
+- `updated_at`
+
+### 1.10 app_settings（站点设置）
 
 - `key`：主键
 - `value`
@@ -122,14 +128,14 @@ permissions 常见值（见服务端/前端映射）：
 
 春节皮肤是否实际生效由后端按农历窗口动态计算（腊月十六至正月十五）。
 
-### 1.10 vocabulary_words（敏感词）
+### 1.11 vocabulary_words（敏感词）
 
 - `word`：原词
 - `normalized`：归一化后用于去重（唯一）
 - `enabled`：启用/禁用
 - `created_at` / `updated_at`
 
-### 1.11 stats_daily / daily_visits / fingerprint_login_days（统计）
+### 1.12 stats_daily / daily_visits / fingerprint_login_days（统计）
 
 用于后台概览统计：
 
@@ -142,12 +148,12 @@ permissions 常见值（见服务端/前端映射）：
 - `fingerprint_login_days` 仍按单个哈希落库
 - 连续登录彩蛋查询阶段会结合 `identity_aliases` 聚合同一身份下的多份记录
 
-### 1.12 post_edits / admin_audit_logs（审计）
+### 1.13 post_edits / admin_audit_logs（审计）
 
 - `post_edits`：后台编辑帖子内容的前后对比与原因
 - `admin_audit_logs`：后台动作审计（action、target、before_json/after_json、reason、ip、session_id）
 
-### 1.13 chat_sessions / chat_messages / chat_mutes / chat_ban_sync（聊天室）
+### 1.14 chat_sessions / chat_messages / chat_mutes / chat_ban_sync（聊天室）
 
 单聊天室实时能力的数据基座：
 
@@ -182,4 +188,5 @@ permissions 常见值（见服务端/前端映射）：
 同样以 `deleted` 软删除为主。**当前后台“删除评论”是仅删除当前一条（不级联子回复）**：只把该评论 `deleted=1`，并将帖子 `comments_count` 减 1。
 
 > 这意味着如果你希望“删除楼层时连带删除其回复”，需要在业务逻辑层自行实现级联软删（数据库层没有外键级联到子评论）。
+
 
