@@ -7,7 +7,7 @@
     "predev": "node scripts/generate-meme-manifest.mjs",
     "dev": "vite",
     "server": "node server/index.js",
-    "dev:full": "concurrently -k \"npm run server\" \"npm run dev\"",
+    "dev:full": "node scripts/dev-full.mjs",
     "init-data": "node server/init-data.js",
     "reset-data": "node server/reset-data.js",
     "seo:generate": "node server/seo-generate.js",
@@ -15,7 +15,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "perf:budget": "node scripts/perf-budget.mjs",
-    "test:server": "node --experimental-test-isolation=none --test server/tests/admin-moderation-service.test.js server/tests/hidden-content-service.test.js"
+    "test:server": "node --experimental-test-isolation=none --test server/tests/admin-moderation-service.test.js server/tests/hidden-content-service.test.js server/tests/wecom-webhook-service.test.js server/tests/admin-settings-routes.test.js server/tests/system-routes.test.js server/tests/reports-routes.test.js"
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.2",

@@ -120,6 +120,8 @@ type RateLimitSettings = Record<RateLimitAction, RateLimitItem>;
 
 const RATE_LIMIT_MAX_COUNT = 1000;
 const RATE_LIMIT_MAX_WINDOW_SECONDS = 30 * 24 * 60 * 60;
+const AUTO_HIDE_REPORT_THRESHOLD_DEFAULT = 10;
+const AUTO_HIDE_REPORT_THRESHOLD_MAX = 1000;
 const RATE_LIMIT_DEFAULTS: RateLimitSettings = {
   post: { limit: 2, windowMs: 30 * 60 * 1000 },
   comment: { limit: 1, windowMs: 10 * 1000 },
@@ -140,6 +142,13 @@ const normalizeRateLimitNumber = (value: unknown, fallback: number, min: number,
   }
   return Math.min(Math.max(Math.trunc(parsed), min), max);
 };
+
+const normalizeAutoHideReportThreshold = (value: unknown) => normalizeRateLimitNumber(
+  value,
+  AUTO_HIDE_REPORT_THRESHOLD_DEFAULT,
+  1,
+  AUTO_HIDE_REPORT_THRESHOLD_MAX
+);
 
 const normalizeRateLimits = (input: unknown): RateLimitSettings => {
   const source = input && typeof input === 'object' ? input as Partial<Record<RateLimitAction, Partial<RateLimitItem>>> : {};
@@ -238,6 +247,13 @@ const AdminDashboard: React.FC = () => {
   const [cnyThemeActive, setCnyThemeActive] = useState(false);
   const [defaultPostTagsInput, setDefaultPostTagsInput] = useState('');
   const [rateLimits, setRateLimits] = useState<RateLimitSettings>(RATE_LIMIT_DEFAULTS);
+  const [autoHideReportThreshold, setAutoHideReportThreshold] = useState(AUTO_HIDE_REPORT_THRESHOLD_DEFAULT);
+  const [wecomWebhookEnabled, setWecomWebhookEnabled] = useState(false);
+  const [wecomWebhookConfigured, setWecomWebhookConfigured] = useState(false);
+  const [wecomWebhookMaskedUrl, setWecomWebhookMaskedUrl] = useState('');
+  const [wecomWebhookUrlInput, setWecomWebhookUrlInput] = useState('');
+  const [wecomWebhookClearUrl, setWecomWebhookClearUrl] = useState(false);
+  const [wecomWebhookTesting, setWecomWebhookTesting] = useState(false);
   const [vocabularyLoading, setVocabularyLoading] = useState(false);
   const [vocabularySubmitting, setVocabularySubmitting] = useState(false);
   const [vocabularyItems, setVocabularyItems] = useState<Array<{ id: number; word: string; enabled: boolean; updatedAt: number }>>([]);
@@ -616,6 +632,12 @@ const AdminDashboard: React.FC = () => {
       setCnyThemeActive(Boolean(data?.cnyThemeActive));
       setDefaultPostTagsInput(formatDefaultPostTagsInput(data?.defaultPostTags));
       setRateLimits(normalizeRateLimits(data?.rateLimits));
+      setAutoHideReportThreshold(normalizeAutoHideReportThreshold(data?.autoHideReportThreshold));
+      setWecomWebhookEnabled(Boolean(data?.wecomWebhook?.enabled));
+      setWecomWebhookConfigured(Boolean(data?.wecomWebhook?.configured));
+      setWecomWebhookMaskedUrl(String(data?.wecomWebhook?.maskedUrl || ''));
+      setWecomWebhookUrlInput('');
+      setWecomWebhookClearUrl(false);
     } catch (error) {
       const message = error instanceof Error ? error.message : '设置加载失败';
       showToast(message, 'error');
@@ -1511,8 +1533,14 @@ const AdminDashboard: React.FC = () => {
     const rawDefaultTags = defaultPostTagsInput.trim();
     const defaultPostTags = parseDefaultPostTagsInput(defaultPostTagsInput);
     const normalizedRateLimits = normalizeRateLimits(rateLimits);
+    const normalizedAutoHideReportThreshold = normalizeAutoHideReportThreshold(autoHideReportThreshold);
+    const trimmedWecomWebhookUrl = wecomWebhookUrlInput.trim();
     if (rawDefaultTags && defaultPostTags.length === 0) {
       showToast(`默认标签格式无效，请用逗号或换行分隔，并确保每个标签不超过${MAX_TAG_LENGTH}字`, 'warning');
+      return;
+    }
+    if (wecomWebhookEnabled && !trimmedWecomWebhookUrl && (!wecomWebhookConfigured || wecomWebhookClearUrl)) {
+      showToast('启用企业微信提醒前，请先填写机器人 Webhook 地址', 'warning');
       return;
     }
     for (const item of RATE_LIMIT_FIELDS) {
@@ -1534,6 +1562,12 @@ const AdminDashboard: React.FC = () => {
         cnyThemeEnabled,
         defaultPostTags,
         rateLimits: normalizedRateLimits,
+        autoHideReportThreshold: normalizedAutoHideReportThreshold,
+        wecomWebhook: {
+          enabled: wecomWebhookEnabled,
+          ...(trimmedWecomWebhookUrl ? { url: trimmedWecomWebhookUrl } : {}),
+          ...(wecomWebhookClearUrl ? { clearUrl: true } : {}),
+        },
       });
       setTurnstileEnabled(Boolean(data?.turnstileEnabled));
       setCnyThemeEnabled(Boolean(data?.cnyThemeEnabled));
@@ -1541,6 +1575,12 @@ const AdminDashboard: React.FC = () => {
       setCnyThemeActive(Boolean(data?.cnyThemeActive));
       setDefaultPostTagsInput(formatDefaultPostTagsInput(data?.defaultPostTags));
       setRateLimits(normalizeRateLimits(data?.rateLimits));
+      setAutoHideReportThreshold(normalizeAutoHideReportThreshold(data?.autoHideReportThreshold));
+      setWecomWebhookEnabled(Boolean(data?.wecomWebhook?.enabled));
+      setWecomWebhookConfigured(Boolean(data?.wecomWebhook?.configured));
+      setWecomWebhookMaskedUrl(String(data?.wecomWebhook?.maskedUrl || ''));
+      setWecomWebhookUrlInput('');
+      setWecomWebhookClearUrl(false);
       loadSettings().catch(() => { });
       showToast('设置已更新', 'success');
     } catch (error) {
@@ -1548,6 +1588,24 @@ const AdminDashboard: React.FC = () => {
       showToast(message, 'error');
     } finally {
       setSettingsSubmitting(false);
+    }
+  };
+
+  const handleWecomWebhookTest = async () => {
+    const trimmedWecomWebhookUrl = wecomWebhookUrlInput.trim();
+    if (!trimmedWecomWebhookUrl && !wecomWebhookConfigured) {
+      showToast('请先填写企业微信机器人 Webhook 地址', 'warning');
+      return;
+    }
+    setWecomWebhookTesting(true);
+    try {
+      await api.testAdminWecomWebhook(trimmedWecomWebhookUrl ? { url: trimmedWecomWebhookUrl } : {});
+      showToast('测试消息已发送', 'success');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '测试推送失败';
+      showToast(message, 'error');
+    } finally {
+      setWecomWebhookTesting(false);
     }
   };
 
@@ -2563,6 +2621,86 @@ const AdminDashboard: React.FC = () => {
                       <div className="text-xs text-pencil font-sans space-y-1">
                         <p>投稿页会展示这些默认标签，用户仍可自行创建新标签。</p>
                         <p>当前有效：{parsedDefaultPostTags.length}/{MAX_DEFAULT_POST_TAGS}，超长标签与重复标签会自动过滤。</p>
+                      </div>
+                    </div>
+                    <div className="space-y-3 rounded-lg border border-gray-200 bg-paper/60 p-3">
+                      <div className="space-y-1">
+                        <label className="text-sm font-sans font-bold text-ink block">举报自动隐藏阈值</label>
+                        <p className="text-xs text-pencil font-sans">
+                          同一帖子或评论在最近 24 小时内达到该数量的待处理举报后，会自动暂时隐藏。
+                        </p>
+                      </div>
+                      <div className="max-w-xs">
+                        <input
+                          type="number"
+                          min={1}
+                          max={AUTO_HIDE_REPORT_THRESHOLD_MAX}
+                          step={1}
+                          value={autoHideReportThreshold}
+                          onChange={(e) => setAutoHideReportThreshold(normalizeAutoHideReportThreshold(e.target.value))}
+                          className="w-full bg-white border-2 border-gray-200 rounded-lg outline-none font-sans text-sm text-ink px-3 py-2 focus:border-ink transition-colors"
+                          disabled={settingsLoading || settingsSubmitting}
+                        />
+                      </div>
+                      <p className="text-xs text-pencil font-sans">
+                        当前规则：24 小时内达到 {autoHideReportThreshold} 条待处理举报后自动隐藏。
+                      </p>
+                    </div>
+                    <div className="space-y-3 border-t border-gray-200 pt-4">
+                      <div>
+                        <label className="text-sm font-sans font-bold text-ink block">企业微信机器人提醒</label>
+                        <p className="text-xs text-pencil font-sans mt-1">
+                          新留言和自动隐藏待审核内容会推送到企业微信群；推送失败不会影响用户提交。
+                        </p>
+                      </div>
+                      <label className="flex items-center gap-3 text-sm font-sans">
+                        <input
+                          type="checkbox"
+                          className="w-4 h-4"
+                          checked={wecomWebhookEnabled}
+                          onChange={(e) => setWecomWebhookEnabled(e.target.checked)}
+                          disabled={settingsLoading || settingsSubmitting}
+                        />
+                        <span>启用企业微信机器人提醒</span>
+                      </label>
+                      <div className="rounded-lg border border-gray-200 bg-paper/60 p-3 space-y-3">
+                        <p className="text-xs text-pencil font-sans">
+                          当前状态：{wecomWebhookConfigured ? `已配置 ${wecomWebhookMaskedUrl}` : '未配置'}
+                        </p>
+                        <input
+                          type="url"
+                          value={wecomWebhookUrlInput}
+                          onChange={(e) => {
+                            setWecomWebhookUrlInput(e.target.value);
+                            if (e.target.value.trim()) {
+                              setWecomWebhookClearUrl(false);
+                            }
+                          }}
+                          placeholder={wecomWebhookConfigured ? '留空则保留当前 Webhook 地址' : 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...'}
+                          className="w-full bg-white border-2 border-gray-200 rounded-lg outline-none font-sans text-sm text-ink placeholder:text-pencil/40 px-3 py-2 focus:border-ink transition-colors"
+                          disabled={settingsLoading || settingsSubmitting}
+                        />
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <label className="flex items-center gap-2 text-xs font-sans text-pencil">
+                            <input
+                              type="checkbox"
+                              className="w-4 h-4"
+                              checked={wecomWebhookClearUrl}
+                              onChange={(e) => setWecomWebhookClearUrl(e.target.checked)}
+                              disabled={settingsLoading || settingsSubmitting || !wecomWebhookConfigured}
+                            />
+                            <span>清空已保存的 Webhook 地址</span>
+                          </label>
+                          <SketchButton
+                            type="button"
+                            variant="secondary"
+                            className="h-9 px-4 text-xs"
+                            disabled={settingsLoading || settingsSubmitting || wecomWebhookTesting || (!wecomWebhookConfigured && !wecomWebhookUrlInput.trim()) || (wecomWebhookClearUrl && !wecomWebhookUrlInput.trim())}
+                            onClick={handleWecomWebhookTest}
+                          >
+                            {wecomWebhookTesting ? '发送中...' : '发送测试消息'}
+                          </SketchButton>
+                        </div>
                       </div>
                     </div>
                     <div className="space-y-3">

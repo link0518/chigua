@@ -10,6 +10,7 @@ export const registerPublicReportsRoutes = (app, deps) => {
     incrementDailyStat,
     formatDateKey,
     hiddenContentService,
+    wecomWebhookService,
   } = deps;
 
   const buildIdentityMatch = (column, identityHashes) => {
@@ -160,6 +161,17 @@ export const registerPublicReportsRoutes = (app, deps) => {
       targetId: targetType === 'comment' ? targetCommentId : targetPostId,
       now,
     }) || { autoHidden: false };
+
+    if (autoHideResult.autoHidden) {
+      void wecomWebhookService?.notifyHiddenContent({
+        targetType,
+        targetId: targetType === 'comment' ? targetCommentId : targetPostId,
+        postId: targetPostId,
+        contentSnippet: snippet,
+        pendingReportCount: autoHideResult.pendingCount,
+        hiddenAt: now,
+      });
+    }
 
     return res.status(201).json({
       id: reportId,

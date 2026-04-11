@@ -3,6 +3,19 @@ export const AUTO_HIDE_WINDOW_MS = 24 * 60 * 60 * 1000;
 export const HIDDEN_REVIEW_PENDING = 'pending';
 export const HIDDEN_REVIEW_KEPT = 'kept';
 
+const AUTO_HIDE_THRESHOLD_MAX = 1000;
+
+const resolveAutoHideThreshold = (getAutoHideReportThreshold) => {
+  const rawThreshold = typeof getAutoHideReportThreshold === 'function'
+    ? getAutoHideReportThreshold()
+    : AUTO_HIDE_THRESHOLD;
+  const parsed = Number(rawThreshold);
+  if (!Number.isFinite(parsed)) {
+    return AUTO_HIDE_THRESHOLD;
+  }
+  return Math.min(Math.max(Math.trunc(parsed), 1), AUTO_HIDE_THRESHOLD_MAX);
+};
+
 const countPendingReports = (db, targetType, targetId, since) => {
   if (!targetId) {
     return 0;
@@ -114,11 +127,12 @@ const restoreCommentVisibility = (db, commentId, postId) => {
   tx();
 };
 
-export const createHiddenContentService = ({ db, logAdminAction }) => ({
+export const createHiddenContentService = ({ db, logAdminAction, getAutoHideReportThreshold }) => ({
   maybeAutoHideTarget({ targetType, targetId, now = Date.now() }) {
     const since = now - AUTO_HIDE_WINDOW_MS;
     const pendingCount = countPendingReports(db, targetType, targetId, since);
-    if (pendingCount < AUTO_HIDE_THRESHOLD) {
+    const threshold = resolveAutoHideThreshold(getAutoHideReportThreshold);
+    if (pendingCount < threshold) {
       return { autoHidden: false, pendingCount };
     }
 

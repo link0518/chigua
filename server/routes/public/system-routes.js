@@ -12,6 +12,7 @@
     getClientIp,
     getRateLimitConfig,
     crypto,
+    wecomWebhookService,
   } = deps;
 
   const EASTER_EGG_STREAK7_KEY = 'streak7_confetti_v1';
@@ -295,6 +296,15 @@
       clientIp || null,
       fingerprint
     );
+
+    void wecomWebhookService?.notifyFeedbackMessage({
+      feedbackId,
+      content,
+      email,
+      wechat,
+      qq,
+      createdAt: now,
+    });
 
     return res.status(201).json({ ok: true });
   });

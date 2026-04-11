@@ -46,12 +46,16 @@ const createSchema = (db) => {
   `);
 };
 
-const createHarness = () => {
+const createHarness = (options = {}) => {
   const db = new Database(':memory:');
   createSchema(db);
   const logs = [];
+  const getAutoHideReportThreshold = typeof options.autoHideReportThreshold === 'number'
+    ? () => options.autoHideReportThreshold
+    : undefined;
   const service = createHiddenContentService({
     db,
+    getAutoHideReportThreshold,
     logAdminAction: (_req, payload) => {
       logs.push(payload);
     },
@@ -244,6 +248,45 @@ test('保持隐藏会标记审核状态并清空当前待处理举报', () => {
   assert.ok(reportRows.every((report) => report.status === 'resolved'));
   assert.ok(reportRows.every((report) => report.action === 'hidden_keep'));
   assert.ok(logs.some((item) => item.action === 'post_hidden_keep'));
+
+  db.close();
+});
+
+test('custom auto hide threshold is configurable', () => {
+  const threshold = 3;
+  const { db, service } = createHarness({ autoHideReportThreshold: threshold });
+  const now = 1_700_000_000_000;
+
+  db.prepare(`
+    INSERT INTO posts (id, content, deleted, hidden, comments_count, created_at)
+    VALUES (?, ?, 0, 0, 0, ?)
+  `).run('post-custom-threshold', 'post content', now - 1000);
+
+  insertPendingPostReports(db, 'post-custom-threshold', threshold - 1, now - 5000);
+
+  const beforeThreshold = service.maybeAutoHideTarget({
+    targetType: 'post',
+    targetId: 'post-custom-threshold',
+    now,
+  });
+  assert.deepEqual(beforeThreshold, {
+    autoHidden: false,
+    pendingCount: threshold - 1,
+  });
+  assert.equal(db.prepare('SELECT hidden FROM posts WHERE id = ?').get('post-custom-threshold').hidden, 0);
+
+  insertPendingPostReports(db, 'post-custom-threshold', 1, now - 1000);
+
+  const afterThreshold = service.maybeAutoHideTarget({
+    targetType: 'post',
+    targetId: 'post-custom-threshold',
+    now,
+  });
+  assert.deepEqual(afterThreshold, {
+    autoHidden: true,
+    pendingCount: threshold,
+  });
+  assert.equal(db.prepare('SELECT hidden FROM posts WHERE id = ?').get('post-custom-threshold').hidden, 1);
 
   db.close();
 });

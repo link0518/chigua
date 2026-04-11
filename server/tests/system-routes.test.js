@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import test from 'node:test';
 import Database from 'better-sqlite3';
-import { getNotificationRecipientValues } from '../routes/public/system-routes.js';
+import { getNotificationRecipientValues, registerPublicSystemRoutes } from '../routes/public/system-routes.js';
 
 const createNotificationsDb = () => {
   const db = new Database(':memory:');
@@ -78,4 +79,103 @@ test('通知接收键会去重并忽略空值', () => {
   );
 
   assert.deepEqual(getNotificationRecipientValues({}), []);
+});
+const createRouteApp = () => {
+  const routes = new Map();
+  return {
+    get(path, handler) {
+      routes.set(`GET ${path}`, handler);
+    },
+    post(path, handler) {
+      routes.set(`POST ${path}`, handler);
+    },
+    routes,
+  };
+};
+
+const createResponse = () => {
+  let statusCode = 200;
+  let payload;
+  return {
+    status(code) {
+      statusCode = code;
+      return this;
+    },
+    json(data) {
+      payload = data;
+      return this;
+    },
+    set() {
+      return this;
+    },
+    get statusCode() {
+      return statusCode;
+    },
+    get payload() {
+      return payload;
+    },
+  };
+};
+
+const createFeedbackDb = () => {
+  const db = new Database(':memory:');
+  db.exec(`
+    CREATE TABLE feedback_messages (
+      id TEXT PRIMARY KEY,
+      content TEXT NOT NULL,
+      email TEXT NOT NULL,
+      wechat TEXT,
+      qq TEXT,
+      created_at INTEGER NOT NULL,
+      session_id TEXT,
+      ip TEXT,
+      fingerprint TEXT,
+      read_at INTEGER
+    );
+  `);
+  return db;
+};
+
+test('新留言成功落库后触发企业微信后台提醒', async () => {
+  const db = createFeedbackDb();
+  const app = createRouteApp();
+  const wecomMessages = [];
+  registerPublicSystemRoutes(app, {
+    db,
+    requireFingerprint: () => 'fp-1',
+    getIdentityLookupHashes: () => ['fp-1'],
+    getRequestIdentityContext: () => ({ canonicalHash: 'fp-1', legacyFingerprintHash: 'fp-1' }),
+    checkBanFor: () => true,
+    touchOnlineSession: () => {},
+    getOnlineCount: () => 1,
+    formatDateKey: () => '2026-04-11',
+    verifyTurnstile: async () => ({ ok: true }),
+    getClientIp: () => '127.0.0.1',
+    getRateLimitConfig: () => ({ limit: 10, windowMs: 60 * 60 * 1000 }),
+    crypto,
+    wecomWebhookService: {
+      notifyFeedbackMessage: (payload) => {
+        wecomMessages.push(payload);
+        return Promise.resolve({ ok: true });
+      },
+    },
+  });
+
+  const handler = app.routes.get('POST /api/feedback');
+  const req = {
+    body: { content: '这里有一个新留言', email: 'dev@example.com', wechat: 'wxid', qq: '12345' },
+    sessionID: 'session-1',
+  };
+  const res = createResponse();
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 201);
+  assert.equal(wecomMessages.length, 1);
+  assert.equal(wecomMessages[0].content, '这里有一个新留言');
+  assert.equal(wecomMessages[0].email, 'dev@example.com');
+  assert.ok(wecomMessages[0].feedbackId);
+  assert.equal('ip' in wecomMessages[0], false);
+  assert.equal('fingerprint' in wecomMessages[0], false);
+  db.close();
 });

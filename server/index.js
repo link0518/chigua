@@ -35,6 +35,7 @@ import { registerAdminChatRoutes } from './routes/admin/chat-routes.js';
 import { createChatRealtimeService } from './chat-realtime-service.js';
 import { registerAdminHiddenContentRoutes } from './routes/admin/hidden-content-routes.js';
 import { createHiddenContentService } from './services/hidden-content-service.js';
+import { createWecomWebhookService } from './services/wecom-webhook-service.js';
 import {
   db,
   formatDateKey,
@@ -78,6 +79,12 @@ const {
   getRateLimits,
   getRateLimitConfig,
   setRateLimits,
+  getAutoHideReportThreshold,
+  setAutoHideReportThreshold,
+  getWecomWebhookConfig,
+  getWecomWebhookPublicConfig,
+  getWecomWebhookAuditConfig,
+  setWecomWebhookConfig,
 } = createSiteSettingsService({ db, turnstileSecretKey: TURNSTILE_SECRET_KEY });
 const identityService = createIdentityService({
   db,
@@ -758,6 +765,11 @@ const logAdminAction = (req, payload) => {
 const hiddenContentService = createHiddenContentService({
   db,
   logAdminAction,
+  getAutoHideReportThreshold,
+});
+const wecomWebhookService = createWecomWebhookService({
+  getConfig: getWecomWebhookConfig,
+  siteUrl: SITE_URL,
 });
 
 const allowRate = (key, limit, windowMs) => {
@@ -1210,6 +1222,7 @@ registerPublicSystemRoutes(app, {
   getClientIp,
   getRateLimitConfig,
   crypto,
+  wecomWebhookService,
 });
 registerPublicChatRoutes(app, {
   db,
@@ -1306,6 +1319,7 @@ registerPublicReportsRoutes(app, {
   incrementDailyStat,
   formatDateKey,
   hiddenContentService,
+  wecomWebhookService,
 });
 
 registerAdminReportsRoutes(app, {
@@ -1480,10 +1494,16 @@ registerAdminSettingsRoutes(app, {
   setCnyThemeEnabled,
   setDefaultPostTags,
   setRateLimits,
+  setAutoHideReportThreshold,
   getTurnstileEnabled,
   getCnyThemeEnabled,
   getDefaultPostTags,
   getRateLimits,
+  getAutoHideReportThreshold,
+  getWecomWebhookPublicConfig,
+  getWecomWebhookAuditConfig,
+  setWecomWebhookConfig,
+  wecomWebhookService,
   logAdminAction,
 });
 

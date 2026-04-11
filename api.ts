@@ -278,9 +278,15 @@ export const api = {
     cnyThemeEnabled?: boolean;
     defaultPostTags?: string[];
     rateLimits?: Partial<Record<'post' | 'comment' | 'report' | 'feedback', { limit?: number; windowMs?: number }>>;
+    autoHideReportThreshold?: number;
+    wecomWebhook?: { enabled?: boolean; url?: string; clearUrl?: boolean };
   }) => apiFetch('/admin/settings', {
     method: 'POST',
     body: JSON.stringify(settings || {}),
+  }),
+  testAdminWecomWebhook: (options: { url?: string } = {}) => apiFetch('/admin/settings/wecom-webhook/test', {
+    method: 'POST',
+    body: JSON.stringify(options || {}),
   }),
   getAdminVocabulary: (params = {}) => apiFetch(`/admin/vocabulary${toQuery(params)}`),
   addAdminVocabulary: (word) => apiFetch('/admin/vocabulary', {
