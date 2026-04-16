@@ -57,6 +57,18 @@ interface AppState {
   settings: AppSettings;
 }
 
+type AdminReportAction = 'ignore' | 'delete' | 'mute' | 'ban';
+type HandleReportOptions = {
+  permissions?: string[];
+  expiresAt?: number | null;
+  deleteComment?: boolean;
+  deleteChatMessage?: boolean;
+};
+type HandleReportTargetContext = {
+  targetId?: string | null;
+  targetType?: Report['targetType'];
+};
+
 interface AppContextType {
   state: AppState;
   addPost: (post: Omit<Post, 'id' | 'likes' | 'dislikes' | 'comments' | 'createdAt'>, turnstileToken: string) => Promise<Post>;
@@ -68,7 +80,13 @@ interface AppContextType {
   reportPost: (postId: string, reason: string) => Promise<ReportSubmissionResult>;
   reportComment: (commentId: string, reason: string) => Promise<ReportSubmissionResult>;
   reportChatMessage: (messageId: number, reason: string) => Promise<void>;
-  handleReport: (reportId: string, action: 'ignore' | 'delete' | 'mute' | 'ban', reason?: string, options?: { permissions?: string[]; expiresAt?: number | null; deleteComment?: boolean; deleteChatMessage?: boolean }) => Promise<void>;
+  handleReport: (
+    reportId: string,
+    action: AdminReportAction,
+    reason?: string,
+    options?: HandleReportOptions,
+    targetContext?: HandleReportTargetContext
+  ) => Promise<void>;
   showToast: (message: string, type?: Toast['type']) => void;
   removeToast: (id: string) => void;
   toggleHiddenPostTag: (tag: string) => void;
@@ -508,11 +526,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     await api.reportChatMessage(messageId, reason);
   }, []);
 
-  const handleReport = useCallback(async (reportId: string, action: 'ignore' | 'delete' | 'mute' | 'ban', reason = '', options?: { permissions?: string[]; expiresAt?: number | null; deleteComment?: boolean; deleteChatMessage?: boolean }) => {
+  const handleReport = useCallback(async (
+    reportId: string,
+    action: AdminReportAction,
+    reason = '',
+    options?: HandleReportOptions,
+    targetContext?: HandleReportTargetContext
+  ) => {
     const report = state.reports.find((item) => item.id === reportId);
+    const resolvedTargetId = targetContext?.targetId ?? report?.targetId;
+    const resolvedTargetType = targetContext?.targetType ?? report?.targetType ?? 'post';
     await api.handleReport(reportId, action, reason, options || {});
-    if ((action === 'delete' || action === 'ban') && report?.targetId && (report?.targetType || 'post') === 'post') {
-      deletePost(report.targetId);
+    if ((action === 'delete' || action === 'ban') && resolvedTargetId && resolvedTargetType === 'post') {
+      deletePost(resolvedTargetId);
     }
     await loadReports();
     await loadStats();

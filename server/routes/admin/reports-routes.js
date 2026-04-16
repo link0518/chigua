@@ -35,6 +35,10 @@ export const registerAdminReportsRoutes = (app, deps) => {
   app.get('/api/reports', requireAdmin, (req, res) => {
     const status = String(req.query.status || '').trim();
     const search = String(req.query.search || '').trim();
+    const parsedLimit = Number(req.query.limit);
+    const limit = Number.isFinite(parsedLimit) && parsedLimit > 0
+      ? Math.min(Math.floor(parsedLimit), 50)
+      : 0;
 
     const conditions = [];
     const params = [];
@@ -43,8 +47,16 @@ export const registerAdminReportsRoutes = (app, deps) => {
       conditions.push('status = ?');
       params.push(status);
     }
-
     const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const canUseSqlLimit = limit > 0 && !search;
+    const listParams = canUseSqlLimit ? [...params, limit] : params;
+    const limitClause = canUseSqlLimit ? 'LIMIT ?' : '';
+    const total = canUseSqlLimit
+      ? Number(
+        db.prepare(`SELECT COUNT(1) AS count FROM reports ${whereClause}`)
+          .get(...params)?.count || 0
+      )
+      : 0;
 
     const rows = db
       .prepare(
@@ -75,9 +87,10 @@ export const registerAdminReportsRoutes = (app, deps) => {
         ) reporter_stats ON reporter_stats.fingerprint = reports.fingerprint
         ${whereClause}
         ORDER BY reports.created_at DESC
+        ${limitClause}
         `
       )
-      .all(...params);
+      .all(...listParams);
 
     const reports = rows.map((row) => {
       const isComment = row.target_type === 'comment';
@@ -142,7 +155,10 @@ export const registerAdminReportsRoutes = (app, deps) => {
       ]))
       : reports;
 
-    return res.json({ items: filteredReports });
+    return res.json({
+      items: filteredReports,
+      total: search ? filteredReports.length : (canUseSqlLimit ? total : filteredReports.length),
+    });
   });
 
   app.post('/api/reports/:id/action', requireAdmin, requireAdminCsrf, (req, res) => {

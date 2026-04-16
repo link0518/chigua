@@ -308,6 +308,14 @@ const App: React.FC = () => {
     setMobileMenuOpen(false);
   };
 
+  const openViewInNewTab = useCallback((view: ViewType) => {
+    const targetPath = getPathForView(view);
+    const nextWindow = window.open(targetPath, '_blank', 'noopener,noreferrer');
+    if (nextWindow) {
+      nextWindow.opener = null;
+    }
+  }, []);
+
   const markUpdateAnnouncementsSeen = useCallback((updatedAt: number) => {
     if (!updatedAt) {
       return;
@@ -647,7 +655,7 @@ const App: React.FC = () => {
       {showDesktopWikiEntry && (
         <button
           type="button"
-          onClick={() => navigate(ViewType.WIKI)}
+          onClick={() => openViewInNewTab(ViewType.WIKI)}
           className="fixed z-[55] hidden items-center gap-2 rounded-[20px] border-2 border-ink bg-white px-4 py-2 text-sm font-bold text-ink shadow-paper transition-all hover:-translate-y-0.5 hover:bg-highlight sm:flex"
           style={{
             top: 'calc(env(safe-area-inset-top, 0px) + 12px)',
@@ -838,7 +846,7 @@ const App: React.FC = () => {
               <MobileNavItem
                 label="瓜条"
                 onClick={() => {
-                  navigate(ViewType.WIKI);
+                  openViewInNewTab(ViewType.WIKI);
                   setMobileMenuOpen(false);
                 }}
               />

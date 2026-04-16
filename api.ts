@@ -181,7 +181,7 @@ export const api = {
     method: 'POST',
     body: JSON.stringify(payload || {}),
   }),
-  getReports: (status?: string, search?: string) => apiFetch(`/reports${toQuery({ status, search })}`),
+  getReports: (params = {}) => apiFetch(`/reports${toQuery(params)}`),
   handleReport: (reportId, action, reason = '', options = {}) => apiFetch(`/reports/${reportId}/action`, {
     method: 'POST',
     body: JSON.stringify({ action: String(action || '').trim().toLowerCase(), reason, ...options }),

@@ -31,6 +31,7 @@ type ReportAction = 'ignore' | 'delete' | 'mute' | 'ban';
 type ReportConfirmModalState = {
   isOpen: boolean;
   reportId: string;
+  targetId: string;
   action: ReportAction;
   content: string;
   reason: string;
@@ -67,6 +68,7 @@ const ADMIN_COMPOSE_INCLUDE_DEVELOPER_STORAGE_KEY = 'admin_compose_include_devel
 const EMPTY_REPORT_CONFIRM_MODAL: ReportConfirmModalState = {
   isOpen: false,
   reportId: '',
+  targetId: '',
   action: 'ignore',
   content: '',
   reason: '',
@@ -306,6 +308,10 @@ const AdminDashboard: React.FC = () => {
   const [feedbackSearch, setFeedbackSearch] = useState('');
   const [feedbackPage, setFeedbackPage] = useState(1);
   const [feedbackTotal, setFeedbackTotal] = useState(0);
+  const [overviewPendingReports, setOverviewPendingReports] = useState<Report[]>([]);
+  const [overviewPendingCount, setOverviewPendingCount] = useState(0);
+  const [reportsLoaded, setReportsLoaded] = useState(false);
+  const [reportsLoading, setReportsLoading] = useState(false);
   const [feedbackUnreadCount, setFeedbackUnreadCount] = useState(0);
   const [wikiPendingCount, setWikiPendingCount] = useState(0);
   const [feedbackLoading, setFeedbackLoading] = useState(false);
@@ -349,9 +355,8 @@ const AdminDashboard: React.FC = () => {
   const appVersionLabel = appVersion.startsWith('v') ? appVersion : `v${appVersion}`;
 
   useEffect(() => {
-    loadReports().catch(() => { });
     loadStats().catch(() => { });
-  }, [loadReports, loadStats]);
+  }, [loadStats]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -389,6 +394,8 @@ const AdminDashboard: React.FC = () => {
 
   const pendingReports = getPendingReports();
   const processedReports = state.reports.filter(r => r.status !== 'pending');
+  const visiblePendingReports = reportsLoaded ? pendingReports : overviewPendingReports;
+  const pendingReportCount = reportsLoaded ? pendingReports.length : overviewPendingCount;
   const cnyThemePreviewActive = cnyThemeEnabled && cnyThemeAutoActive;
   const parsedDefaultPostTags = useMemo(
     () => parseDefaultPostTagsInput(defaultPostTagsInput),
@@ -481,6 +488,30 @@ const AdminDashboard: React.FC = () => {
       return fields.some((field) => field.toLowerCase().includes(query));
     });
   }, [bannedFingerprints, bannedIps, banSearch]);
+
+  const fetchOverviewReports = useCallback(async () => {
+    try {
+      const data = await api.getReports({ status: 'pending', limit: 2 });
+      setOverviewPendingReports(Array.isArray(data?.items) ? data.items : []);
+      setOverviewPendingCount(Number(data?.total || 0));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '举报概览加载失败，请稍后重试';
+      showToast(message, 'error');
+    }
+  }, [showToast]);
+
+  const fetchAllReports = useCallback(async () => {
+    setReportsLoading(true);
+    try {
+      await loadReports();
+      setReportsLoaded(true);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '举报列表加载失败，请稍后重试';
+      showToast(message, 'error');
+    } finally {
+      setReportsLoading(false);
+    }
+  }, [loadReports, showToast]);
 
 
   const fetchAdminPosts = useCallback(async () => {
@@ -688,6 +719,26 @@ const AdminDashboard: React.FC = () => {
   }, [showToast, vocabularyPage, vocabularySearch]);
 
   useEffect(() => {
+    if (currentView !== 'overview') {
+      return;
+    }
+    if (reportsLoaded) {
+      return;
+    }
+    fetchOverviewReports().catch(() => { });
+  }, [currentView, fetchOverviewReports, reportsLoaded]);
+
+  useEffect(() => {
+    if (currentView !== 'reports' && currentView !== 'processed') {
+      return;
+    }
+    if (reportsLoaded) {
+      return;
+    }
+    fetchAllReports().catch(() => { });
+  }, [currentView, fetchAllReports, reportsLoaded]);
+
+  useEffect(() => {
     if (currentView !== 'posts') {
       return;
     }
@@ -776,10 +827,17 @@ const AdminDashboard: React.FC = () => {
     setSelectedReports(new Set());
   }, [currentView, searchQuery, state.reports]);
 
-  const handleAction = (reportId: string, action: ReportAction, content: string, targetType: Report['targetType']) => {
+  const handleAction = (
+    reportId: string,
+    action: ReportAction,
+    content: string,
+    targetType: Report['targetType'],
+    targetId: string
+  ) => {
     setConfirmModal({
       isOpen: true,
       reportId,
+      targetId,
       action,
       content,
       reason: '',
@@ -790,7 +848,7 @@ const AdminDashboard: React.FC = () => {
   };
 
   const confirmAction = async () => {
-    const { reportId, action, reason, targetType, deleteComment, deleteChatMessage } = confirmModal;
+    const { reportId, targetId, action, reason, targetType, deleteComment, deleteChatMessage } = confirmModal;
     try {
       const options = action === 'ban'
         ? {
@@ -799,7 +857,8 @@ const AdminDashboard: React.FC = () => {
           ...(targetType === 'chat' ? { deleteChatMessage } : {}),
         }
         : undefined;
-      await handleReport(reportId, action, reason, options);
+      await handleReport(reportId, action, reason, options, { targetId, targetType });
+      setReportsLoaded(true);
       const banMessage = targetType === 'comment'
         ? (deleteComment ? '已封禁用户并删除被举报评论' : '已封禁用户，保留被举报评论')
         : targetType === 'chat'
@@ -954,6 +1013,7 @@ const AdminDashboard: React.FC = () => {
       await fetchHiddenItems();
       await fetchAdminPosts();
       await loadReports();
+      setReportsLoaded(true);
       await loadStats();
       if (postCommentsModal.isOpen && item.type === 'comment' && item.postId && item.postId === postCommentsModal.postId) {
         await fetchPostComments(item.postId, postSearch.trim());
@@ -1331,6 +1391,7 @@ const AdminDashboard: React.FC = () => {
       setSelectedReports(new Set());
       setBulkReportModal({ isOpen: false, reason: '' });
       await loadReports();
+      setReportsLoaded(true);
     } catch (error) {
       const message = error instanceof Error ? error.message : '批量处理失败';
       showToast(message, 'error');
@@ -1784,7 +1845,7 @@ const AdminDashboard: React.FC = () => {
             <NavItem view="wiki" icon={<BookOpen size={18} />} label="瓜条审核" badge={wikiPendingCount} />
             <NavItem view="feedback" icon={<MessageSquare size={18} />} label="留言管理" badge={feedbackUnreadCount} />
             <NavItem view="chat" icon={<MessageSquare size={18} />} label="聊天室管理" />
-            <NavItem view="reports" icon={<Flag size={18} />} label="待处理举报" badge={pendingReports.length} />
+            <NavItem view="reports" icon={<Flag size={18} />} label="待处理举报" badge={pendingReportCount} />
             <NavItem view="processed" icon={<Gavel size={18} />} label="已处理" />
             <NavItem view="bans" icon={<Shield size={18} />} label="封禁管理" />
             <NavItem view="audit" icon={<ClipboardList size={18} />} label="操作审计" />
@@ -1861,7 +1922,7 @@ const AdminDashboard: React.FC = () => {
             )}
             <button className="relative p-2 border-2 border-transparent hover:border-ink rounded-full hover:bg-highlight transition-all">
               <Bell size={20} />
-              {pendingReports.length > 0 && (
+              {pendingReportCount > 0 && (
                 <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border border-ink"></span>
               )}
             </button>
@@ -1905,7 +1966,7 @@ const AdminDashboard: React.FC = () => {
                 <NavItem view="wiki" icon={<BookOpen size={18} />} label="瓜条审核" badge={wikiPendingCount} onSelect={() => setMobileNavOpen(false)} />
                 <NavItem view="feedback" icon={<MessageSquare size={18} />} label="留言管理" badge={feedbackUnreadCount} onSelect={() => setMobileNavOpen(false)} />
                 <NavItem view="chat" icon={<MessageSquare size={18} />} label="聊天室管理" onSelect={() => setMobileNavOpen(false)} />
-                <NavItem view="reports" icon={<Flag size={18} />} label="待处理举报" badge={pendingReports.length} onSelect={() => setMobileNavOpen(false)} />
+                <NavItem view="reports" icon={<Flag size={18} />} label="待处理举报" badge={pendingReportCount} onSelect={() => setMobileNavOpen(false)} />
                 <NavItem view="processed" icon={<Gavel size={18} />} label="已处理" onSelect={() => setMobileNavOpen(false)} />
                 <NavItem view="bans" icon={<Shield size={18} />} label="封禁管理" onSelect={() => setMobileNavOpen(false)} />
                 <NavItem view="audit" icon={<ClipboardList size={18} />} label="操作审计" onSelect={() => setMobileNavOpen(false)} />
@@ -1944,9 +2005,9 @@ const AdminDashboard: React.FC = () => {
                   />
                   <StatCard
                     title="待处理"
-                    value={pendingReports.length.toString()}
-                    trend={pendingReports.length > 0 ? '需处理' : '已清空'}
-                    trendUp={pendingReports.length > 0}
+                    value={pendingReportCount.toString()}
+                    trend={pendingReportCount > 0 ? '需处理' : '已清空'}
+                    trendUp={pendingReportCount > 0}
                     icon={<Gavel size={80} />}
                     color="bg-highlight"
                   />
@@ -2026,7 +2087,7 @@ const AdminDashboard: React.FC = () => {
                 </section>
 
                 {/* Recent Reports Preview */}
-                {pendingReports.length > 0 && (
+                {pendingReportCount > 0 && (
                   <section>
                     <div className="flex items-center justify-between mb-6">
                       <h2 className="text-xl font-display flex items-center gap-2">
@@ -2040,7 +2101,7 @@ const AdminDashboard: React.FC = () => {
                       </button>
                     </div>
                     <div className="flex flex-col gap-4">
-                      {pendingReports.slice(0, 2).map(report => (
+                      {visiblePendingReports.slice(0, 2).map(report => (
                         <ReportCard
                           key={report.id}
                           report={report}
@@ -3262,7 +3323,7 @@ const AdminDashboard: React.FC = () => {
                       <><Gavel size={20} /> 已处理</>
                     )}
                     <span className="bg-ink text-white text-xs px-2 py-1 rounded-full font-sans">
-                      {filteredReports.length}
+                      {reportsLoading ? '...' : filteredReports.length}
                     </span>
                   </h2>
                 </div>
@@ -3291,7 +3352,12 @@ const AdminDashboard: React.FC = () => {
                   </div>
                 )}
 
-                {filteredReports.length === 0 ? (
+                {reportsLoading ? (
+                  <div className="text-center py-16 bg-white border-2 border-ink rounded-lg">
+                    <h3 className="font-display text-2xl text-ink mb-2">举报加载中</h3>
+                    <p className="font-hand text-lg text-pencil">先拉取完整列表，稍等一下…</p>
+                  </div>
+                ) : filteredReports.length === 0 ? (
                   <div className="text-center py-16 bg-white border-2 border-ink rounded-lg">
                     <span className="text-6xl mb-4 block">
                       {searchQuery ? '🔍' : '✅'}
@@ -3804,7 +3870,7 @@ const AdminDashboard: React.FC = () => {
 // Separate ReportCard component
 const ReportCard: React.FC<{
   report: Report;
-  onAction: (id: string, action: ReportAction, content: string, targetType: Report['targetType']) => void;
+  onAction: (id: string, action: ReportAction, content: string, targetType: Report['targetType'], targetId: string) => void;
   onDetail?: (report: Report) => void;
   renderIdentity: (identity?: AdminIdentityLike | null, options?: {
     label?: string | null;
@@ -3896,14 +3962,14 @@ const ReportCard: React.FC<{
             <SketchButton
               variant="secondary"
               className="h-10 px-3 text-xs flex items-center gap-1"
-              onClick={() => onAction(report.id, 'ignore', report.contentSnippet, report.targetType)}
+              onClick={() => onAction(report.id, 'ignore', report.contentSnippet, report.targetType, report.targetId)}
             >
               <EyeOff size={14} /> 忽略
             </SketchButton>
             <SketchButton
               variant="danger"
               className="h-10 px-3 text-xs flex items-center gap-1"
-              onClick={() => onAction(report.id, 'delete', report.contentSnippet, report.targetType)}
+              onClick={() => onAction(report.id, 'delete', report.contentSnippet, report.targetType, report.targetId)}
             >
               <Trash2 size={14} /> 删除
             </SketchButton>
@@ -3911,7 +3977,7 @@ const ReportCard: React.FC<{
               <SketchButton
                 variant="secondary"
                 className="h-10 px-3 text-xs flex items-center gap-1"
-                onClick={() => onAction(report.id, 'mute', report.contentSnippet, report.targetType)}
+                onClick={() => onAction(report.id, 'mute', report.contentSnippet, report.targetType, report.targetId)}
               >
                 <MessageSquare size={14} /> 禁言
               </SketchButton>
@@ -3919,7 +3985,7 @@ const ReportCard: React.FC<{
             <SketchButton
               variant="primary"
               className="h-10 px-3 text-xs flex items-center gap-1 text-white"
-              onClick={() => onAction(report.id, 'ban', report.contentSnippet, report.targetType)}
+              onClick={() => onAction(report.id, 'ban', report.contentSnippet, report.targetType, report.targetId)}
             >
               <Ban size={14} /> 封禁
             </SketchButton>

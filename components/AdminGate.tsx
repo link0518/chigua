@@ -5,7 +5,7 @@ import AdminDashboard from './AdminDashboard';
 import { SketchButton, SketchCard, Tape } from './SketchUI';
 
 const AdminGate: React.FC = () => {
-  const { state, loadAdminSession, loginAdmin, loadReports, loadStats, showToast } = useApp();
+  const { state, loadAdminSession, loginAdmin, showToast } = useApp();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -54,8 +54,6 @@ const AdminGate: React.FC = () => {
     setIsSubmitting(true);
     try {
       await loginAdmin(username.trim(), password.trim());
-      await loadReports();
-      await loadStats();
       showToast('登录成功，欢迎回来', 'success');
     } catch (error) {
       const message = error instanceof Error ? error.message : '登录失败，请稍后重试';
