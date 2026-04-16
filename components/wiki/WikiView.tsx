@@ -992,7 +992,7 @@ const WikiEntryFormModal: React.FC<{
             <input
               value={tagInput}
               onChange={(event) => setTagInput(event.target.value)}
-              placeholder="例如：藏剑山庄，庄主，西湖"
+              placeholder="输入tags"
               className="w-full border-0 border-b border-outline-variant/30 bg-transparent px-0 py-3 font-body text-base outline-none ring-0 transition-all duration-300 placeholder:text-on-surface-variant/30 focus:border-primary"
             />
             <span className="mt-2 block font-body text-xs leading-relaxed text-on-surface-variant/60">
@@ -1013,7 +1013,7 @@ const WikiEntryFormModal: React.FC<{
             <textarea
               value={narrative}
               onChange={(event) => setNarrative(event.target.value)}
-              placeholder="详细描述该角色的背景与意义..."
+              placeholder="客观中立的描述该词条..."
               rows={7}
               className="w-full resize-none rounded-lg border-0 bg-surface-container-high/20 px-4 py-4 font-body text-base leading-relaxed outline-none ring-0 transition-all duration-300 placeholder:text-on-surface-variant/30 focus:ring-1 focus:ring-primary"
             />
