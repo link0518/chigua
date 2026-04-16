@@ -163,3 +163,48 @@
 ## 4. 权限/限流补充说明
 
 服务端存在按行为的频控配置（例如评论频控）；封禁权限会影响发帖/评论/点赞/浏览/访问站点/聊天室等（具体以后端判断为准）。
+
+## 5. 角色 Wiki API
+
+### 5.1 公开接口
+
+- `GET /api/wiki/entries?q=&tag=&page=&limit=`：查询公开角色瓜条列表。只返回已审核通过且未删除的瓜条。
+- `GET /api/wiki/entries/:slug`：查询公开角色详情，包含当前公开内容和已审核通过的编辑历史。
+- `POST /api/wiki/submissions`：提交新角色瓜条，进入待审核。
+- `POST /api/wiki/entries/:slug/edits`：提交已有角色瓜条编辑，进入待审核。
+
+投稿和编辑请求体统一只接受：
+
+- `name`：名字，必填。
+- `narrative`：记录叙述，必填。
+- `tags`：标签数组。
+- `editSummary`：修改说明，可选。
+
+公开接口不会返回待审核或已拒绝版本。提交成功只代表进入审核队列，不代表公开发布。
+
+`GET /api/wiki/entries/:slug` 返回的公开历史必须脱敏，只保留前台展示所需的版本内容、版本号、审核通过时间和修改说明；不得返回提交者 IP、提交者指纹、后台审核账号等审计元数据。
+
+### 5.2 后台接口
+
+以下接口均需要管理员登录，写操作需要 CSRF：
+
+- `GET /api/admin/wiki/revisions?status=&actionType=&q=&page=&limit=`：查询 Wiki 审核记录。
+- `GET /api/admin/wiki/entries?status=&q=&page=&limit=`：查询 Wiki 瓜条管理列表。
+- `POST /api/admin/wiki/entries`：管理员直接创建公开瓜条。
+- `POST /api/admin/wiki/revisions/:id/action`：对投稿或编辑执行 `approve` / `reject`。
+- `POST /api/admin/wiki/entries/:id/edit`：管理员直接编辑当前公开瓜条。
+- `POST /api/admin/wiki/entries/:id/action`：对瓜条执行 `delete` / `restore`。
+
+审核通过规则：
+
+- `create` 通过后创建公开瓜条，版本号为 `1`。
+- `edit` 通过后覆盖当前公开瓜条，版本号 `+1`。
+- `edit` 审核通过前必须校验待审记录的 `base_revision_id` 和 `base_version_number` 是否仍匹配当前公开瓜条；若瓜条已产生新版本，应拒绝直接覆盖并提示重新提交或手动合并。
+- `reject` 不影响当前公开内容。
+
+### 5.3 安全与限流
+
+- Wiki 投稿和编辑会附带 `X-Client-Fingerprint`，并记录提交者指纹与 IP。
+- Wiki 投稿和编辑执行 Turnstile 校验、敏感词校验和封禁检查。
+- 新增 `wiki` 限流配置，默认 `3 次 / 小时`。
+- 后台审核、拒绝、删除、恢复、管理员创建和管理员编辑都写入 `admin_audit_logs`。

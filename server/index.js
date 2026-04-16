@@ -21,11 +21,13 @@ import { registerPublicCommentsRoutes } from './routes/public/comments-routes.js
 import { registerPublicReportsRoutes } from './routes/public/reports-routes.js';
 import { registerPublicSystemRoutes } from './routes/public/system-routes.js';
 import { registerPublicChatRoutes } from './routes/public/chat-routes.js';
+import { registerPublicWikiRoutes } from './routes/public/wiki-routes.js';
 import { registerAdminAuthRoutes } from './routes/admin/auth-routes.js';
 import { registerAdminAnnouncementRoutes } from './routes/admin/announcement-routes.js';
 import { registerAdminReportsRoutes } from './routes/admin/reports-routes.js';
 import { registerAdminSettingsRoutes } from './routes/admin/settings-routes.js';
 import { registerAdminPostsRoutes } from './routes/admin/posts-routes.js';
+import { registerAdminWikiRoutes } from './routes/admin/wiki-routes.js';
 import { registerAdminFeedbackRoutes } from './routes/admin/feedback-routes.js';
 import { registerAdminBansRoutes } from './routes/admin/bans-routes.js';
 import { registerAdminAuditRoutes } from './routes/admin/audit-routes.js';
@@ -513,6 +515,7 @@ const RATE_LIMIT_ERROR_MESSAGES = {
   comment: '评论过于频繁，请稍后再试',
   report: '举报过于频繁，请稍后再试',
   feedback: '留言过于频繁，请稍后再试',
+  wiki: 'Wiki 提交过于频繁，请稍后再试',
 };
 const ONLINE_WINDOW_MS = 2 * 60 * 1000;
 const onlineSessions = new Map();
@@ -1308,6 +1311,18 @@ registerPublicCommentsRoutes(app, {
   crypto,
 });
 
+registerPublicWikiRoutes(app, {
+  db,
+  requireFingerprint,
+  checkBanFor,
+  enforceRateLimit,
+  getClientIp,
+  verifyTurnstile,
+  containsSensitiveWord,
+  crypto,
+  wecomWebhookService,
+});
+
 registerPublicReportsRoutes(app, {
   db,
   requireFingerprint,
@@ -1356,6 +1371,16 @@ registerAdminPostsRoutes(app, {
   formatRelativeTime,
   resolveStoredIdentityHash,
 });
+
+registerAdminWikiRoutes(app, {
+  db,
+  requireAdmin,
+  requireAdminCsrf,
+  logAdminAction,
+  crypto,
+  containsSensitiveWord,
+});
+
 registerAdminFeedbackRoutes(app, {
   db,
   requireAdmin,

@@ -38,6 +38,11 @@ const labels = {
   openAdmin: '\u6253\u5f00\u540e\u53f0',
   newFeedback: '\u65b0\u7559\u8a00',
   hiddenReview: '\u81ea\u52a8\u9690\u85cf\u5f85\u5ba1\u6838',
+  wikiPending: '\u74dc\u6761\u5f85\u5ba1\u6838',
+  wikiCreate: '\u65b0\u5efa\u74dc\u6761',
+  wikiEdit: '\u7f16\u8f91\u74dc\u6761',
+  wikiName: '\u74dc\u6761\u540d',
+  tags: '\u6807\u7b7e',
   comment: '\u8bc4\u8bba',
   post: '\u5e16\u5b50',
   targetId: '\u5185\u5bb9ID',
@@ -248,6 +253,22 @@ export const createWecomWebhookService = ({
     ].join('\n'), 'hidden_content');
   };
 
+  const notifyWikiRevision = (payload = {}) => {
+    const actionLabel = payload.actionType === 'edit' ? labels.wikiEdit : labels.wikiCreate;
+    const tagsText = Array.isArray(payload.tags) && payload.tags.length
+      ? payload.tags.map((item) => `#${text(item)}`).filter(Boolean).join(' ')
+      : labels.empty;
+    return sendConfiguredMarkdown([
+      `**${labels.title}**`,
+      `> ${labels.type}\uff1a${labels.wikiPending} / ${actionLabel}`,
+      `> ${labels.time}\uff1a${escapeMarkdownText(formatTime(payload.createdAt))}`,
+      `> ${labels.wikiName}\uff1a${escapeMarkdownText(payload.name) || labels.empty}`,
+      `> ${labels.tags}\uff1a${escapeMarkdownText(tagsText) || labels.empty}`,
+      `> ${labels.snippet}\uff1a${escapeMarkdownText(truncateText(payload.narrative)) || labels.empty}`,
+      `> ${labels.adminEntry}\uff1a${adminLink}`,
+    ].join('\n'), 'wiki_revision');
+  };
+
   const sendTestMessage = async ({ url } = {}) => {
     const config = getCurrentConfig();
     const targetUrl = text(url) || config.url;
@@ -269,6 +290,7 @@ export const createWecomWebhookService = ({
   return {
     notifyFeedbackMessage,
     notifyHiddenContent,
+    notifyWikiRevision,
     sendTestMessage,
   };
 };

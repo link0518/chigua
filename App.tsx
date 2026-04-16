@@ -9,6 +9,7 @@ import { api } from './api';
 import HomeView from './components/HomeView';
 import {
   Bell,
+  BookOpen,
   Megaphone,
   Menu,
   MessageCircle,
@@ -32,6 +33,7 @@ const SearchView = React.lazy(() => import('./components/SearchView'));
 const AdminGate = React.lazy(() => import('./components/AdminGate'));
 const FavoritesView = React.lazy(() => import('./components/FavoritesView'));
 const ChatRoomView = React.lazy(() => import('./components/ChatRoomView'));
+const WikiView = React.lazy(() => import('./components/wiki/WikiView'));
 
 const normalizePath = (path: string) => {
   if (!path || path === '/') {
@@ -55,6 +57,9 @@ const resolveViewFromPath = (path: string) => {
   if (normalized === '/chat') {
     return ViewType.CHAT;
   }
+  if (normalized === '/wiki' || /^\/wiki\/[^/]+$/.test(normalized)) {
+    return ViewType.WIKI;
+  }
   if (normalized === '/' || /^\/post\/[^/]+$/.test(normalized)) {
     return ViewType.HOME;
   }
@@ -73,6 +78,9 @@ const getPathForView = (view: ViewType) => {
   }
   if (view === ViewType.CHAT) {
     return '/chat';
+  }
+  if (view === ViewType.WIKI) {
+    return '/wiki';
   }
   return '/';
 };
@@ -104,9 +112,11 @@ const App: React.FC = () => {
   const [backgroundTasksReady, setBackgroundTasksReady] = useState(false);
   const chatEnabled = settingsChecked ? state.settings.chatEnabled : false;
   const isChatView = currentView === ViewType.CHAT;
-  const showSiteChrome = currentView !== ViewType.ADMIN && !isChatView;
-  const isCnyTheme = currentView !== ViewType.ADMIN && state.settings.cnyThemeActive;
-  const showDesktopSettingsEntry = currentView !== ViewType.ADMIN;
+  const isWikiView = currentView === ViewType.WIKI;
+  const showSiteChrome = currentView !== ViewType.ADMIN && !isChatView && !isWikiView;
+  const isCnyTheme = currentView !== ViewType.ADMIN && !isWikiView && state.settings.cnyThemeActive;
+  const showDesktopSettingsEntry = currentView !== ViewType.ADMIN && !isWikiView;
+  const showDesktopWikiEntry = currentView !== ViewType.ADMIN && !isWikiView;
 
   useEffect(() => {
     const timer = window.setTimeout(() => setBackgroundTasksReady(true), 15000);
@@ -523,6 +533,8 @@ const App: React.FC = () => {
           return <HomeView />;
         }
         return <ChatRoomView onExitToFeed={() => navigate(ViewType.HOME)} />;
+      case ViewType.WIKI:
+        return <WikiView />;
       case ViewType.ADMIN:
         return (
           <React.Suspense
@@ -605,7 +617,7 @@ const App: React.FC = () => {
           </div>
         </>
       )}
-      {!isCnyTheme && <AntigravityBackground density={60} speed={0.5} />}
+      {!isCnyTheme && showSiteChrome && <AntigravityBackground density={60} speed={0.5} />}
 
       <StreakCelebration
         open={streakCelebrationOpen}
@@ -630,6 +642,20 @@ const App: React.FC = () => {
             )}
           </span>
           <span>设置</span>
+        </button>
+      )}
+      {showDesktopWikiEntry && (
+        <button
+          type="button"
+          onClick={() => navigate(ViewType.WIKI)}
+          className="fixed z-[55] hidden items-center gap-2 rounded-[20px] border-2 border-ink bg-white px-4 py-2 text-sm font-bold text-ink shadow-paper transition-all hover:-translate-y-0.5 hover:bg-highlight sm:flex"
+          style={{
+            top: 'calc(env(safe-area-inset-top, 0px) + 12px)',
+            left: 'calc(env(safe-area-inset-left, 0px) + 16px)',
+          }}
+        >
+          <BookOpen className="h-4 w-4" />
+          <span>瓜条</span>
         </button>
       )}
       {/* Top Navigation */}
@@ -809,6 +835,13 @@ const App: React.FC = () => {
                   setMobileMenuOpen(false);
                 }}
               />
+              <MobileNavItem
+                label="瓜条"
+                onClick={() => {
+                  navigate(ViewType.WIKI);
+                  setMobileMenuOpen(false);
+                }}
+              />
               {chatEnabled && (
                 <MobileNavItem
                   label="聊天室"
@@ -835,20 +868,26 @@ const App: React.FC = () => {
       <div className={`flex-grow flex flex-col ${currentView === ViewType.ADMIN ? 'h-screen' : ''}`}>
         <React.Suspense
           fallback={(
-            <div
-              aria-busy="true"
-              className={`flex-grow w-full max-w-2xl mx-auto px-4 flex flex-col min-h-80vh-safe ${currentView === ViewType.HOME ? 'py-8' : 'pt-6 pb-20'}`}
-            >
-              <div className="relative w-full">
-                <div className="w-full rounded-lg border-2 border-black bg-white p-8 shadow-paper">
-                  <div className="h-7 w-2/3 bg-gray-200 rounded mb-4" />
-                  <div className="h-4 w-full bg-gray-200 rounded mb-2" />
-                  <div className="h-4 w-11/12 bg-gray-200 rounded mb-2" />
-                  <div className="h-4 w-10/12 bg-gray-200 rounded mb-6" />
-                  <div className="h-10 w-32 bg-gray-200 rounded" />
+            currentView === ViewType.WIKI ? (
+              <div aria-busy="true" className="wiki-page flex min-h-screen items-center justify-center bg-surface px-6 text-on-surface-variant">
+                正在整理档案...
+              </div>
+            ) : (
+              <div
+                aria-busy="true"
+                className={`flex-grow w-full max-w-2xl mx-auto px-4 flex flex-col min-h-80vh-safe ${currentView === ViewType.HOME ? 'py-8' : 'pt-6 pb-20'}`}
+              >
+                <div className="relative w-full">
+                  <div className="w-full rounded-lg border-2 border-black bg-white p-8 shadow-paper">
+                    <div className="h-7 w-2/3 bg-gray-200 rounded mb-4" />
+                    <div className="h-4 w-full bg-gray-200 rounded mb-2" />
+                    <div className="h-4 w-11/12 bg-gray-200 rounded mb-2" />
+                    <div className="h-4 w-10/12 bg-gray-200 rounded mb-6" />
+                    <div className="h-10 w-32 bg-gray-200 rounded" />
+                  </div>
                 </div>
               </div>
-            </div>
+            )
           )}
         >
           {renderView()}
@@ -856,7 +895,7 @@ const App: React.FC = () => {
       </div>
 
       {/* Toast Notifications */}
-      <Toast />
+      {currentView !== ViewType.WIKI && <Toast />}
 
       <Modal
         isOpen={announcementOpen}

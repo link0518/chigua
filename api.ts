@@ -39,6 +39,10 @@ const shouldAttachFingerprint = (path: string, options: RequestInit) => {
     return true;
   }
 
+  if (cleanPath.startsWith('/wiki')) {
+    return true;
+  }
+
   if (cleanPath.startsWith('/reports')) {
     return true;
   }
@@ -167,6 +171,16 @@ export const api = {
     method: 'POST',
     body: JSON.stringify({ content, email, wechat, qq, turnstileToken }),
   }),
+  getWikiEntries: (params = {}) => apiFetch(`/wiki/entries${toQuery(params)}`),
+  getWikiEntry: (slug) => apiFetch(`/wiki/entries/${encodeURIComponent(String(slug || ''))}`),
+  createWikiSubmission: (payload) => apiFetch('/wiki/submissions', {
+    method: 'POST',
+    body: JSON.stringify(payload || {}),
+  }),
+  createWikiEdit: (slug, payload) => apiFetch(`/wiki/entries/${encodeURIComponent(String(slug || ''))}/edits`, {
+    method: 'POST',
+    body: JSON.stringify(payload || {}),
+  }),
   getReports: (status?: string, search?: string) => apiFetch(`/reports${toQuery({ status, search })}`),
   handleReport: (reportId, action, reason = '', options = {}) => apiFetch(`/reports/${reportId}/action`, {
     method: 'POST',
@@ -204,6 +218,24 @@ export const api = {
     body: JSON.stringify({ action, reportIds, reason }),
   }),
   getAdminFeedback: (params = {}) => apiFetch(`/admin/feedback${toQuery(params)}`),
+  getAdminWikiRevisions: (params = {}) => apiFetch(`/admin/wiki/revisions${toQuery(params)}`),
+  getAdminWikiEntries: (params = {}) => apiFetch(`/admin/wiki/entries${toQuery(params)}`),
+  createAdminWikiEntry: (payload = {}) => apiFetch('/admin/wiki/entries', {
+    method: 'POST',
+    body: JSON.stringify(payload || {}),
+  }),
+  handleAdminWikiRevision: (revisionId, action, reason = '') => apiFetch(`/admin/wiki/revisions/${encodeURIComponent(String(revisionId || ''))}/action`, {
+    method: 'POST',
+    body: JSON.stringify({ action, reason }),
+  }),
+  updateAdminWikiEntry: (entryId, payload = {}) => apiFetch(`/admin/wiki/entries/${encodeURIComponent(String(entryId || ''))}/edit`, {
+    method: 'POST',
+    body: JSON.stringify(payload || {}),
+  }),
+  handleAdminWikiEntry: (entryId, action, reason = '') => apiFetch(`/admin/wiki/entries/${encodeURIComponent(String(entryId || ''))}/action`, {
+    method: 'POST',
+    body: JSON.stringify({ action, reason }),
+  }),
   handleAdminFeedback: (feedbackId, action, reason = '', options = {}) => apiFetch(`/admin/feedback/${feedbackId}/action`, {
     method: 'POST',
     body: JSON.stringify({ action, reason, ...options }),
@@ -277,7 +309,7 @@ export const api = {
     turnstileEnabled?: boolean;
     cnyThemeEnabled?: boolean;
     defaultPostTags?: string[];
-    rateLimits?: Partial<Record<'post' | 'comment' | 'report' | 'feedback', { limit?: number; windowMs?: number }>>;
+    rateLimits?: Partial<Record<'post' | 'comment' | 'report' | 'feedback' | 'wiki', { limit?: number; windowMs?: number }>>;
     autoHideReportThreshold?: number;
     wecomWebhook?: { enabled?: boolean; url?: string; clearUrl?: boolean };
   }) => apiFetch('/admin/settings', {

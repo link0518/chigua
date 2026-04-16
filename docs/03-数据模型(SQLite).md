@@ -1,4 +1,4 @@
-﻿# 03｜数据模型（SQLite）
+# 03｜数据模型（SQLite）
 
 数据库由 `server/db.js` 初始化，默认存储在 `server/data/app.db`。项目使用 `better-sqlite3`，并开启：
 
@@ -190,3 +190,67 @@ permissions 常见值（见服务端/前端映射）：
 > 这意味着如果你希望“删除楼层时连带删除其回复”，需要在业务逻辑层自行实现级联软删（数据库层没有外键级联到子评论）。
 
 
+
+## 3. 角色 Wiki 数据模型
+
+角色 Wiki 使用两张表：`wiki_entries` 和 `wiki_entry_revisions`。
+
+### 3.1 wiki_entries
+
+`wiki_entries` 保存当前公开瓜条快照，只用于读取公开内容：
+
+- `id`：整数主键。
+- `slug`：公开详情页路径标识，唯一。
+- `name`：角色名字。
+- `narrative`：记录叙述。
+- `tags`：JSON 字符串，保存清洗后的 tags 数组。
+- `status`：当前瓜条状态，公开读取只使用 `approved`。
+- `current_revision_id`：当前公开版本对应的 revision。
+- `version_number`：当前公开版本号。
+- `created_at` / `updated_at`：创建与更新时间。
+- `deleted` / `deleted_at`：软删除标记与删除时间。
+
+### 3.2 wiki_entry_revisions
+
+`wiki_entry_revisions` 保存用户投稿、用户编辑和管理员直接编辑形成的版本记录：
+
+- `id`：整数主键。
+- `entry_id`：关联公开瓜条。新瓜条待审核时可为空。
+- `action_type`：`create` 或 `edit`。
+- `base_revision_id`：编辑基于的公开 revision。
+- `base_version_number`：编辑基于的公开版本号。
+- `data_json`：版本内容，只包含 `name`、`narrative`、`tags`。
+- `edit_summary`：修改说明。
+- `status`：`pending`、`approved`、`rejected`。
+- `submitter_fingerprint`：提交者指纹。
+- `submitter_ip`：提交者 IP。
+- `created_at`：提交时间。
+- `review_reason`：审核原因或拒绝原因。
+- `reviewed_at`：审核时间。
+- `reviewed_by`：审核管理员。
+
+### 3.3 发布语义
+
+- 新瓜条投稿先写入 `wiki_entry_revisions`，状态为 `pending`，不会写入公开列表。
+- 新瓜条审核通过后创建 `wiki_entries` 快照，版本号为 `1`，并把对应 revision 标记为 `approved`。
+- 编辑投稿先写入 `wiki_entry_revisions`，状态为 `pending`，不会覆盖公开内容。
+- 编辑审核通过后覆盖 `wiki_entries` 当前快照，版本号 `+1`，并把对应 revision 标记为 `approved`。
+- 拒绝只更新 revision 状态，不影响 `wiki_entries`。
+- 公开详情页的编辑历史只读取 `approved` revision。
+- 删除瓜条使用 `deleted` 软删除，删除后公开列表和详情都不可见。
+
+### 3.4 字段边界
+
+角色 Wiki 当前只允许保存名字、记录叙述和 tags。不要新增或保留以下字段：
+
+- `affiliations_json`
+- `attributes_json`
+- `activities_json`
+- `role_title`
+- `summary`
+- `biography`
+- `early_experience`
+- `philosophy`
+- `quote`
+- `social_function`
+- `visual_description`

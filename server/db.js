@@ -209,6 +209,39 @@ CREATE TABLE IF NOT EXISTS update_announcements (
   updated_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS wiki_entries (
+  id TEXT PRIMARY KEY,
+  slug TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  narrative TEXT NOT NULL,
+  tags TEXT,
+  status TEXT NOT NULL DEFAULT 'approved',
+  current_revision_id TEXT,
+  version_number INTEGER NOT NULL DEFAULT 1,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  deleted INTEGER NOT NULL DEFAULT 0,
+  deleted_at INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS wiki_entry_revisions (
+  id TEXT PRIMARY KEY,
+  entry_id TEXT,
+  action_type TEXT NOT NULL,
+  base_revision_id TEXT,
+  base_version_number INTEGER NOT NULL DEFAULT 0,
+  data_json TEXT NOT NULL,
+  edit_summary TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  submitter_fingerprint TEXT,
+  submitter_ip TEXT,
+  created_at INTEGER NOT NULL,
+  review_reason TEXT,
+  reviewed_at INTEGER,
+  reviewed_by TEXT,
+  FOREIGN KEY (entry_id) REFERENCES wiki_entries(id) ON DELETE SET NULL
+);
+
 CREATE TABLE IF NOT EXISTS app_settings (
   key TEXT PRIMARY KEY,
   value TEXT,
@@ -505,6 +538,11 @@ const ensureIndexes = () => {
   CREATE INDEX IF NOT EXISTS idx_feedback_created_at ON feedback_messages(created_at);
   CREATE INDEX IF NOT EXISTS idx_feedback_read_at ON feedback_messages(read_at);
   CREATE INDEX IF NOT EXISTS idx_update_announcements_updated_at ON update_announcements(updated_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_wiki_entries_status_deleted_updated_at ON wiki_entries(status, deleted, updated_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_wiki_entries_slug ON wiki_entries(slug);
+  CREATE INDEX IF NOT EXISTS idx_wiki_entry_revisions_status_created_at ON wiki_entry_revisions(status, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_wiki_entry_revisions_entry_id_created_at ON wiki_entry_revisions(entry_id, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_wiki_entry_revisions_action_type ON wiki_entry_revisions(action_type);
   CREATE INDEX IF NOT EXISTS idx_post_edits_post_id ON post_edits(post_id);
   CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_created_at ON admin_audit_logs(created_at);
   CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_action ON admin_audit_logs(action);

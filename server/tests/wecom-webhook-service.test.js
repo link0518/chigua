@@ -136,3 +136,33 @@ test('企业微信推送内容不包含留言ID、所属帖子和内容ID', asyn
   assert.ok(!sentText.includes('hidden-secret-id'));
   assert.ok(!sentText.includes('post-secret-id'));
 });
+
+test('企业微信瓜条待审提醒包含类型、名称、标签和摘要', async () => {
+  const bodies = [];
+  const service = createWecomWebhookService({
+    getConfig: () => ({ enabled: true, url: VALID_URL }),
+    fetchImpl: async (_url, options) => {
+      bodies.push(JSON.parse(options.body));
+      return { ok: true, status: 200, json: async () => ({ errcode: 0 }) };
+    },
+    siteUrl: 'https://example.com',
+  });
+
+  const result = await service.notifyWikiRevision({
+    actionType: 'edit',
+    name: '叶英',
+    tags: ['藏剑山庄', '庄主'],
+    narrative: '心剑一成，万剑臣服。',
+    createdAt: Date.UTC(2024, 0, 1, 0, 0, 0),
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(bodies.length, 1);
+  const sentText = bodies[0].markdown.content;
+  assert.match(sentText, /瓜条待审核/);
+  assert.match(sentText, /编辑瓜条/);
+  assert.match(sentText, /瓜条名：叶英/);
+  assert.match(sentText, /#藏剑山庄 #庄主/);
+  assert.match(sentText, /内容摘要：心剑一成/);
+  assert.match(sentText, /\[打开后台\]\(https:\/\/example\.com\/tiancai\)/);
+});

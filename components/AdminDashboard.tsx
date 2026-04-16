@@ -1,9 +1,9 @@
-﻿import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, LabelList,
   LineChart, Line
 } from 'recharts';
-import { Flag, Gavel, BarChart2, Bell, Search, Trash2, Ban, Eye, EyeOff, LayoutDashboard, LogOut, CheckCircle, XCircle, FileText, Pencil, RotateCcw, Shield, ClipboardList, MessageSquare, Menu, X, Settings } from 'lucide-react';
+import { Flag, Gavel, BarChart2, Bell, Search, Trash2, Ban, Eye, EyeOff, LayoutDashboard, LogOut, CheckCircle, XCircle, FileText, Pencil, RotateCcw, Shield, ClipboardList, MessageSquare, Menu, X, Settings, BookOpen } from 'lucide-react';
 import { SketchButton, Badge, roughBorderClassSm } from './SketchUI';
 import { AdminAuditLog, AdminComment, AdminHiddenItem, AdminPost, FeedbackMessage, Report, UpdateAnnouncementItem } from '../types';
 import { useApp } from '../store/AppContext';
@@ -19,8 +19,9 @@ import {
 import MarkdownComposeEditor from './MarkdownComposeEditor';
 import MarkdownRenderer from './MarkdownRenderer';
 import AdminChatPanel from './AdminChatPanel';
+import AdminWikiPanel from './AdminWikiPanel';
 
-type AdminView = 'overview' | 'reports' | 'processed' | 'posts' | 'hidden' | 'bans' | 'audit' | 'feedback' | 'announcement' | 'settings' | 'chat';
+type AdminView = 'overview' | 'reports' | 'processed' | 'posts' | 'hidden' | 'bans' | 'audit' | 'feedback' | 'announcement' | 'settings' | 'chat' | 'wiki';
 type PostStatusFilter = 'all' | 'active' | 'hidden' | 'deleted';
 type PostSort = 'time' | 'hot' | 'reports';
 type HiddenTypeFilter = 'all' | 'post' | 'comment';
@@ -114,7 +115,7 @@ const parseDefaultPostTagsInput = (value: string) => {
 
 const formatDefaultPostTagsInput = (tags: unknown) => sanitizeTagArray(tags, MAX_DEFAULT_POST_TAGS).join('\n');
 
-type RateLimitAction = 'post' | 'comment' | 'report' | 'feedback';
+type RateLimitAction = 'post' | 'comment' | 'report' | 'feedback' | 'wiki';
 type RateLimitItem = { limit: number; windowMs: number };
 type RateLimitSettings = Record<RateLimitAction, RateLimitItem>;
 
@@ -127,12 +128,14 @@ const RATE_LIMIT_DEFAULTS: RateLimitSettings = {
   comment: { limit: 1, windowMs: 10 * 1000 },
   report: { limit: 1, windowMs: 60 * 1000 },
   feedback: { limit: 1, windowMs: 60 * 60 * 1000 },
+  wiki: { limit: 3, windowMs: 60 * 60 * 1000 },
 };
 const RATE_LIMIT_FIELDS: Array<{ key: RateLimitAction; label: string; hint: string }> = [
   { key: 'post', label: '发帖限流', hint: '限制普通用户发帖频率' },
   { key: 'comment', label: '评论限流', hint: '限制普通用户评论频率' },
   { key: 'report', label: '举报限流', hint: '限制普通用户举报频率' },
   { key: 'feedback', label: '留言限流', hint: '限制反馈留言提交频率' },
+  { key: 'wiki', label: '瓜条提交限流', hint: '限制角色瓜条新建和编辑提交频率' },
 ];
 
 const normalizeRateLimitNumber = (value: unknown, fallback: number, min: number, max: number) => {
@@ -168,6 +171,10 @@ const normalizeRateLimits = (input: unknown): RateLimitSettings => {
     feedback: {
       limit: normalizeRateLimitNumber(source?.feedback?.limit, RATE_LIMIT_DEFAULTS.feedback.limit, 1, RATE_LIMIT_MAX_COUNT),
       windowMs: normalizeRateLimitNumber(source?.feedback?.windowMs, RATE_LIMIT_DEFAULTS.feedback.windowMs, 1000, RATE_LIMIT_MAX_WINDOW_SECONDS * 1000),
+    },
+    wiki: {
+      limit: normalizeRateLimitNumber(source?.wiki?.limit, RATE_LIMIT_DEFAULTS.wiki.limit, 1, RATE_LIMIT_MAX_COUNT),
+      windowMs: normalizeRateLimitNumber(source?.wiki?.windowMs, RATE_LIMIT_DEFAULTS.wiki.windowMs, 1000, RATE_LIMIT_MAX_WINDOW_SECONDS * 1000),
     },
   };
 };
@@ -300,6 +307,7 @@ const AdminDashboard: React.FC = () => {
   const [feedbackPage, setFeedbackPage] = useState(1);
   const [feedbackTotal, setFeedbackTotal] = useState(0);
   const [feedbackUnreadCount, setFeedbackUnreadCount] = useState(0);
+  const [wikiPendingCount, setWikiPendingCount] = useState(0);
   const [feedbackLoading, setFeedbackLoading] = useState(false);
   const [feedbackActionModal, setFeedbackActionModal] = useState<{
     isOpen: boolean;
@@ -595,6 +603,19 @@ const AdminDashboard: React.FC = () => {
     }
   }, []);
 
+  const fetchWikiPendingCount = useCallback(async () => {
+    try {
+      const data = await api.getAdminWikiRevisions({
+        status: 'pending',
+        page: 1,
+        limit: 1,
+      });
+      setWikiPendingCount(Number(data?.total || 0));
+    } catch {
+      setWikiPendingCount(0);
+    }
+  }, []);
+
   const fetchAnnouncement = useCallback(async () => {
     setAnnouncementLoading(true);
     try {
@@ -715,7 +736,8 @@ const AdminDashboard: React.FC = () => {
 
   useEffect(() => {
     fetchFeedbackUnreadCount().catch(() => { });
-  }, [currentView, fetchFeedbackUnreadCount]);
+    fetchWikiPendingCount().catch(() => { });
+  }, [currentView, fetchFeedbackUnreadCount, fetchWikiPendingCount]);
 
   useEffect(() => {
     if (currentView !== 'announcement') {
@@ -1722,7 +1744,7 @@ const AdminDashboard: React.FC = () => {
       {icon}
       <span>{label}</span>
       {badge !== undefined && badge > 0 && (
-        <span className="ml-auto bg-ink text-white text-xs px-2 py-0.5 rounded-full">{badge}</span>
+        <span className="ml-auto rounded-full bg-red-500 px-2 py-0.5 text-xs text-white shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]">{badge}</span>
       )}
     </button>
   );
@@ -1759,6 +1781,7 @@ const AdminDashboard: React.FC = () => {
             <NavItem view="hidden" icon={<EyeOff size={18} />} label="隐藏内容" />
             <NavItem view="announcement" icon={<Bell size={18} />} label="发布中心" />
             <NavItem view="settings" icon={<Settings size={18} />} label="系统设置" />
+            <NavItem view="wiki" icon={<BookOpen size={18} />} label="瓜条审核" badge={wikiPendingCount} />
             <NavItem view="feedback" icon={<MessageSquare size={18} />} label="留言管理" badge={feedbackUnreadCount} />
             <NavItem view="chat" icon={<MessageSquare size={18} />} label="聊天室管理" />
             <NavItem view="reports" icon={<Flag size={18} />} label="待处理举报" badge={pendingReports.length} />
@@ -1798,6 +1821,7 @@ const AdminDashboard: React.FC = () => {
               {currentView === 'hidden' && <><EyeOff /> 隐藏内容</>}
               {currentView === 'announcement' && <><Bell /> 公告发布</>}
               {currentView === 'settings' && <><Settings /> 系统设置</>}
+              {currentView === 'wiki' && <><BookOpen /> 瓜条审核</>}
               {currentView === 'feedback' && <><MessageSquare /> 留言管理</>}
               {currentView === 'chat' && <><MessageSquare /> 聊天室管理</>}
               {currentView === 'reports' && <><Flag /> 待处理举报</>}
@@ -1878,6 +1902,7 @@ const AdminDashboard: React.FC = () => {
                 <NavItem view="hidden" icon={<EyeOff size={18} />} label="隐藏内容" onSelect={() => setMobileNavOpen(false)} />
                 <NavItem view="announcement" icon={<Bell size={18} />} label="公告发布" onSelect={() => setMobileNavOpen(false)} />
                 <NavItem view="settings" icon={<Settings size={18} />} label="系统设置" onSelect={() => setMobileNavOpen(false)} />
+                <NavItem view="wiki" icon={<BookOpen size={18} />} label="瓜条审核" badge={wikiPendingCount} onSelect={() => setMobileNavOpen(false)} />
                 <NavItem view="feedback" icon={<MessageSquare size={18} />} label="留言管理" badge={feedbackUnreadCount} onSelect={() => setMobileNavOpen(false)} />
                 <NavItem view="chat" icon={<MessageSquare size={18} />} label="聊天室管理" onSelect={() => setMobileNavOpen(false)} />
                 <NavItem view="reports" icon={<Flag size={18} />} label="待处理举报" badge={pendingReports.length} onSelect={() => setMobileNavOpen(false)} />
@@ -2650,7 +2675,7 @@ const AdminDashboard: React.FC = () => {
                       <div>
                         <label className="text-sm font-sans font-bold text-ink block">企业微信机器人提醒</label>
                         <p className="text-xs text-pencil font-sans mt-1">
-                          新留言和自动隐藏待审核内容会推送到企业微信群；推送失败不会影响用户提交。
+                          新留言、自动隐藏待审核内容和瓜条待审提醒会推送到企业微信群；推送失败不会影响用户提交。
                         </p>
                       </div>
                       <label className="flex items-center gap-3 text-sm font-sans">
@@ -2900,6 +2925,11 @@ const AdminDashboard: React.FC = () => {
                   </div>
                 </div>
               </section>
+            )}
+
+            {/* 瓜条审核视图 */}
+            {currentView === 'wiki' && (
+              <AdminWikiPanel showToast={showToast} onPendingCountChange={fetchWikiPendingCount} />
             )}
 
             {/* Feedback View */}

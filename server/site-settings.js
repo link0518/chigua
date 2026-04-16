@@ -18,6 +18,7 @@ const DEFAULT_RATE_LIMITS = Object.freeze({
   comment: { limit: 1, windowMs: 10 * 1000 },
   report: { limit: 1, windowMs: 60 * 1000 },
   feedback: { limit: 1, windowMs: 60 * 60 * 1000 },
+  wiki: { limit: 3, windowMs: 60 * 60 * 1000 },
 });
 const RATE_LIMIT_ACTIONS = Object.freeze(Object.keys(DEFAULT_RATE_LIMITS));
 const CNY_TIMEZONE = 'Asia/Shanghai';

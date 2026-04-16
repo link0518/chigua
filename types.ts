@@ -5,6 +5,7 @@ export enum ViewType {
   SEARCH = 'SEARCH',
   FAVORITES = 'FAVORITES',
   CHAT = 'CHAT',
+  WIKI = 'WIKI',
   ADMIN = 'ADMIN',
   NOT_FOUND = 'NOT_FOUND'
 }
@@ -252,4 +253,46 @@ export interface ChatRoomConfig {
   adminOnly: boolean;
   messageIntervalMs: number;
   maxTextLength: number;
+}
+
+export interface WikiEntry {
+  id: string;
+  slug: string;
+  name: string;
+  narrative: string;
+  tags: string[];
+  status: 'pending' | 'approved' | 'rejected';
+  currentRevisionId?: string | null;
+  versionNumber: number;
+  createdAt: number;
+  updatedAt: number;
+  deleted?: boolean;
+  deletedAt?: number | null;
+}
+
+export interface WikiRevisionData {
+  name: string;
+  narrative: string;
+  tags: string[];
+  editSummary?: string;
+}
+
+export interface WikiRevision {
+  id: string;
+  entryId?: string | null;
+  entryName?: string | null;
+  entrySlug?: string | null;
+  actionType: 'create' | 'edit';
+  baseRevisionId?: string | null;
+  baseVersionNumber: number;
+  data: WikiRevisionData;
+  editSummary: string;
+  status: 'pending' | 'approved' | 'rejected';
+  submitterFingerprint?: string | null;
+  submitterIp?: string | null;
+  createdAt: number;
+  reviewReason?: string;
+  reviewedAt?: number | null;
+  reviewedBy?: string | null;
+  versionNumber?: number | null;
 }
