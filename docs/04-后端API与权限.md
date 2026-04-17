@@ -205,6 +205,6 @@
 ### 5.3 安全与限流
 
 - Wiki 投稿和编辑会附带 `X-Client-Fingerprint`，并记录提交者指纹与 IP。
-- Wiki 投稿和编辑执行 Turnstile 校验、敏感词校验和封禁检查。
+- Wiki 投稿和编辑执行 Turnstile 校验和封禁检查。
 - 新增 `wiki` 限流配置，默认 `3 次 / 小时`。
 - 后台审核、拒绝、删除、恢复、管理员创建和管理员编辑都写入 `admin_audit_logs`。

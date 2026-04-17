@@ -142,6 +142,7 @@ const createWikiApp = (options = {}) => {
   const app = createRouteApp();
   const auditLogs = [];
   const webhookCalls = [];
+  const containsSensitiveWord = options.containsSensitiveWord || (() => false);
   const wecomWebhookService = options.wecomWebhookService || {
     notifyWikiRevision: (payload) => {
       webhookCalls.push(payload);
@@ -155,7 +156,7 @@ const createWikiApp = (options = {}) => {
     enforceRateLimit: () => true,
     getClientIp: () => '127.0.0.1',
     verifyTurnstile: async () => ({ ok: true }),
-    containsSensitiveWord: () => false,
+    containsSensitiveWord,
     crypto,
     wecomWebhookService,
   });
@@ -165,7 +166,7 @@ const createWikiApp = (options = {}) => {
     requireAdminCsrf: (req, res, next) => next(),
     logAdminAction: (req, payload) => auditLogs.push(payload),
     crypto,
-    containsSensitiveWord: () => false,
+    containsSensitiveWord,
   });
   return { app, db, auditLogs, webhookCalls };
 };
@@ -368,4 +369,40 @@ test('Wiki 旧待审编辑不能覆盖已经更新的公开版本', async () => 
   assert.equal(detail.payload.entry.narrative, '较新的编辑。');
   assert.equal(detail.payload.entry.versionNumber, 2);
   assert.equal(detail.payload.history.length, 2);
+});
+
+test('Wiki 投稿、编辑和后台编辑不走敏感词校验', async () => {
+  const { app } = createWikiApp({
+    containsSensitiveWord: () => true,
+  });
+
+  const createRes = await submitWikiEntry(app, {
+    name: '敏感词测试瓜条',
+    narrative: '这里即使命中违禁词系统，也应该允许进入待审核。',
+    tags: ['测试'],
+  });
+  assert.equal(createRes.statusCode, 201);
+
+  await approveRevision(app, createRes.payload.id);
+  const list = await invoke(app, 'GET', '/api/wiki/entries');
+  const entry = list.payload.items[0];
+
+  const editRes = await submitWikiEdit(app, entry.slug, {
+    name: '敏感词测试瓜条',
+    narrative: '前台编辑同样不应该被违禁词系统拦截。',
+    tags: ['测试', '编辑'],
+    editSummary: '验证前台编辑',
+  });
+  assert.equal(editRes.statusCode, 201);
+
+  const adminEditRes = await invoke(app, 'POST', `/api/admin/wiki/entries/${entry.id}/edit`, {
+    body: {
+      name: '敏感词测试瓜条-后台',
+      narrative: '后台直接编辑也不应该走违禁词校验。',
+      tags: ['测试', '后台'],
+      editSummary: '验证后台编辑',
+    },
+  });
+  assert.equal(adminEditRes.statusCode, 200);
+  assert.equal(adminEditRes.payload.entry.name, '敏感词测试瓜条-后台');
 });

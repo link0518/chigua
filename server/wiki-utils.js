@@ -144,10 +144,3 @@ export const mapWikiRevisionRow = (row, versionNumber = null) => ({
   reviewedBy: row.reviewed_by || null,
   versionNumber: versionNumber ?? null,
 });
-
-export const buildWikiSensitiveText = (data) => [
-  data.name,
-  data.narrative,
-  ...(Array.isArray(data.tags) ? data.tags : []),
-  data.editSummary || '',
-].join('\n');

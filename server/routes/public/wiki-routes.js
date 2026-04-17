@@ -1,5 +1,4 @@
 import {
-  buildWikiSensitiveText,
   mapWikiEntryRow,
   mapWikiRevisionRow,
   parseWikiTags,
@@ -14,7 +13,6 @@ export const registerPublicWikiRoutes = (app, deps) => {
     enforceRateLimit,
     getClientIp,
     verifyTurnstile,
-    containsSensitiveWord,
     crypto,
     wecomWebhookService,
   } = deps;
@@ -77,10 +75,6 @@ export const registerPublicWikiRoutes = (app, deps) => {
     }
     if (options.requireEditSummary && !payload.data.editSummary) {
       res.status(400).json({ error: '请填写修改原因' });
-      return null;
-    }
-    if (containsSensitiveWord?.(buildWikiSensitiveText(payload.data))) {
-      res.status(400).json({ error: '内容包含敏感词，请修改后再提交' });
       return null;
     }
     const fingerprint = requireFingerprint(req, res);

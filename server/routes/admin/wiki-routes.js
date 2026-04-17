@@ -1,5 +1,4 @@
 import {
-  buildWikiSensitiveText,
   mapWikiEntryRow,
   mapWikiRevisionRow,
   parseWikiRevisionData,
@@ -14,7 +13,6 @@ export const registerAdminWikiRoutes = (app, deps) => {
     requireAdminCsrf,
     logAdminAction,
     crypto,
-    containsSensitiveWord,
   } = deps;
 
   const parsePositiveInt = (value, fallback) => {
@@ -30,10 +28,6 @@ export const registerAdminWikiRoutes = (app, deps) => {
     const payload = sanitizeWikiPayload(body || {});
     if (!payload.ok) {
       res.status(400).json({ error: payload.error });
-      return null;
-    }
-    if (containsSensitiveWord?.(buildWikiSensitiveText(payload.data))) {
-      res.status(400).json({ error: '内容包含敏感词，请修改后再提交' });
       return null;
     }
     return payload.data;

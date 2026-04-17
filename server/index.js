@@ -1318,7 +1318,6 @@ registerPublicWikiRoutes(app, {
   enforceRateLimit,
   getClientIp,
   verifyTurnstile,
-  containsSensitiveWord,
   crypto,
   wecomWebhookService,
 });
@@ -1378,7 +1377,6 @@ registerAdminWikiRoutes(app, {
   requireAdminCsrf,
   logAdminAction,
   crypto,
-  containsSensitiveWord,
 });
 
 registerAdminFeedbackRoutes(app, {
