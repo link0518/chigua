@@ -23,6 +23,9 @@ type WikiFeedback = { message: string; type: 'success' | 'error' | 'info' };
 
 const PAGE_SIZE = 12;
 const WIKI_MOBILE_FEED_QUERY = '(max-width: 767px)';
+const WIKI_DETAIL_ENTER_MS = 225;
+const WIKI_DETAIL_EXIT_MS = 195;
+const WIKI_OVERLAY_MODAL_SELECTOR = '[data-wiki-overlay-modal="true"]';
 
 const useWikiMobileFeed = () => {
   const [enabled, setEnabled] = useState(() => (
@@ -44,6 +47,26 @@ const useWikiMobileFeed = () => {
   }, []);
 
   return enabled;
+};
+
+const useEscapeToClose = (enabled: boolean, onClose: () => void) => {
+  useEffect(() => {
+    if (!enabled) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') {
+        return;
+      }
+
+      event.preventDefault();
+      onClose();
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [enabled, onClose]);
 };
 
 const normalizeTag = (value: string) => value
@@ -659,6 +682,8 @@ const WikiRevisionDetailModal: React.FC<{
   revision: WikiRevision | null;
   onClose: () => void;
 }> = ({ revision, onClose }) => {
+  useEscapeToClose(Boolean(revision), onClose);
+
   if (!revision) {
     return null;
   }
@@ -667,7 +692,7 @@ const WikiRevisionDetailModal: React.FC<{
   const narrative = revision.data.narrative || '';
 
   return (
-    <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 md:p-6">
+    <div data-wiki-overlay-modal="true" className="fixed inset-0 z-[90] flex items-center justify-center p-4 md:p-6">
       <button type="button" aria-label="关闭历史瓜条" className="fixed inset-0 bg-[#2f3334]/10 backdrop-blur-sm" onClick={onClose} />
       <div className="relative z-10 flex max-h-[calc(100vh-2rem)] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-black/5 bg-white shadow-[0px_24px_80px_rgba(47,51,52,0.18)] md:max-h-[86vh]">
         <header className="flex shrink-0 items-start justify-between gap-4 border-b border-black/5 bg-[#fcfdfc] px-5 py-5 md:gap-6 md:px-8 md:py-6">
@@ -904,6 +929,8 @@ const WikiEntryFormModal: React.FC<{
   const turnstileRef = useRef<TurnstileHandle | null>(null);
   const { feedback, showFeedback } = useWikiFeedback();
 
+  useEscapeToClose(open, onClose);
+
   useEffect(() => {
     if (!open) {
       return;
@@ -969,7 +996,7 @@ const WikiEntryFormModal: React.FC<{
   };
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 md:p-6">
+    <div data-wiki-overlay-modal="true" className="fixed inset-0 z-[80] flex items-center justify-center p-4 md:p-6">
       <WikiFloatingFeedback feedback={feedback} />
       <button type="button" aria-label="关闭弹窗" className="fixed inset-0 bg-on-surface/5 backdrop-blur-sm" onClick={onClose} />
       <form
@@ -1077,12 +1104,14 @@ const WikiNeutralNoticeModal: React.FC<{
   onCancel: () => void;
   onConfirm: () => void;
 }> = ({ open, onCancel, onConfirm }) => {
+  useEscapeToClose(open, onCancel);
+
   if (!open) {
     return null;
   }
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 md:p-6">
+    <div data-wiki-overlay-modal="true" className="fixed inset-0 z-[80] flex items-center justify-center p-4 md:p-6">
       <button type="button" aria-label="关闭提示" className="fixed inset-0 bg-on-surface/5 backdrop-blur-sm" onClick={onCancel} />
       <div className="relative z-10 max-h-[calc(100vh-2rem)] w-full max-w-lg overflow-y-auto rounded-xl bg-surface-container-lowest p-6 shadow-[0px_4px_20px_rgba(47,51,52,0.06)] md:p-8">
         <div className="mb-6 flex items-start gap-4">
@@ -1130,14 +1159,60 @@ const WikiView: React.FC = () => {
   const { feedback, showFeedback } = useWikiFeedback();
   const isMobileFeed = useWikiMobileFeed();
   const listRequestRef = useRef(0);
+  const detailAnimationFrameRef = useRef<number | null>(null);
+  const detailCloseTimerRef = useRef<number | null>(null);
   const slug = useMemo(() => getSlugFromPath(path), [path]);
   const isDetail = Boolean(slug);
+  const [detailMounted, setDetailMounted] = useState(isDetail);
+  const [detailVisible, setDetailVisible] = useState(isDetail);
+  const detailActive = isDetail || detailMounted;
 
   useEffect(() => {
     const handlePopState = () => setPath(window.location.pathname);
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
+
+  useEffect(() => {
+    return () => {
+      if (detailAnimationFrameRef.current !== null) {
+        window.cancelAnimationFrame(detailAnimationFrameRef.current);
+      }
+      if (detailCloseTimerRef.current !== null) {
+        window.clearTimeout(detailCloseTimerRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (detailAnimationFrameRef.current !== null) {
+      window.cancelAnimationFrame(detailAnimationFrameRef.current);
+      detailAnimationFrameRef.current = null;
+    }
+    if (detailCloseTimerRef.current !== null) {
+      window.clearTimeout(detailCloseTimerRef.current);
+      detailCloseTimerRef.current = null;
+    }
+
+    if (isDetail) {
+      setDetailMounted(true);
+      detailAnimationFrameRef.current = window.requestAnimationFrame(() => {
+        setDetailVisible(true);
+        detailAnimationFrameRef.current = null;
+      });
+      return;
+    }
+
+    setDetailVisible(false);
+    if (!detailMounted) {
+      return;
+    }
+
+    detailCloseTimerRef.current = window.setTimeout(() => {
+      setDetailMounted(false);
+      detailCloseTimerRef.current = null;
+    }, WIKI_DETAIL_EXIT_MS);
+  }, [detailMounted, isDetail]);
 
   useEffect(() => {
     setPage(1);
@@ -1150,6 +1225,26 @@ const WikiView: React.FC = () => {
     setPath(targetPath);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
+
+  useEffect(() => {
+    if (!detailActive) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        if (document.querySelector(WIKI_OVERLAY_MODAL_SELECTOR)) {
+          return;
+        }
+
+        event.preventDefault();
+        navigateTo('/wiki');
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [detailActive, navigateTo]);
 
   const loadEntries = useCallback(async () => {
     const requestId = listRequestRef.current + 1;
@@ -1294,25 +1389,43 @@ const WikiView: React.FC = () => {
 
       {/* 详情覆盖层 */}
       <div
-        className={`fixed inset-0 right-0 z-[60] w-full transition-opacity duration-200 lg:left-72 lg:w-auto xl:left-96 2xl:left-auto 2xl:w-[1300px] ${isDetail ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'}`}
+        className={`fixed inset-0 right-0 z-[60] w-full transition-opacity motion-reduce:transition-none lg:left-72 lg:w-auto xl:left-96 2xl:left-auto 2xl:w-[1300px] ${detailActive ? 'pointer-events-auto' : 'pointer-events-none'} ${detailVisible ? 'opacity-100' : 'opacity-0'}`}
+        style={{
+          transitionDuration: `${detailVisible ? WIKI_DETAIL_ENTER_MS : WIKI_DETAIL_EXIT_MS}ms`,
+          transitionTimingFunction: detailVisible ? 'cubic-bezier(0.0, 0, 0.2, 1)' : 'cubic-bezier(0.4, 0, 1, 1)',
+        }}
       >
-        <div className="relative h-full w-full overflow-hidden bg-[#fcfdfc] shadow-[-30px_0_40px_rgba(47,51,52,0.08)] lg:border-l lg:border-black/5">
-          {isDetail && (
-            <WikiEntryDetail
-              entry={detailEntry}
-              history={history}
-              loading={detailLoading}
-              error={detailError}
-              onBack={() => navigateTo('/wiki')}
-              onEdit={openEdit}
-            />
-          )}
+        <div
+          className={`absolute inset-y-0 right-0 overflow-hidden bg-[#fcfdfc] transition-[width,box-shadow,border-color] motion-reduce:transition-none lg:border-l ${detailVisible ? 'w-full border-black/5 shadow-[-30px_0_40px_rgba(47,51,52,0.08)]' : 'w-0 border-transparent shadow-none'}`}
+          style={{
+            transitionDuration: `${detailVisible ? WIKI_DETAIL_ENTER_MS : WIKI_DETAIL_EXIT_MS}ms`,
+            transitionTimingFunction: detailVisible ? 'cubic-bezier(0.0, 0, 0.2, 1)' : 'cubic-bezier(0.4, 0, 1, 1)',
+          }}
+        >
+          <div
+            className={`absolute inset-y-0 right-0 w-full min-w-0 transition-opacity motion-reduce:transition-none ${detailVisible ? 'opacity-100 delay-[90ms] duration-150 ease-linear' : 'opacity-0 delay-0 duration-100 ease-linear'}`}
+          >
+            {detailActive && (
+              <WikiEntryDetail
+                entry={detailEntry}
+                history={history}
+                loading={detailLoading}
+                error={detailError}
+                onBack={() => navigateTo('/wiki')}
+                onEdit={openEdit}
+              />
+            )}
+          </div>
         </div>
       </div>
 
       {/* 移动端点击遮罩返回画廊 */}
       <div
-        className={`fixed inset-0 z-[55] bg-black/10 backdrop-blur-sm transition-opacity duration-500 lg:hidden ${isDetail ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
+        className={`fixed inset-0 z-[55] bg-black/10 backdrop-blur-sm transition-opacity motion-reduce:transition-none lg:hidden ${detailActive ? 'pointer-events-auto' : 'pointer-events-none'} ${detailVisible ? 'opacity-100' : 'opacity-0'}`}
+        style={{
+          transitionDuration: `${detailVisible ? WIKI_DETAIL_ENTER_MS : WIKI_DETAIL_EXIT_MS}ms`,
+          transitionTimingFunction: detailVisible ? 'cubic-bezier(0.0, 0, 0.2, 1)' : 'cubic-bezier(0.4, 0, 1, 1)',
+        }}
         onClick={() => navigateTo('/wiki')}
       />
 
