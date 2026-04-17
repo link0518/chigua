@@ -86,6 +86,10 @@
 举报：
 
 - `POST /api/reports`：提交举报（帖子/评论）
+- 举报请求统一支持 `reason`、`reasonCode`、`evidence` 三个字段：
+  - `reasonCode` 可为 `privacy` / `harassment` / `spam` / `misinformation` / `rumor`
+  - 当 `reasonCode = 'rumor'` 时，必须额外传 `evidence`，用于填写判断为谣言的原因或证据
+  - 仍兼容只传 `reason` 的旧调用方式
 
 ## 3. 管理员 API（需登录）
 
@@ -97,6 +101,20 @@
 - `POST /api/reports/:id/action`：处理举报（ignore/delete/mute/ban 等）（管理员 + CSRF）
 - 说明：聊天室发言举报支持 `mute`（禁言）；执行 `ban` 时可通过 `deleteChatMessage` 选择是否删除被举报消息。
 - `POST /api/admin/reports/batch`：批量处理举报（管理员 + CSRF）
+- 普通举报列表默认不返回“举报谣言”类记录；该类内容由独立的谣言审核接口处理
+
+谣言审核：
+
+- `GET /api/admin/rumors`：获取谣言审核列表（管理员）
+- 支持 `status=pending|suspected|rejected|all`
+- 支持 `targetType=post|comment|all`
+- 支持 `q / search / page / limit` 查询参数
+- `POST /api/admin/rumors/:targetType/:targetId/action`：处理谣言审核动作（管理员 + CSRF）
+- 支持动作：
+  - `mark`：标记为 `suspected`
+  - `reject`：标记为 `rejected`
+  - `clear`：清空谣言标记
+- `mark` / `reject` 会把该目标下仍处于 `pending` 的谣言举报批量置为 `resolved`
 
 帖子管理：
 

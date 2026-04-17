@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import test from 'node:test';
 import Database from 'better-sqlite3';
+
 import { registerPublicReportsRoutes } from '../routes/public/reports-routes.js';
 import { AUTO_HIDE_THRESHOLD, createHiddenContentService } from '../services/hidden-content-service.js';
 
@@ -36,6 +37,8 @@ const createDb = () => {
       comment_id TEXT,
       target_type TEXT NOT NULL,
       reason TEXT,
+      reason_code TEXT,
+      evidence TEXT,
       content_snippet TEXT,
       created_at INTEGER NOT NULL,
       status TEXT NOT NULL,
@@ -149,7 +152,7 @@ const registerRoute = (db, wecomMessages) => {
   return app.routes.get('POST /api/reports');
 };
 
-test('举报触发帖子自动隐藏时推送企业微信待审提醒', () => {
+test('举报触发帖子自动隐藏时会推送企业微信待审提醒', () => {
   const db = createDb();
   const wecomMessages = [];
   insertPost(db, 'post-1');
@@ -157,7 +160,7 @@ test('举报触发帖子自动隐藏时推送企业微信待审提醒', () => {
   const handler = registerRoute(db, wecomMessages);
   const res = createResponse();
 
-  handler({ body: { postId: 'post-1', reason: '广告' }, sessionID: 'session-new' }, res);
+  handler({ body: { postId: 'post-1', reason: '垃圾广告' }, sessionID: 'session-new' }, res);
 
   assert.equal(res.statusCode, 201);
   assert.equal(res.payload.autoHidden, true);
@@ -171,7 +174,7 @@ test('举报触发帖子自动隐藏时推送企业微信待审提醒', () => {
   db.close();
 });
 
-test('举报未达到自动隐藏阈值时不推送企业微信待审提醒', () => {
+test('举报未达到自动隐藏阈值时不会推送企业微信待审提醒', () => {
   const db = createDb();
   const wecomMessages = [];
   insertPost(db, 'post-2');
@@ -179,7 +182,7 @@ test('举报未达到自动隐藏阈值时不推送企业微信待审提醒', ()
   const handler = registerRoute(db, wecomMessages);
   const res = createResponse();
 
-  handler({ body: { postId: 'post-2', reason: '广告' }, sessionID: 'session-new' }, res);
+  handler({ body: { postId: 'post-2', reason: '垃圾广告' }, sessionID: 'session-new' }, res);
 
   assert.equal(res.statusCode, 201);
   assert.equal(res.payload.autoHidden, false);
@@ -188,7 +191,7 @@ test('举报未达到自动隐藏阈值时不推送企业微信待审提醒', ()
   db.close();
 });
 
-test('已隐藏帖子无法再次举报并不会重复推送企业微信提醒', () => {
+test('已隐藏帖子无法再次举报，也不会重复推送企业微信提醒', () => {
   const db = createDb();
   const wecomMessages = [];
   db.prepare(`
@@ -198,10 +201,41 @@ test('已隐藏帖子无法再次举报并不会重复推送企业微信提醒',
   const handler = registerRoute(db, wecomMessages);
   const res = createResponse();
 
-  handler({ body: { postId: 'post-hidden', reason: '广告' }, sessionID: 'session-new' }, res);
+  handler({ body: { postId: 'post-hidden', reason: '垃圾广告' }, sessionID: 'session-new' }, res);
 
   assert.equal(res.statusCode, 404);
   assert.equal(wecomMessages.length, 0);
   db.close();
 });
 
+test('谣言举报必须填写原因或证据，并会写入独立字段', () => {
+  const db = createDb();
+  const wecomMessages = [];
+  insertPost(db, 'post-rumor');
+  const handler = registerRoute(db, wecomMessages);
+
+  const invalidRes = createResponse();
+  handler({
+    body: { postId: 'post-rumor', reason: '举报谣言', reasonCode: 'rumor', evidence: '' },
+    sessionID: 'session-rumor-1',
+  }, invalidRes);
+  assert.equal(invalidRes.statusCode, 400);
+
+  const validRes = createResponse();
+  handler({
+    body: {
+      postId: 'post-rumor',
+      reason: '举报谣言',
+      reasonCode: 'rumor',
+      evidence: '时间线与公开公告冲突',
+    },
+    sessionID: 'session-rumor-2',
+  }, validRes);
+
+  assert.equal(validRes.statusCode, 201);
+  const row = db.prepare('SELECT reason, reason_code, evidence FROM reports WHERE id = ?').get(validRes.payload.id);
+  assert.equal(row.reason, '举报谣言');
+  assert.equal(row.reason_code, 'rumor');
+  assert.equal(row.evidence, '时间线与公开公告冲突');
+  db.close();
+});

@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useRef, useState } from 'react';
-import { Image, Send, Smile, ThumbsUp } from 'lucide-react';
+import { AlertTriangle, Image, Send, Smile, ThumbsUp } from 'lucide-react';
 import { SketchButton } from './SketchUI';
 import { api } from '../api';
 import { Comment } from '../types';
@@ -69,7 +69,7 @@ const getMostLikedComment = (items: Comment[]): Comment | null => {
 
   const walk = (list: Comment[]) => {
     list.forEach((item) => {
-      if (!item.deleted && !item.hidden) {
+      if (!item.deleted && !item.hidden && item.rumorStatus !== 'suspected') {
         const likes = Number(item.likes || 0);
         const createdAt = Number(item.createdAt || 0);
         if (
@@ -134,6 +134,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
   const [memeOpen, setMemeOpen] = useState(false);
   const [replyToId, setReplyToId] = useState<string | null>(null);
   const [expandedThreads, setExpandedThreads] = useState<Set<string>>(new Set());
+  const [expandedRumorComments, setExpandedRumorComments] = useState<Set<string>>(new Set());
   const [lastAddedId, setLastAddedId] = useState<string | null>(null);
   const [focusTargetId, setFocusTargetId] = useState<string | null>(null);
   const [page, setPage] = useState(0);
@@ -340,6 +341,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
     setComments([]);
     setReplyToId(null);
     setExpandedThreads(new Set());
+    setExpandedRumorComments(new Set());
     setLastAddedId(null);
     setFocusTargetId(null);
     setReportModal({ isOpen: false, commentId: '', content: '' });
@@ -533,6 +535,18 @@ const CommentModal: React.FC<CommentModalProps> = ({
 
   const toggleThread = (commentId: string) => {
     setExpandedThreads((prev) => {
+      const next = new Set(prev);
+      if (next.has(commentId)) {
+        next.delete(commentId);
+      } else {
+        next.add(commentId);
+      }
+      return next;
+    });
+  };
+
+  const toggleRumorCommentExpand = (commentId: string) => {
+    setExpandedRumorComments((prev) => {
       const next = new Set(prev);
       if (next.has(commentId)) {
         next.delete(commentId);
@@ -841,6 +855,8 @@ const CommentModal: React.FC<CommentModalProps> = ({
                 const isDeleted = Boolean(item.deleted);
                 const isHidden = Boolean(item.hidden);
                 const isUnavailable = isDeleted || isHidden;
+                const isRumor = !isUnavailable && item.rumorStatus === 'suspected';
+                const isRumorExpanded = expandedRumorComments.has(item.id);
                 const replyLabel = depth > 0
                   ? (labelMap.get(item.replyToId || '') || parentLabel)
                   : '';
@@ -902,11 +918,34 @@ const CommentModal: React.FC<CommentModalProps> = ({
                         )}
                       </div>
                     </div>
+                    {isRumor && (
+                      <div className="mt-2 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-[12px] text-orange-700">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-start gap-2">
+                            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                            <span>该评论疑似谣言，请谨慎辨别。</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => toggleRumorCommentExpand(item.id)}
+                            className="shrink-0 font-bold hover:text-orange-900"
+                          >
+                            {isRumorExpanded ? '收起原文' : '展开原文'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
                     <div className={depth === 0 ? `text-[13px] mt-1 ${isUnavailable ? 'text-gray-400 italic' : 'text-ink'}` : `text-[12px] mt-0.5 ${isUnavailable ? 'text-gray-400 italic' : 'text-ink/90'}`}>
-                      <MarkdownRenderer
-                        content={item.content}
-                        className={`${depth === 0 ? 'leading-5' : 'leading-4'} [&_.markdown-image-link]:block [&_.markdown-image]:max-h-32 md:[&_.markdown-image]:max-h-44 [&_.markdown-image]:object-contain [&_.markdown-image]:mx-auto [&_.markdown-image]:w-auto [&_.markdown-image]:!max-w-52 md:[&_.markdown-image]:!max-w-64`}
-                      />
+                      {isRumor && !isRumorExpanded ? (
+                        <div className="rounded-lg border border-dashed border-orange-200 bg-orange-50/50 px-3 py-3 text-[12px] leading-5 text-orange-700">
+                          原文已折叠，点击“展开原文”查看。
+                        </div>
+                      ) : (
+                        <MarkdownRenderer
+                          content={item.content}
+                          className={`${depth === 0 ? 'leading-5' : 'leading-4'} [&_.markdown-image-link]:block [&_.markdown-image]:max-h-32 md:[&_.markdown-image]:max-h-44 [&_.markdown-image]:object-contain [&_.markdown-image]:mx-auto [&_.markdown-image]:w-auto [&_.markdown-image]:!max-w-52 md:[&_.markdown-image]:!max-w-64`}
+                        />
+                      )}
                     </div>
                     {depth === 0 && visibleReplies.length > 0 && (
                       <div className="mt-2 rounded-md bg-gray-50 border border-gray-200 px-1.5 py-2 flex flex-col gap-2">

@@ -25,8 +25,18 @@ export interface Post {
   imageUrl?: string;
   createdAt?: number; // Unix timestamp for sorting
   hidden?: boolean;
+  rumorStatus?: 'suspected' | null;
+  rumorStatusUpdatedAt?: number | null;
   viewerReaction?: 'like' | 'dislike' | null;
   viewerFavorited?: boolean;
+}
+
+export type ReportReasonCode = 'privacy' | 'harassment' | 'spam' | 'misinformation' | 'rumor';
+
+export interface ReportSubmissionPayload {
+  reason: string;
+  reasonCode?: ReportReasonCode;
+  evidence?: string;
 }
 
 export interface ReportSubmissionResult {
@@ -42,6 +52,8 @@ export interface Report {
   targetType: 'post' | 'comment' | 'chat';
   postId?: string;
   reason: string;
+  reasonCode?: string | null;
+  evidence?: string | null;
   contentSnippet: string;
   postContent?: string;
   commentContent?: string;
@@ -74,6 +86,8 @@ export interface Comment {
   deleted?: boolean;
   hidden?: boolean;
   hiddenAt?: number | null;
+  rumorStatus?: 'suspected' | null;
+  rumorStatusUpdatedAt?: number | null;
   likes?: number;
   viewerLiked?: boolean;
 }
@@ -130,8 +144,40 @@ export interface AdminComment extends AdminIdentityInfo {
   hidden?: boolean;
   hiddenAt?: number | null;
   hiddenReviewStatus?: 'pending' | 'kept' | null;
+  rumorStatus?: 'suspected' | 'rejected' | null;
+  rumorStatusUpdatedAt?: number | null;
   pendingReportCount?: number;
   replies?: AdminComment[];
+}
+
+export interface RumorEvidenceSample {
+  reportId: string;
+  content: string;
+  createdAt: number;
+}
+
+export interface RumorReviewItem {
+  id: string;
+  targetId: string;
+  targetType: 'post' | 'comment';
+  postId?: string | null;
+  postContent?: string;
+  commentContent?: string;
+  targetContent: string;
+  rumorStatus?: 'suspected' | 'rejected' | null;
+  rumorStatusUpdatedAt?: number | null;
+  reportCount: number;
+  pendingReportCount: number;
+  reporterCount: number;
+  latestReportedAt: number;
+  reportIds: string[];
+  evidenceSamples: RumorEvidenceSample[];
+  reasons: string[];
+  targetIp?: string | null;
+  targetSessionId?: string | null;
+  targetFingerprint?: string | null;
+  targetIdentityKey?: string | null;
+  targetIdentityHashes?: string[];
 }
 
 export interface AdminHiddenItem extends AdminIdentityInfo {

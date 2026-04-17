@@ -12,6 +12,7 @@ const createDb = () => {
       fingerprint TEXT,
       created_at INTEGER,
       deleted INTEGER DEFAULT 0,
+      hidden INTEGER DEFAULT 0,
       comments_count INTEGER DEFAULT 0
     );
 
@@ -25,7 +26,11 @@ const createDb = () => {
       created_at INTEGER,
       fingerprint TEXT,
       ip TEXT,
-      deleted INTEGER DEFAULT 0
+      deleted INTEGER DEFAULT 0,
+      hidden INTEGER DEFAULT 0,
+      hidden_at INTEGER,
+      rumor_status TEXT,
+      rumor_status_updated_at INTEGER
     );
 
     CREATE TABLE comment_likes (

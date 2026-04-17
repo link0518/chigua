@@ -24,6 +24,7 @@ export const registerAdminReportsRoutes = (app, deps) => {
     logAdminAction,
     resolveStoredIdentityHash,
   });
+  const EXCLUDE_RUMOR_REPORT_SQL = "((reports.reason_code IS NULL OR reports.reason_code != 'rumor') AND NOT (reports.reason_code IS NULL AND reports.reason = '举报谣言'))";
 
   const resolveAdminIdentity = ({ fingerprint, sessionId = '', ip = '' }) => buildAdminIdentity({
     fingerprint,
@@ -35,6 +36,9 @@ export const registerAdminReportsRoutes = (app, deps) => {
   app.get('/api/reports', requireAdmin, (req, res) => {
     const status = String(req.query.status || '').trim();
     const search = String(req.query.search || '').trim();
+    const includeRumor = req.query.includeRumor === true
+      || req.query.includeRumor === 'true'
+      || req.query.includeRumor === '1';
     const parsedLimit = Number(req.query.limit);
     const limit = Number.isFinite(parsedLimit) && parsedLimit > 0
       ? Math.min(Math.floor(parsedLimit), 50)
@@ -46,6 +50,9 @@ export const registerAdminReportsRoutes = (app, deps) => {
     if (status) {
       conditions.push('status = ?');
       params.push(status);
+    }
+    if (!includeRumor) {
+      conditions.push(EXCLUDE_RUMOR_REPORT_SQL);
     }
     const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const canUseSqlLimit = limit > 0 && !search;
@@ -113,6 +120,8 @@ export const registerAdminReportsRoutes = (app, deps) => {
         targetType: row.target_type || 'post',
         postId: row.post_id,
         reason: row.reason,
+        reasonCode: row.reason_code || null,
+        evidence: row.evidence || null,
         contentSnippet: row.content_snippet,
         postContent,
         commentContent,
@@ -138,6 +147,8 @@ export const registerAdminReportsRoutes = (app, deps) => {
         item.id,
         item.contentSnippet,
         item.reason,
+        item.reasonCode || '',
+        item.evidence || '',
         item.postId,
         item.targetId,
         item.postContent,

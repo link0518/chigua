@@ -3,7 +3,7 @@ import {
   BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, LabelList,
   LineChart, Line
 } from 'recharts';
-import { Flag, Gavel, BarChart2, Bell, Search, Trash2, Ban, Eye, EyeOff, LayoutDashboard, LogOut, CheckCircle, XCircle, FileText, Pencil, RotateCcw, Shield, ClipboardList, MessageSquare, Menu, X, Settings, BookOpen } from 'lucide-react';
+import { Flag, Gavel, BarChart2, Bell, Search, Trash2, Ban, Eye, EyeOff, LayoutDashboard, LogOut, CheckCircle, XCircle, FileText, Pencil, RotateCcw, Shield, ClipboardList, MessageSquare, Menu, X, Settings, BookOpen, AlertTriangle } from 'lucide-react';
 import { SketchButton, Badge, roughBorderClassSm } from './SketchUI';
 import { AdminAuditLog, AdminComment, AdminHiddenItem, AdminPost, FeedbackMessage, Report, UpdateAnnouncementItem } from '../types';
 import { useApp } from '../store/AppContext';
@@ -20,8 +20,9 @@ import MarkdownComposeEditor from './MarkdownComposeEditor';
 import MarkdownRenderer from './MarkdownRenderer';
 import AdminChatPanel from './AdminChatPanel';
 import AdminWikiPanel from './AdminWikiPanel';
+import AdminRumorPanel from './AdminRumorPanel';
 
-type AdminView = 'overview' | 'reports' | 'processed' | 'posts' | 'hidden' | 'bans' | 'audit' | 'feedback' | 'announcement' | 'settings' | 'chat' | 'wiki';
+type AdminView = 'overview' | 'reports' | 'processed' | 'posts' | 'hidden' | 'bans' | 'audit' | 'feedback' | 'announcement' | 'settings' | 'chat' | 'wiki' | 'rumors';
 type PostStatusFilter = 'all' | 'active' | 'hidden' | 'deleted';
 type PostSort = 'time' | 'hot' | 'reports';
 type HiddenTypeFilter = 'all' | 'post' | 'comment';
@@ -314,6 +315,7 @@ const AdminDashboard: React.FC = () => {
   const [reportsLoading, setReportsLoading] = useState(false);
   const [feedbackUnreadCount, setFeedbackUnreadCount] = useState(0);
   const [wikiPendingCount, setWikiPendingCount] = useState(0);
+  const [rumorPendingCount, setRumorPendingCount] = useState(0);
   const [feedbackLoading, setFeedbackLoading] = useState(false);
   const [feedbackActionModal, setFeedbackActionModal] = useState<{
     isOpen: boolean;
@@ -647,6 +649,19 @@ const AdminDashboard: React.FC = () => {
     }
   }, []);
 
+  const fetchRumorPendingCount = useCallback(async () => {
+    try {
+      const data = await api.getAdminRumors({
+        status: 'pending',
+        page: 1,
+        limit: 1,
+      });
+      setRumorPendingCount(Number(data?.total || 0));
+    } catch {
+      setRumorPendingCount(0);
+    }
+  }, []);
+
   const fetchAnnouncement = useCallback(async () => {
     setAnnouncementLoading(true);
     try {
@@ -788,7 +803,8 @@ const AdminDashboard: React.FC = () => {
   useEffect(() => {
     fetchFeedbackUnreadCount().catch(() => { });
     fetchWikiPendingCount().catch(() => { });
-  }, [currentView, fetchFeedbackUnreadCount, fetchWikiPendingCount]);
+    fetchRumorPendingCount().catch(() => { });
+  }, [currentView, fetchFeedbackUnreadCount, fetchRumorPendingCount, fetchWikiPendingCount]);
 
   useEffect(() => {
     if (currentView !== 'announcement') {
@@ -1843,6 +1859,7 @@ const AdminDashboard: React.FC = () => {
             <NavItem view="announcement" icon={<Bell size={18} />} label="发布中心" />
             <NavItem view="settings" icon={<Settings size={18} />} label="系统设置" />
             <NavItem view="wiki" icon={<BookOpen size={18} />} label="瓜条审核" badge={wikiPendingCount} />
+            <NavItem view="rumors" icon={<AlertTriangle size={18} />} label="谣言审核" badge={rumorPendingCount} />
             <NavItem view="feedback" icon={<MessageSquare size={18} />} label="留言管理" badge={feedbackUnreadCount} />
             <NavItem view="chat" icon={<MessageSquare size={18} />} label="聊天室管理" />
             <NavItem view="reports" icon={<Flag size={18} />} label="待处理举报" badge={pendingReportCount} />
@@ -1883,6 +1900,7 @@ const AdminDashboard: React.FC = () => {
               {currentView === 'announcement' && <><Bell /> 公告发布</>}
               {currentView === 'settings' && <><Settings /> 系统设置</>}
               {currentView === 'wiki' && <><BookOpen /> 瓜条审核</>}
+              {currentView === 'rumors' && <><AlertTriangle /> 谣言审核</>}
               {currentView === 'feedback' && <><MessageSquare /> 留言管理</>}
               {currentView === 'chat' && <><MessageSquare /> 聊天室管理</>}
               {currentView === 'reports' && <><Flag /> 待处理举报</>}
@@ -1964,6 +1982,7 @@ const AdminDashboard: React.FC = () => {
                 <NavItem view="announcement" icon={<Bell size={18} />} label="公告发布" onSelect={() => setMobileNavOpen(false)} />
                 <NavItem view="settings" icon={<Settings size={18} />} label="系统设置" onSelect={() => setMobileNavOpen(false)} />
                 <NavItem view="wiki" icon={<BookOpen size={18} />} label="瓜条审核" badge={wikiPendingCount} onSelect={() => setMobileNavOpen(false)} />
+                <NavItem view="rumors" icon={<AlertTriangle size={18} />} label="谣言审核" badge={rumorPendingCount} onSelect={() => setMobileNavOpen(false)} />
                 <NavItem view="feedback" icon={<MessageSquare size={18} />} label="留言管理" badge={feedbackUnreadCount} onSelect={() => setMobileNavOpen(false)} />
                 <NavItem view="chat" icon={<MessageSquare size={18} />} label="聊天室管理" onSelect={() => setMobileNavOpen(false)} />
                 <NavItem view="reports" icon={<Flag size={18} />} label="待处理举报" badge={pendingReportCount} onSelect={() => setMobileNavOpen(false)} />
@@ -2991,6 +3010,10 @@ const AdminDashboard: React.FC = () => {
             {/* 瓜条审核视图 */}
             {currentView === 'wiki' && (
               <AdminWikiPanel showToast={showToast} onPendingCountChange={fetchWikiPendingCount} />
+            )}
+
+            {currentView === 'rumors' && (
+              <AdminRumorPanel showToast={showToast} onPendingCountChange={fetchRumorPendingCount} />
             )}
 
             {/* Feedback View */}

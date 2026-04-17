@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AlertTriangle,
   ArrowLeft,
   ArrowRight,
   ArrowUpRight,
@@ -679,14 +680,15 @@ const HomeView: React.FC = () => {
     if (!currentPost) {
       return null;
     }
+    const isRumor = currentPost.rumorStatus === 'suspected';
 
     return (
       <>
         <article className={`group relative my-auto w-full transition-all duration-200 ${animate ? 'translate-x-10 opacity-0' : 'translate-x-0 opacity-100'}`}>
           <div className="absolute inset-0 translate-x-2 translate-y-3 rounded-lg bg-gray-200 opacity-100 transition-opacity doodle-border !rounded-lg" />
           <div className="tape-mask" />
-          <div className="relative flex flex-col rounded-lg border-2 border-black bg-white p-8 shadow-paper transition-transform duration-200 hover:-translate-y-1 doodle-border !rounded-lg">
-            <div className="mb-2 flex items-start justify-between gap-3">
+          <div className={`relative flex flex-col overflow-hidden rounded-lg border-2 bg-white p-8 shadow-paper transition-transform duration-200 hover:-translate-y-1 doodle-border !rounded-lg ${isRumor ? 'border-red-300' : 'border-black'}`}>
+            <div className="relative z-[1] mb-2 flex items-start justify-between gap-3">
               <div className="flex items-center gap-3">
                 {currentPost.author === 'admin' ? (
                   <DeveloperMiniCard timestamp={currentPost.timestamp} size="md" />
@@ -719,7 +721,7 @@ const HomeView: React.FC = () => {
             </div>
 
             {currentPost.tags?.length ? (
-              <div className="mb-2 flex min-w-0 flex-wrap items-center gap-2">
+              <div className="relative z-[1] mb-2 flex min-w-0 flex-wrap items-center gap-2">
                 {currentPost.tags.slice(0, 2).map((tag, index) => (
                   <button
                     type="button"
@@ -733,11 +735,24 @@ const HomeView: React.FC = () => {
               </div>
             ) : null}
 
-            <div className="text-lg leading-relaxed text-black">
+            {isRumor && (
+              <div className="relative z-[1] mb-4 flex w-full max-w-full items-start gap-2 rounded-2xl border-2 border-dashed border-ink/25 bg-[#f7efc7] px-4 py-2 text-sm text-pencil shadow-[2px_2px_0_rgba(0,0,0,0.08)] sm:inline-flex sm:w-auto sm:items-center sm:rounded-full">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[#c27b2b] sm:mt-0" />
+                <span className="min-w-0 flex-1 break-words leading-5 text-pencil sm:flex-none sm:whitespace-nowrap sm:leading-normal">
+                  审核提示：该帖
+                  <span className="mx-1 rounded-sm bg-marker-yellow/70 px-1.5 py-0.5 font-bold text-ink">
+                    疑似谣言
+                  </span>
+                  ，请谨慎辨别。
+                </span>
+              </div>
+            )}
+
+            <div className="relative z-[1] text-lg leading-relaxed text-black">
               <MarkdownRenderer content={currentPost.content} />
             </div>
 
-            <div className="mt-4 flex items-center justify-between border-t-2 border-dashed border-black pt-4">
+            <div className="relative z-[1] mt-4 flex items-center justify-between border-t-2 border-dashed border-black pt-4">
               <div className="flex items-center gap-6 pr-2">
                 <button
                   type="button"

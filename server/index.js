@@ -25,6 +25,7 @@ import { registerPublicWikiRoutes } from './routes/public/wiki-routes.js';
 import { registerAdminAuthRoutes } from './routes/admin/auth-routes.js';
 import { registerAdminAnnouncementRoutes } from './routes/admin/announcement-routes.js';
 import { registerAdminReportsRoutes } from './routes/admin/reports-routes.js';
+import { registerAdminRumorsRoutes } from './routes/admin/rumors-routes.js';
 import { registerAdminSettingsRoutes } from './routes/admin/settings-routes.js';
 import { registerAdminPostsRoutes } from './routes/admin/posts-routes.js';
 import { registerAdminWikiRoutes } from './routes/admin/wiki-routes.js';
@@ -1089,6 +1090,8 @@ const mapPostRow = (row, isHot) => ({
   imageUrl: row.image_url || '',
   createdAt: row.created_at,
   hidden: row.hidden === 1,
+  rumorStatus: row.rumor_status === 'suspected' ? 'suspected' : null,
+  rumorStatusUpdatedAt: row.rumor_status === 'suspected' ? (row.rumor_status_updated_at || null) : null,
   viewerReaction: row.viewer_reaction || null,
   viewerFavorited: Boolean(row.viewer_favorited),
 });
@@ -1096,6 +1099,7 @@ const mapPostRow = (row, isHot) => ({
 const mapCommentRow = (row) => {
   const deleted = row.deleted === 1;
   const hidden = row.hidden === 1;
+  const rumorStatus = row.rumor_status === 'suspected' ? 'suspected' : null;
   return {
     id: row.id,
     postId: row.post_id,
@@ -1112,6 +1116,8 @@ const mapCommentRow = (row) => {
     deleted,
     hidden,
     hiddenAt: row.hidden_at || null,
+    rumorStatus,
+    rumorStatusUpdatedAt: rumorStatus ? (row.rumor_status_updated_at || null) : null,
     likes: Number(row.likes_count || 0),
     viewerLiked: Boolean(row.viewer_liked),
   };
@@ -1131,6 +1137,8 @@ const mapAdminCommentRow = (row) => ({
   hidden: row.hidden === 1,
   hiddenAt: row.hidden_at || null,
   hiddenReviewStatus: row.hidden_review_status || null,
+  rumorStatus: row.rumor_status || null,
+  rumorStatusUpdatedAt: row.rumor_status_updated_at || null,
   pendingReportCount: Number(row.pending_report_count || 0),
   ip: row.ip || null,
   fingerprint: row.fingerprint || null,
@@ -1346,6 +1354,14 @@ registerAdminReportsRoutes(app, {
   upsertBan,
   BAN_PERMISSIONS,
   chatRealtime,
+  resolveStoredIdentityHash,
+});
+
+registerAdminRumorsRoutes(app, {
+  db,
+  requireAdmin,
+  requireAdminCsrf,
+  logAdminAction,
   resolveStoredIdentityHash,
 });
 

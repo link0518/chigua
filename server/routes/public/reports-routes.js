@@ -1,3 +1,16 @@
+const REPORT_REASON_LABELS = {
+  privacy: '隐私风险',
+  harassment: '骚扰辱骂',
+  spam: '垃圾广告',
+  misinformation: '虚假信息',
+  rumor: '举报谣言',
+};
+
+const normalizeReasonCode = (value) => {
+  const code = String(value || '').trim().toLowerCase();
+  return Object.prototype.hasOwnProperty.call(REPORT_REASON_LABELS, code) ? code : '';
+};
+
 export const registerPublicReportsRoutes = (app, deps) => {
   const {
     db,
@@ -31,7 +44,14 @@ export const registerPublicReportsRoutes = (app, deps) => {
     };
   };
 
-  const resolveRiskLevel = (reason) => {
+  const resolveRiskLevel = (reasonCode, reasonLabel) => {
+    if (reasonCode === 'privacy') return 'high';
+    if (reasonCode === 'harassment') return 'medium';
+    if (reasonCode === 'misinformation') return 'medium';
+    if (reasonCode === 'rumor') return 'medium';
+    if (reasonCode === 'spam') return 'low';
+
+    const reason = String(reasonLabel || '');
     if (reason.includes('隐私')) return 'high';
     if (reason.includes('骚扰')) return 'medium';
     if (reason.includes('虚假')) return 'medium';
@@ -42,10 +62,16 @@ export const registerPublicReportsRoutes = (app, deps) => {
   app.post('/api/reports', (req, res) => {
     const postId = String(req.body?.postId || '').trim();
     const commentId = String(req.body?.commentId || '').trim();
-    const reason = String(req.body?.reason || '').trim();
+    const reasonCode = normalizeReasonCode(req.body?.reasonCode);
+    const fallbackReason = String(req.body?.reason || '').trim();
+    const reason = reasonCode ? REPORT_REASON_LABELS[reasonCode] : fallbackReason;
+    const evidence = String(req.body?.evidence || '').trim().slice(0, 500);
 
     if (!reason || (!postId && !commentId)) {
       return res.status(400).json({ error: '参数不完整' });
+    }
+    if (reasonCode === 'rumor' && !evidence) {
+      return res.status(400).json({ error: '请填写判断为谣言的原因或证据' });
     }
 
     const fingerprint = requireFingerprint(req, res);
@@ -99,8 +125,8 @@ export const registerPublicReportsRoutes = (app, deps) => {
 
     const reportId = crypto.randomUUID();
     const now = Date.now();
-
     const sessionId = req.sessionID || 'unknown';
+
     if (targetType === 'comment') {
       if (sessionId) {
         const existingSession = db
@@ -149,10 +175,37 @@ export const registerPublicReportsRoutes = (app, deps) => {
 
     db.prepare(
       `
-        INSERT INTO reports (id, post_id, comment_id, target_type, reason, content_snippet, created_at, status, risk_level, fingerprint, reporter_ip)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
+        INSERT INTO reports (
+          id,
+          post_id,
+          comment_id,
+          target_type,
+          reason,
+          reason_code,
+          evidence,
+          content_snippet,
+          created_at,
+          status,
+          risk_level,
+          fingerprint,
+          reporter_ip
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
       `
-    ).run(reportId, targetPostId, targetCommentId || null, targetType, reason, snippet, now, resolveRiskLevel(reason), fingerprint, reporterIp);
+    ).run(
+      reportId,
+      targetPostId,
+      targetCommentId || null,
+      targetType,
+      reason,
+      reasonCode || null,
+      evidence || null,
+      snippet,
+      now,
+      resolveRiskLevel(reasonCode, reason),
+      fingerprint,
+      reporterIp || null
+    );
 
     incrementDailyStat(formatDateKey(), 'reports', 1);
 

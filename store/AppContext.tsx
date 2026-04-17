@@ -1,6 +1,6 @@
 ﻿import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import { api } from '../api';
-import { Comment, Post, Report, ReportSubmissionResult } from '../types';
+import { Comment, Post, Report, ReportSubmissionPayload, ReportSubmissionResult } from '../types';
 import {
   normalizeHiddenPostTag,
   normalizeHiddenPostTagList,
@@ -77,8 +77,8 @@ interface AppContextType {
   dislikePost: (postId: string) => Promise<void>;
   toggleFavoritePost: (postId: string) => Promise<boolean>;
   deletePost: (postId: string) => void;
-  reportPost: (postId: string, reason: string) => Promise<ReportSubmissionResult>;
-  reportComment: (commentId: string, reason: string) => Promise<ReportSubmissionResult>;
+  reportPost: (postId: string, payload: ReportSubmissionPayload) => Promise<ReportSubmissionResult>;
+  reportComment: (commentId: string, payload: ReportSubmissionPayload) => Promise<ReportSubmissionResult>;
   reportChatMessage: (messageId: number, reason: string) => Promise<void>;
   handleReport: (
     reportId: string,
@@ -507,8 +507,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }));
   }, []);
 
-  const reportPost = useCallback(async (postId: string, reason: string) => {
-    const data: ReportSubmissionResult = await api.reportPost(postId, reason);
+  const reportPost = useCallback(async (postId: string, payload: ReportSubmissionPayload) => {
+    const data: ReportSubmissionResult = await api.reportPost(postId, payload);
     if (data?.autoHidden && data?.targetType === 'post' && data?.targetId) {
       deletePost(data.targetId);
     }
@@ -516,8 +516,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return data;
   }, [deletePost]);
 
-  const reportComment = useCallback(async (commentId: string, reason: string) => {
-    const data: ReportSubmissionResult = await api.reportComment(commentId, reason);
+  const reportComment = useCallback(async (commentId: string, payload: ReportSubmissionPayload) => {
+    const data: ReportSubmissionResult = await api.reportComment(commentId, payload);
     dispatchAutoHiddenEvent(data);
     return data;
   }, []);

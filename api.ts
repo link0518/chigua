@@ -149,13 +149,13 @@ export const api = {
   }),
   toggleCommentLike: (commentId) => apiFetch(`/comments/${commentId}/like`, { method: 'POST' }),
   getFavorites: (limit = 20, offset = 0) => apiFetch(`/favorites${toQuery({ limit, offset })}`),
-  reportPost: (postId, reason) => apiFetch('/reports', {
+  reportPost: (postId, payload) => apiFetch('/reports', {
     method: 'POST',
-    body: JSON.stringify({ postId, reason }),
+    body: JSON.stringify({ postId, ...(payload || {}) }),
   }),
-  reportComment: (commentId, reason) => apiFetch('/reports', {
+  reportComment: (commentId, payload) => apiFetch('/reports', {
     method: 'POST',
-    body: JSON.stringify({ commentId, reason }),
+    body: JSON.stringify({ commentId, ...(payload || {}) }),
   }),
   getNotifications: (params = {}) => apiFetch(`/notifications${toQuery(params)}`),
   readNotifications: () => apiFetch('/notifications/read', { method: 'POST' }),
@@ -216,6 +216,11 @@ export const api = {
   batchAdminReports: (action, reportIds, reason = '') => apiFetch(`/admin/reports/batch`, {
     method: 'POST',
     body: JSON.stringify({ action, reportIds, reason }),
+  }),
+  getAdminRumors: (params = {}) => apiFetch(`/admin/rumors${toQuery(params)}`),
+  handleAdminRumor: (targetType, targetId, action, reason = '') => apiFetch(`/admin/rumors/${encodeURIComponent(String(targetType || ''))}/${encodeURIComponent(String(targetId || ''))}/action`, {
+    method: 'POST',
+    body: JSON.stringify({ action, reason }),
   }),
   getAdminFeedback: (params = {}) => apiFetch(`/admin/feedback${toQuery(params)}`),
   getAdminWikiRevisions: (params = {}) => apiFetch(`/admin/wiki/revisions${toQuery(params)}`),

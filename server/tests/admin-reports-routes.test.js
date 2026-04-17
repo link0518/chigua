@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import Database from 'better-sqlite3';
+
 import { registerAdminReportsRoutes } from '../routes/admin/reports-routes.js';
 
 const createDb = () => {
@@ -12,6 +13,8 @@ const createDb = () => {
       comment_id TEXT,
       target_type TEXT NOT NULL,
       reason TEXT,
+      reason_code TEXT,
+      evidence TEXT,
       content_snippet TEXT,
       created_at INTEGER NOT NULL,
       status TEXT NOT NULL,
@@ -123,16 +126,16 @@ const createHarness = () => {
   return { db, routes: app.routes };
 };
 
-const seedPostReport = (db, { id, postId, status, createdAt }) => {
+const seedPostReport = (db, { id, postId, status, createdAt, reason = '垃圾广告', reasonCode = null }) => {
   db.prepare(`
     INSERT INTO posts (id, content, ip, session_id, fingerprint)
     VALUES (?, ?, ?, ?, ?)
   `).run(postId, `post:${postId}`, '127.0.0.1', `session-${postId}`, `fp-${postId}`);
 
   db.prepare(`
-    INSERT INTO reports (id, post_id, comment_id, target_type, reason, content_snippet, created_at, status, risk_level, fingerprint, reporter_ip)
-    VALUES (?, ?, NULL, 'post', '广告', ?, ?, ?, 'low', ?, '127.0.0.9')
-  `).run(id, postId, `snippet:${id}`, createdAt, status, `reporter-${id}`);
+    INSERT INTO reports (id, post_id, comment_id, target_type, reason, reason_code, evidence, content_snippet, created_at, status, risk_level, fingerprint, reporter_ip)
+    VALUES (?, ?, NULL, 'post', ?, ?, NULL, ?, ?, ?, 'low', ?, '127.0.0.9')
+  `).run(id, postId, reason, reasonCode, `snippet:${id}`, createdAt, status, `reporter-${id}`);
 };
 
 test('admin reports supports pending preview limit with total count', async () => {
@@ -150,6 +153,52 @@ test('admin reports supports pending preview limit with total count', async () =
   assert.equal(res.payload.total, 3);
   assert.equal(res.payload.items.length, 2);
   assert.deepEqual(res.payload.items.map((item) => item.id), ['report-3', 'report-2']);
+
+  db.close();
+});
+
+test('admin reports excludes rumor reports by default', async () => {
+  const { db, routes } = createHarness();
+  seedPostReport(db, { id: 'report-normal', postId: 'post-normal', status: 'pending', createdAt: 1000 });
+  seedPostReport(db, {
+    id: 'report-rumor',
+    postId: 'post-rumor',
+    status: 'pending',
+    createdAt: 2000,
+    reason: '举报谣言',
+    reasonCode: 'rumor',
+  });
+
+  const res = await runHandlers(routes.get('GET /api/reports'), {
+    query: { status: 'pending' },
+  });
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.payload.total, 1);
+  assert.deepEqual(res.payload.items.map((item) => item.id), ['report-normal']);
+
+  db.close();
+});
+
+test('admin reports also excludes legacy rumor reports without reason_code', async () => {
+  const { db, routes } = createHarness();
+  seedPostReport(db, { id: 'report-normal', postId: 'post-normal-legacy', status: 'pending', createdAt: 1000 });
+  seedPostReport(db, {
+    id: 'report-rumor-legacy',
+    postId: 'post-rumor-legacy',
+    status: 'pending',
+    createdAt: 2000,
+    reason: '举报谣言',
+    reasonCode: null,
+  });
+
+  const res = await runHandlers(routes.get('GET /api/reports'), {
+    query: { status: 'pending' },
+  });
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.payload.total, 1);
+  assert.deepEqual(res.payload.items.map((item) => item.id), ['report-normal']);
 
   db.close();
 });

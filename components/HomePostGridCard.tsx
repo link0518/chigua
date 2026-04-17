@@ -1,5 +1,6 @@
 import React from 'react';
 import {
+  AlertTriangle,
   ArrowUpRight,
   Flag,
   MessageCircle,
@@ -9,6 +10,7 @@ import {
   ThumbsUp,
   UserX,
 } from 'lucide-react';
+
 import type { Post } from '../types';
 import DeveloperMiniCard from './DeveloperMiniCard';
 
@@ -66,13 +68,14 @@ const HomePostGridCard: React.FC<HomePostGridCardProps> = ({
 }) => {
   const previewText = buildPreviewText(post.content);
   const isDeveloperPost = post.author === 'admin';
+  const isRumor = post.rumorStatus === 'suspected';
 
   return (
     <article className="group relative h-full">
       <div className="pointer-events-none absolute inset-0 translate-x-1.5 translate-y-2 rounded-[28px] border-2 border-black bg-gray-200 opacity-80 transition-all duration-200 group-hover:translate-y-3" />
 
-      <div className="relative flex h-full flex-col rounded-[28px] border-2 border-black bg-white p-4 shadow-paper transition-transform duration-200 hover:-translate-y-1 sm:p-5">
-        <div className="flex h-full flex-col gap-4">
+      <div className={`relative flex h-full flex-col overflow-hidden rounded-[28px] border-2 border-black bg-white p-4 shadow-paper transition-transform duration-200 hover:-translate-y-1 sm:p-5 ${isRumor ? 'border-red-300' : ''}`}>
+        <div className="relative z-[1] flex h-full flex-col gap-4">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               {isDeveloperPost ? (
@@ -121,10 +124,23 @@ const HomePostGridCard: React.FC<HomePostGridCardProps> = ({
             ))}
           </div>
 
+          {isRumor && (
+            <div className="flex w-full max-w-full items-start gap-2 rounded-2xl border-2 border-dashed border-ink/25 bg-[#f7efc7] px-3 py-2 text-[13px] text-pencil shadow-[2px_2px_0_rgba(0,0,0,0.08)] sm:inline-flex sm:w-auto sm:items-center sm:rounded-full">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[#c27b2b] sm:mt-0" />
+              <span className="min-w-0 flex-1 break-words leading-5 text-pencil sm:flex-none sm:whitespace-nowrap sm:leading-normal">
+                审核提示：该帖
+                <span className="mx-1 rounded-sm bg-marker-yellow/70 px-1.5 py-0.5 font-bold text-ink">
+                  疑似谣言
+                </span>
+                ，请谨慎辨别。
+              </span>
+            </div>
+          )}
+
           <button
             type="button"
             onClick={onOpen}
-            className="flex flex-1 flex-col rounded-[20px] border-2 border-dashed border-black/20 bg-[#fcfbf7] p-4 text-left transition-all hover:border-black/35 hover:bg-white"
+            className={`flex flex-1 flex-col rounded-[20px] border-2 border-dashed p-4 text-left transition-all hover:bg-white ${isRumor ? 'border-red-200 bg-red-50/40 hover:border-red-300' : 'border-black/20 bg-[#fcfbf7] hover:border-black/35'}`}
           >
             <div className="mb-3 flex items-center justify-between gap-2 text-[11px] font-bold tracking-[0.18em] text-pencil/70">
               <span>点击查看详情</span>
