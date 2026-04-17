@@ -804,7 +804,7 @@ const WikiEntryDetail: React.FC<{
       </div>
 
       {/* 正文区域 */}
-      <article className="relative z-0 flex-none px-5 py-8 pb-24 md:px-16 lg:flex-1 lg:overflow-y-auto lg:py-20">
+      <article className="relative z-0 flex-none px-5 py-8 pb-36 md:px-16 md:pb-40 lg:flex-1 lg:overflow-y-auto lg:py-20 lg:pb-32">
         <div className="pointer-events-none absolute -top-8 right-0 select-none opacity-[0.02]">
           <span className="font-serif text-[16rem] leading-none md:text-[22rem]">{decorativeChar}</span>
         </div>
@@ -827,7 +827,7 @@ const WikiEntryDetail: React.FC<{
           </div>
         </div>
 
-        <div className="pointer-events-none sticky bottom-5 z-20 mt-10 flex justify-end gap-3 md:bottom-8 md:mt-12 md:gap-4">
+        <div className="pointer-events-none fixed bottom-5 right-5 z-[70] flex justify-end gap-3 md:bottom-8 md:right-8 md:gap-4 lg:right-[344px] xl:right-[432px]">
           <button
             type="button"
             aria-label="分享瓜条"
@@ -852,7 +852,7 @@ const WikiEntryDetail: React.FC<{
       </article>
 
       {/* 右侧版本信息 */}
-      <aside className="z-10 w-full shrink-0 border-t border-black/5 bg-[#fcfdfc] p-5 shadow-[-20px_0_40px_rgba(0,0,0,0.02)] md:p-8 lg:w-[320px] lg:overflow-y-auto lg:border-l lg:border-t-0 xl:w-[400px] xl:p-12">
+      <aside className="z-10 w-full shrink-0 border-t border-black/5 bg-[#fcfdfc] p-5 pb-28 shadow-[-20px_0_40px_rgba(0,0,0,0.02)] md:p-8 md:pb-32 lg:w-[320px] lg:overflow-y-auto lg:border-l lg:border-t-0 lg:pb-12 xl:w-[400px] xl:p-12 xl:pb-16">
         <div className="mb-16 hidden justify-end gap-3 lg:flex">
           <button onClick={() => onEdit(entry)} className="group flex h-11 w-11 items-center justify-center rounded-xl border border-black/5 bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:border-[#546354]/50 hover:bg-[#f9faf9] hover:shadow-md">
             <WikiIcon name="edit" className="text-[18px] text-[#2f3334] group-hover:text-[#546354]" />
