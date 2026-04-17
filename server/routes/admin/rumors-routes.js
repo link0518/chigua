@@ -9,6 +9,7 @@ export const registerAdminRumorsRoutes = (app, deps) => {
     requireAdminCsrf,
     logAdminAction,
     resolveStoredIdentityHash,
+    wecomWebhookService,
   } = deps;
 
   const resolveAdminIdentity = ({ fingerprint, sessionId = '', ip = '' }) => buildAdminIdentity({
@@ -26,6 +27,14 @@ export const registerAdminRumorsRoutes = (app, deps) => {
   const normalizeTargetType = (value) => {
     const targetType = String(value || '').trim().toLowerCase();
     return ['post', 'comment', 'all'].includes(targetType) ? targetType : 'all';
+  };
+
+  const notifyRumorReview = (payload = {}) => {
+    try {
+      void Promise.resolve(wecomWebhookService?.notifyRumorReview?.(payload)).catch(() => { });
+    } catch {
+      // Webhook 提醒失败不影响审核操作。
+    }
   };
 
   app.get('/api/admin/rumors', requireAdmin, (req, res) => {
@@ -204,7 +213,9 @@ export const registerAdminRumorsRoutes = (app, deps) => {
     }
 
     const table = targetType === 'comment' ? 'comments' : 'posts';
-    const target = db.prepare(`SELECT id, rumor_status FROM ${table} WHERE id = ?`).get(targetId);
+    const target = targetType === 'comment'
+      ? db.prepare('SELECT id, content, rumor_status FROM comments WHERE id = ?').get(targetId)
+      : db.prepare('SELECT id, content, rumor_status FROM posts WHERE id = ?').get(targetId);
     if (!target) {
       return res.status(404).json({ error: '目标不存在' });
     }
@@ -247,6 +258,16 @@ export const registerAdminRumorsRoutes = (app, deps) => {
       before: { rumorStatus: target.rumor_status || null },
       after: { rumorStatus: nextRumorStatus, resolvedCount },
       reason,
+    });
+
+    notifyRumorReview({
+      action,
+      targetType,
+      contentSnippet: target.content || '',
+      rumorStatus: nextRumorStatus,
+      resolvedCount,
+      reason,
+      reviewedAt: now,
     });
 
     return res.json({

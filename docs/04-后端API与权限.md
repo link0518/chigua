@@ -115,6 +115,7 @@
   - `reject`：标记为 `rejected`
   - `clear`：清空谣言标记
 - `mark` / `reject` 会把该目标下仍处于 `pending` 的谣言举报批量置为 `resolved`
+- 若后台已启用企业微信 Webhook，`mark` / `reject` / `clear` 成功后会异步推送谣言审核结果提醒；推送失败不影响接口返回
 
 帖子管理：
 

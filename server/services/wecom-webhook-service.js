@@ -41,13 +41,17 @@ const labels = {
   wikiPending: '\u74dc\u6761\u5f85\u5ba1\u6838',
   wikiCreate: '\u65b0\u5efa\u74dc\u6761',
   wikiEdit: '\u7f16\u8f91\u74dc\u6761',
+  rumorReview: '\u8c23\u8a00\u5ba1\u6838',
+  rumorMark: '\u5224\u5b9a\u7591\u4f3c\u8c23\u8a00',
+  rumorReject: '\u9a73\u56de\u8c23\u8a00\u4e3e\u62a5',
+  rumorClear: '\u53d6\u6d88\u8c23\u8a00\u6807\u8bb0',
   wikiName: '\u74dc\u6761\u540d',
   tags: '\u6807\u7b7e',
   comment: '\u8bc4\u8bba',
   post: '\u5e16\u5b50',
-  targetId: '\u5185\u5bb9ID',
-  postId: '\u6240\u5c5e\u5e16\u5b50',
   pendingReports: '\u5f85\u5904\u7406\u4e3e\u62a5\u6570',
+  resolvedReports: '\u5904\u7406\u4e3e\u62a5\u6570',
+  reviewReason: '\u5ba1\u6838\u8bf4\u660e',
   snippet: '\u5185\u5bb9\u6458\u8981',
   empty: '\u65e0',
   notProvided: '\u672a\u586b\u5199',
@@ -78,6 +82,19 @@ const buildAdminLink = (siteUrl) => {
   return adminUrl.startsWith('http://') || adminUrl.startsWith('https://')
     ? `[${labels.openAdmin}](${adminUrl})`
     : adminUrl;
+};
+
+const resolveRumorReviewActionLabel = (action) => {
+  if (action === 'mark') {
+    return labels.rumorMark;
+  }
+  if (action === 'reject') {
+    return labels.rumorReject;
+  }
+  if (action === 'clear') {
+    return labels.rumorClear;
+  }
+  return labels.rumorReview;
 };
 
 const getWebhookKey = (rawUrl) => {
@@ -269,6 +286,26 @@ export const createWecomWebhookService = ({
     ].join('\n'), 'wiki_revision');
   };
 
+  const notifyRumorReview = (payload = {}) => {
+    const targetLabel = payload.targetType === 'comment' ? labels.comment : labels.post;
+    const actionLabel = resolveRumorReviewActionLabel(payload.action);
+    const lines = [
+      `**${labels.title}**`,
+      `> ${labels.type}\uff1a${labels.rumorReview} / ${targetLabel} / ${actionLabel}`,
+      `> ${labels.time}\uff1a${escapeMarkdownText(formatTime(payload.reviewedAt))}`,
+    ];
+
+    lines.push(`> ${labels.resolvedReports}\uff1a${Number(payload.resolvedCount || 0)}`);
+    lines.push(`> ${labels.snippet}\uff1a${escapeMarkdownText(truncateText(payload.contentSnippet)) || labels.empty}`);
+
+    if (text(payload.reason)) {
+      lines.push(`> ${labels.reviewReason}\uff1a${escapeMarkdownText(truncateText(payload.reason, 80))}`);
+    }
+
+    lines.push(`> ${labels.adminEntry}\uff1a${adminLink}`);
+    return sendConfiguredMarkdown(lines.join('\n'), 'rumor_review');
+  };
+
   const sendTestMessage = async ({ url } = {}) => {
     const config = getCurrentConfig();
     const targetUrl = text(url) || config.url;
@@ -291,6 +328,7 @@ export const createWecomWebhookService = ({
     notifyFeedbackMessage,
     notifyHiddenContent,
     notifyWikiRevision,
+    notifyRumorReview,
     sendTestMessage,
   };
 };

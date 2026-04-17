@@ -127,6 +127,15 @@ test('企业微信推送内容不包含留言ID、所属帖子和内容ID', asyn
     pendingReportCount: 10,
     contentSnippet: '待审内容摘要',
   });
+  await service.notifyRumorReview({
+    targetType: 'comment',
+    targetId: 'rumor-secret-id',
+    postId: 'rumor-post-secret-id',
+    action: 'mark',
+    resolvedCount: 2,
+    contentSnippet: '谣言审核摘要',
+    reason: '管理员判定',
+  });
 
   const sentText = bodies.map((body) => body.markdown.content).join('\n');
   assert.ok(!sentText.includes('留言ID'));
@@ -135,6 +144,8 @@ test('企业微信推送内容不包含留言ID、所属帖子和内容ID', asyn
   assert.ok(!sentText.includes('feedback-secret-id'));
   assert.ok(!sentText.includes('hidden-secret-id'));
   assert.ok(!sentText.includes('post-secret-id'));
+  assert.ok(!sentText.includes('rumor-secret-id'));
+  assert.ok(!sentText.includes('rumor-post-secret-id'));
 });
 
 test('企业微信瓜条待审提醒包含类型、名称、标签和摘要', async () => {

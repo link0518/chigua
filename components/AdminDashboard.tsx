@@ -2755,7 +2755,7 @@ const AdminDashboard: React.FC = () => {
                       <div>
                         <label className="text-sm font-sans font-bold text-ink block">企业微信机器人提醒</label>
                         <p className="text-xs text-pencil font-sans mt-1">
-                          新留言、自动隐藏待审核内容和瓜条待审提醒会推送到企业微信群；推送失败不会影响用户提交。
+                          新留言、自动隐藏待审核内容、瓜条待审和谣言审核结果会推送到企业微信群；推送失败不会影响提交或审核。
                         </p>
                       </div>
                       <label className="flex items-center gap-3 text-sm font-sans">

@@ -1363,6 +1363,7 @@ registerAdminRumorsRoutes(app, {
   requireAdminCsrf,
   logAdminAction,
   resolveStoredIdentityHash,
+  wecomWebhookService,
 });
 
 registerAdminPostsRoutes(app, {
