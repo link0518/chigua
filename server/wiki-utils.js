@@ -119,6 +119,7 @@ export const mapWikiEntryRow = (row) => ({
   status: row.status,
   currentRevisionId: row.current_revision_id || null,
   versionNumber: Number(row.version_number || 1),
+  displayOrder: Number(row.display_order || row.displayOrder || 0) || null,
   createdAt: Number(row.created_at || 0),
   updatedAt: Number(row.updated_at || 0),
   deleted: row.deleted === 1,

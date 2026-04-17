@@ -264,6 +264,7 @@ export interface WikiEntry {
   status: 'pending' | 'approved' | 'rejected';
   currentRevisionId?: string | null;
   versionNumber: number;
+  displayOrder?: number | null;
   createdAt: number;
   updatedAt: number;
   deleted?: boolean;

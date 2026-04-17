@@ -508,6 +508,13 @@ const WikiGallery: React.FC<{
     }
   }, [hasMore, items.length, loading, loadingMore, mobileFeed, onLoadMore]);
 
+  const getEntryDisplayNumber = (entry: WikiEntry, index: number) => {
+    if (typeof entry.displayOrder === 'number' && entry.displayOrder > 0) {
+      return entry.displayOrder;
+    }
+    return Math.max(total - itemOffset - index, 1);
+  };
+
   return (
     <main ref={listRef} onScroll={handleScroll} className="flex-1 overflow-y-auto w-full">
       <div className="mx-auto flex min-h-full w-full max-w-6xl flex-col px-4 py-6 pb-24 sm:px-6 md:px-12 md:py-16 md:pb-16">
@@ -526,27 +533,29 @@ const WikiGallery: React.FC<{
               暂无匹配瓜条。
             </div>
           ) : (
-            <div className="columns-1 gap-6 sm:columns-2 xl:columns-3">
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
               {items.map((entry, index) => (
                 <article
                   key={entry.id}
                   onClick={() => onOpenEntry(entry.slug)}
-                  className="group relative mb-5 break-inside-avoid cursor-pointer overflow-hidden rounded-2xl border border-black/5 bg-white p-6 shadow-sm transition-all duration-500 ease-out hover:-translate-y-1.5 hover:border-[#546354]/40 hover:shadow-xl hover:shadow-[#546354]/5 md:mb-6 md:p-7"
+                  className="group relative flex h-[320px] cursor-pointer flex-col overflow-hidden rounded-2xl border border-black/5 bg-white p-6 shadow-sm transition-all duration-500 ease-out hover:-translate-y-1.5 hover:border-[#546354]/40 hover:shadow-xl hover:shadow-[#546354]/5 md:h-[340px] md:p-7"
                 >
                   <div className="mb-5 flex items-center justify-between">
                     <span className="font-label text-[10px] font-bold tracking-widest text-[#2f3334]/30 group-hover:text-[#546354]/70 transition-colors">
-                      编号 {String(itemOffset + index + 1).padStart(3, '0')}
+                      编号 {String(getEntryDisplayNumber(entry, index)).padStart(3, '0')}
                     </span>
                     <div className="h-2 w-2 rounded-full bg-[#f3f4f4] group-hover:bg-[#546354]/50 transition-colors" />
                   </div>
 
-                  <h3 className="mb-4 font-headline text-2xl font-bold leading-snug text-[#2f3334] group-hover:text-[#546354] transition-colors">{entry.name}</h3>
+                  <h3 className="mb-4 line-clamp-2 min-h-[4.25rem] font-headline text-2xl font-bold leading-snug text-[#2f3334] transition-colors group-hover:text-[#546354]">
+                    {entry.name}
+                  </h3>
 
-                  <p className="mb-6 line-clamp-4 font-body text-sm leading-relaxed text-[#2f3334]/70 opacity-90">
+                  <p className="mb-6 flex-1 line-clamp-5 font-body text-sm leading-relaxed text-[#2f3334]/70 opacity-90">
                     {entry.narrative || '暂无叙述详情...'}
                   </p>
 
-                  <div className="flex flex-wrap gap-1.5">
+                  <div className="mt-auto flex flex-wrap gap-1.5">
                     {entry.tags.slice(0, 4).map((tag) => (
                       <span key={tag} className="rounded bg-[#f9faf9] px-2.5 py-1 font-label text-[10px] tracking-wide text-[#2f3334]/60 border border-black/[0.03]">
                         #{tag}

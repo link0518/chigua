@@ -264,6 +264,30 @@ test('Wiki 新建和编辑待审都会触发 webhook，失败不影响响应', a
   assert.equal(failedWebhookRes.statusCode, 201);
 });
 
+test('Wiki 列表展示编号按创建顺序递增，不受列表倒序影响', async () => {
+  const { app } = createWikiApp();
+
+  const firstRes = await submitWikiEntry(app, {
+    name: '第一条',
+    narrative: '最早创建的瓜条。',
+    tags: ['测试'],
+  });
+  await approveRevision(app, firstRes.payload.id);
+
+  const secondRes = await submitWikiEntry(app, {
+    name: '第二条',
+    narrative: '后创建的瓜条。',
+    tags: ['测试'],
+  });
+  await approveRevision(app, secondRes.payload.id);
+
+  const list = await invoke(app, 'GET', '/api/wiki/entries');
+  assert.equal(list.payload.total, 2);
+  const displayOrderByName = Object.fromEntries(list.payload.items.map((item) => [item.name, item.displayOrder]));
+  assert.equal(displayOrderByName.第一条, 1);
+  assert.equal(displayOrderByName.第二条, 2);
+});
+
 test('Wiki 编辑待审不影响公开内容，拒绝后不进入公开历史', async () => {
   const { app } = createWikiApp();
   const createRes = await submitWikiEntry(app, {

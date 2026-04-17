@@ -125,9 +125,14 @@ export const registerPublicWikiRoutes = (app, deps) => {
     const rows = db
       .prepare(
         `
+        WITH filtered_entries AS (
+          SELECT *,
+            ROW_NUMBER() OVER (ORDER BY created_at ASC, rowid ASC) AS display_order
+          FROM wiki_entries
+          ${whereClause}
+        )
         SELECT *
-        FROM wiki_entries
-        ${whereClause}
+        FROM filtered_entries
         ORDER BY updated_at DESC, created_at DESC
         LIMIT ? OFFSET ?
         `
