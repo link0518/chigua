@@ -852,6 +852,19 @@ const WikiEntryDetail: React.FC<{
           </div>
         </div>
 
+        <div className="pointer-events-none hidden fixed bottom-5 left-5 z-[70] flex justify-start md:bottom-8 md:left-8 lg:left-[308px] xl:left-[416px]">
+          <button
+            type="button"
+            aria-label="¼ìË÷¹ÏÌõ"
+            title="¼ìË÷¹ÏÌõ"
+            onClick={() => {}}
+            className="pointer-events-auto group flex h-12 min-w-12 items-center justify-center gap-2 rounded-xl border border-black/5 bg-white/95 px-3 font-label text-xs font-bold tracking-widest text-[#2f3334]/75 shadow-[0px_10px_30px_rgba(47,51,52,0.10)] backdrop-blur-md transition-all hover:-translate-y-0.5 hover:border-[#546354]/50 hover:bg-[#f9faf9] hover:text-[#546354] hover:shadow-xl md:h-14 md:min-w-14 md:px-4"
+          >
+            <WikiIcon name="search" className="text-[22px]" />
+            <span className="hidden sm:inline">¼ìË÷</span>
+          </button>
+        </div>
+
         <div className="pointer-events-none fixed bottom-5 right-5 z-[70] flex justify-end gap-3 md:bottom-8 md:right-8 md:gap-4 lg:right-[344px] xl:right-[432px]">
           <button
             type="button"
@@ -1349,6 +1362,21 @@ const WikiView: React.FC = () => {
     }
   };
 
+  const handleSearchCurrentEntry = useCallback(() => {
+    const keyword = String(detailEntry?.name || '').trim();
+    if (!keyword) {
+      return;
+    }
+
+    const params = new URLSearchParams();
+    params.set('q', keyword);
+    const targetUrl = `${window.location.origin}/search?${params.toString()}`;
+    const newWindow = window.open(targetUrl, '_blank', 'noopener,noreferrer');
+    if (newWindow) {
+      newWindow.opener = null;
+    }
+  }, [detailEntry]);
+
   const totalPages = Math.max(Math.ceil(total / PAGE_SIZE), 1);
   const hasMoreEntries = isMobileFeed && !isDetail && page < totalPages && entries.length < total;
   const loadingMore = isMobileFeed && page > 1 && listLoading;
@@ -1417,6 +1445,27 @@ const WikiView: React.FC = () => {
             )}
           </div>
         </div>
+        {detailEntry && !detailLoading && !detailError && (
+          <div className="pointer-events-none absolute inset-x-0 bottom-5 z-[70] md:bottom-8">
+            <div className="flex">
+              <div className="min-w-0 flex-1 px-5 md:px-16">
+                <div className="mx-auto flex max-w-2xl justify-start">
+                  <button
+                    type="button"
+                    aria-label="检索瓜条"
+                    title="检索瓜条"
+                    onClick={handleSearchCurrentEntry}
+                    className="pointer-events-auto group flex h-12 min-w-12 items-center justify-center gap-2 rounded-xl border border-black/5 bg-white/95 px-3 font-label text-xs font-bold tracking-widest text-[#2f3334]/75 shadow-[0px_10px_30px_rgba(47,51,52,0.10)] backdrop-blur-md transition-all hover:-translate-y-0.5 hover:border-[#546354]/50 hover:bg-[#f9faf9] hover:text-[#546354] hover:shadow-xl md:h-14 md:min-w-14 md:px-4"
+                  >
+                    <WikiIcon name="search" className="text-[22px]" />
+                    <span className="hidden sm:inline">检索</span>
+                  </button>
+                </div>
+              </div>
+              <div className="hidden shrink-0 lg:block lg:w-[320px] xl:w-[400px]" />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 移动端点击遮罩返回画廊 */}
