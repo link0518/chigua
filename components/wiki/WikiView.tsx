@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { api } from '../../api';
 import { useApp } from '../../store/AppContext';
-import type { WikiEntry, WikiRevision } from '../../types';
+import type { WikiEntry, WikiEntrySort, WikiRevision } from '../../types';
 import Turnstile, { TurnstileHandle } from '../Turnstile';
 
 type WikiListResponse = {
@@ -26,6 +26,10 @@ const WIKI_MOBILE_FEED_QUERY = '(max-width: 767px)';
 const WIKI_DETAIL_ENTER_MS = 225;
 const WIKI_DETAIL_EXIT_MS = 195;
 const WIKI_OVERLAY_MODAL_SELECTOR = '[data-wiki-overlay-modal="true"]';
+const WIKI_SORT_OPTIONS: Array<{ value: WikiEntrySort; label: string }> = [
+  { value: 'updated', label: '更新时间' },
+  { value: 'number', label: '编号' },
+];
 
 const useWikiMobileFeed = () => {
   const [enabled, setEnabled] = useState(() => (
@@ -56,11 +60,12 @@ const useEscapeToClose = (enabled: boolean, onClose: () => void) => {
     }
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') {
+      if (event.key !== 'Escape' || event.defaultPrevented) {
         return;
       }
 
       event.preventDefault();
+      event.stopPropagation();
       onClose();
     };
 
@@ -500,10 +505,12 @@ const WikiGallery: React.FC<{
   loadingMore: boolean;
   mobileFeed: boolean;
   hasMore: boolean;
+  sortBy: WikiEntrySort;
   onPageChange: (value: number) => void;
+  onSortChange: (value: WikiEntrySort) => void;
   onLoadMore: () => void;
   onOpenEntry: (slug: string) => void;
-}> = ({ items, total, page, loading, loadingMore, mobileFeed, hasMore, onPageChange, onLoadMore, onOpenEntry }) => {
+}> = ({ items, total, page, loading, loadingMore, mobileFeed, hasMore, sortBy, onPageChange, onSortChange, onLoadMore, onOpenEntry }) => {
   const listRef = useRef<HTMLElement | null>(null);
   const totalPages = Math.max(Math.ceil(total / PAGE_SIZE), 1);
   const itemOffset = mobileFeed ? 0 : (page - 1) * PAGE_SIZE;
@@ -546,6 +553,20 @@ const WikiGallery: React.FC<{
             <h2 className="font-headline text-3xl font-extrabold text-[#2f3334] md:text-5xl tracking-tight">阅览矩阵</h2>
             <p className="mt-3 font-label text-xs font-bold tracking-[0.2em] text-[#2f3334]/40">瓜条目录</p>
           </header>
+          <div className="mb-8 flex items-center gap-2 self-start rounded-full border border-black/5 bg-white/80 p-1 shadow-sm backdrop-blur-sm md:mb-10">
+            <span className="px-2 font-label text-[10px] font-bold tracking-widest text-[#2f3334]/35">排序</span>
+            {WIKI_SORT_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => onSortChange(option.value)}
+                aria-pressed={sortBy === option.value}
+                className={`rounded-full px-3 py-1.5 font-label text-[10px] font-bold tracking-widest transition-all ${sortBy === option.value ? 'bg-[#2f3334] text-white shadow-sm' : 'text-[#2f3334]/55 hover:bg-black/[0.04] hover:text-[#2f3334]'}`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
 
           {loading ? (
             <div className="flex items-center justify-center py-32 font-label text-xs tracking-widest text-[#2f3334]/40">
@@ -1160,6 +1181,7 @@ const WikiView: React.FC = () => {
   const [page, setPage] = useState(1);
   const [query, setQuery] = useState('');
   const [activeTag, setActiveTag] = useState('');
+  const [sortBy, setSortBy] = useState<WikiEntrySort>('updated');
   const [listLoading, setListLoading] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState('');
@@ -1245,14 +1267,16 @@ const WikiView: React.FC = () => {
     }
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        if (document.querySelector(WIKI_OVERLAY_MODAL_SELECTOR)) {
-          return;
-        }
-
-        event.preventDefault();
-        navigateTo('/wiki');
+      if (event.key !== 'Escape' || event.defaultPrevented) {
+        return;
       }
+
+      if (document.querySelector(WIKI_OVERLAY_MODAL_SELECTOR)) {
+        return;
+      }
+
+      event.preventDefault();
+      navigateTo('/wiki');
     };
 
     window.addEventListener('keydown', handleKeyDown);
@@ -1269,6 +1293,7 @@ const WikiView: React.FC = () => {
       const data: WikiListResponse = await api.getWikiEntries({
         q: query,
         tag: activeTag,
+        sort: sortBy,
         page,
         limit: PAGE_SIZE,
       });
@@ -1303,7 +1328,7 @@ const WikiView: React.FC = () => {
         setListLoading(false);
       }
     }
-  }, [activeTag, isMobileFeed, page, query]);
+  }, [activeTag, isMobileFeed, page, query, sortBy]);
 
   const loadDetail = useCallback(async () => {
     if (!slug) {
@@ -1410,7 +1435,12 @@ const WikiView: React.FC = () => {
         loadingMore={loadingMore}
         mobileFeed={isMobileFeed}
         hasMore={hasMoreEntries}
+        sortBy={sortBy}
         onPageChange={setPage}
+        onSortChange={(value) => {
+          setSortBy(value);
+          setPage(1);
+        }}
         onLoadMore={loadMoreEntries}
         onOpenEntry={(entrySlug) => navigateTo(`/wiki/${encodeURIComponent(entrySlug)}`)}
       />

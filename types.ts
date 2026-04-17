@@ -271,6 +271,8 @@ export interface WikiEntry {
   deletedAt?: number | null;
 }
 
+export type WikiEntrySort = 'updated' | 'number';
+
 export interface WikiRevisionData {
   name: string;
   narrative: string;

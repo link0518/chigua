@@ -101,39 +101,51 @@ export const registerPublicWikiRoutes = (app, deps) => {
     }
     const q = String(req.query.q || '').trim();
     const tag = String(req.query.tag || '').trim();
+    const sort = String(req.query.sort || 'updated').trim();
+    const normalizedSort = sort === 'number' ? 'number' : 'updated';
     const page = parsePositiveInt(req.query.page, 1);
     const limit = Math.min(parsePositiveInt(req.query.limit, 12), 50);
     const offset = (page - 1) * limit;
-    const conditions = ["status = 'approved'", 'deleted = 0'];
+    const publicConditions = ["status = 'approved'", 'deleted = 0'];
+    const filterConditions = [];
     const params = [];
 
     if (q) {
       const keyword = `%${escapeLike(q)}%`;
-      conditions.push("(name LIKE ? ESCAPE '\\' OR narrative LIKE ? ESCAPE '\\' OR tags LIKE ? ESCAPE '\\')");
+      filterConditions.push("(name LIKE ? ESCAPE '\\' OR narrative LIKE ? ESCAPE '\\' OR tags LIKE ? ESCAPE '\\')");
       params.push(keyword, keyword, keyword);
     }
 
     if (tag) {
-      conditions.push("tags LIKE ? ESCAPE '\\'");
+      filterConditions.push("tags LIKE ? ESCAPE '\\'");
       params.push(buildJsonTagLikePattern(tag));
     }
 
-    const whereClause = `WHERE ${conditions.join(' AND ')}`;
+    const totalWhereClause = `WHERE ${publicConditions.concat(filterConditions).join(' AND ')}`;
+    const filterClause = filterConditions.length ? `WHERE ${filterConditions.join(' AND ')}` : '';
+    const orderClause = normalizedSort === 'number'
+      ? 'display_order ASC'
+      : 'updated_at DESC, created_at DESC';
     const total = db
-      .prepare(`SELECT COUNT(1) AS count FROM wiki_entries ${whereClause}`)
+      .prepare(`SELECT COUNT(1) AS count FROM wiki_entries ${totalWhereClause}`)
       .get(...params)?.count ?? 0;
     const rows = db
       .prepare(
         `
-        WITH filtered_entries AS (
+        WITH ordered_entries AS (
           SELECT *,
             ROW_NUMBER() OVER (ORDER BY created_at ASC, rowid ASC) AS display_order
           FROM wiki_entries
-          ${whereClause}
+          WHERE ${publicConditions.join(' AND ')}
+        ),
+        filtered_entries AS (
+          SELECT *
+          FROM ordered_entries
+          ${filterClause}
         )
         SELECT *
         FROM filtered_entries
-        ORDER BY updated_at DESC, created_at DESC
+        ORDER BY ${orderClause}
         LIMIT ? OFFSET ?
         `
       )

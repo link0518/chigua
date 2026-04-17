@@ -105,7 +105,7 @@
 
 ## 5. 公开接口
 
-- `GET /api/wiki/entries?q=&tag=&page=&limit=`：查询公开瓜条列表。
+- `GET /api/wiki/entries?q=&tag=&page=&limit=&sort=`：查询公开瓜条列表。
 - `GET /api/wiki/entries/:slug`：查询公开瓜条详情与已通过历史。
 - `POST /api/wiki/submissions`：提交新瓜条，进入待审核。
 - `POST /api/wiki/entries/:slug/edits`：提交已有瓜条编辑，进入待审核。
@@ -122,6 +122,12 @@
 ```
 
 公开接口只返回 `status=approved` 且未删除的瓜条。待审核和已拒绝内容不会出现在公开列表、详情或历史中。
+
+`GET /api/wiki/entries` 的 `sort` 支持：
+
+- `updated`：按更新时间倒序，作为默认排序。
+- `number`：按瓜条编号正序。
+- 非法值按 `updated` 处理。
 
 公开详情接口的 `history` 必须脱敏，只允许返回页面展示所需字段：
 

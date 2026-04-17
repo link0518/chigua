@@ -183,6 +183,72 @@ const approveRevision = (app, revisionId) => invoke(app, 'POST', `/api/admin/wik
   body: { action: 'approve' },
 });
 
+test('Wiki list supports updated and number sorting with fallback', async () => {
+  const { app, db } = createWikiApp();
+
+  const firstRes = await submitWikiEntry(app, {
+    name: 'first-entry',
+    narrative: 'first narrative',
+    tags: ['alpha'],
+  });
+  await approveRevision(app, firstRes.payload.id);
+
+  const secondRes = await submitWikiEntry(app, {
+    name: 'second-entry',
+    narrative: 'second narrative',
+    tags: ['beta'],
+  });
+  await approveRevision(app, secondRes.payload.id);
+
+  db.prepare('UPDATE wiki_entries SET created_at = ?, updated_at = ? WHERE name = ?').run(1000, 4000, 'first-entry');
+  db.prepare('UPDATE wiki_entries SET created_at = ?, updated_at = ? WHERE name = ?').run(2000, 5000, 'second-entry');
+
+  const defaultList = await invoke(app, 'GET', '/api/wiki/entries');
+  assert.deepEqual(defaultList.payload.items.map((item) => item.name), ['second-entry', 'first-entry']);
+
+  const numberList = await invoke(app, 'GET', '/api/wiki/entries', {
+    query: { sort: 'number' },
+  });
+  assert.deepEqual(numberList.payload.items.map((item) => item.name), ['first-entry', 'second-entry']);
+  assert.deepEqual(numberList.payload.items.map((item) => item.displayOrder), [1, 2]);
+
+  const fallbackList = await invoke(app, 'GET', '/api/wiki/entries', {
+    query: { sort: 'unexpected' },
+  });
+  assert.deepEqual(fallbackList.payload.items.map((item) => item.name), ['second-entry', 'first-entry']);
+});
+
+test('Wiki list keeps global display order when filtered', async () => {
+  const { app } = createWikiApp();
+
+  const firstRes = await submitWikiEntry(app, {
+    name: 'filter-one',
+    narrative: 'shared tag first',
+    tags: ['shared'],
+  });
+  await approveRevision(app, firstRes.payload.id);
+
+  const secondRes = await submitWikiEntry(app, {
+    name: 'filter-two',
+    narrative: 'other tag second',
+    tags: ['other'],
+  });
+  await approveRevision(app, secondRes.payload.id);
+
+  const thirdRes = await submitWikiEntry(app, {
+    name: 'filter-three',
+    narrative: 'shared tag third',
+    tags: ['shared'],
+  });
+  await approveRevision(app, thirdRes.payload.id);
+
+  const filtered = await invoke(app, 'GET', '/api/wiki/entries', {
+    query: { sort: 'number', tag: 'shared' },
+  });
+  assert.deepEqual(filtered.payload.items.map((item) => item.name), ['filter-one', 'filter-three']);
+  assert.deepEqual(filtered.payload.items.map((item) => item.displayOrder), [1, 3]);
+});
+
 const rejectRevision = (app, revisionId) => invoke(app, 'POST', `/api/admin/wiki/revisions/${revisionId}/action`, {
   body: { action: 'reject', reason: '资料不足' },
 });

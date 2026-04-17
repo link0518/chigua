@@ -345,6 +345,16 @@ const AdminWikiPanel: React.FC<AdminWikiPanelProps> = ({ showToast, onPendingCou
                           ))}
                         </div>
                       </div>
+                      {revision.editSummary && (
+                        <div className="rounded-lg border border-[#546354]/15 bg-[#f7faf7] px-4 py-3">
+                          <div className="text-[10px] font-bold tracking-widest text-[#546354]">
+                            {revision.actionType === 'edit' ? '编辑原因' : '提交说明'}
+                          </div>
+                          <p className="mt-1 whitespace-pre-wrap break-words font-sans text-sm leading-relaxed text-ink">
+                            {revision.editSummary}
+                          </p>
+                        </div>
+                      )}
                       <p className="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed text-ink">{revision.data.narrative}</p>
                       <div className="flex flex-wrap gap-3 text-xs text-pencil">
                         <span>ID：{revision.id}</span>
