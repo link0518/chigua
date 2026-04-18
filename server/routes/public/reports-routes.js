@@ -62,19 +62,18 @@ export const registerPublicReportsRoutes = (app, deps) => {
     return 'low';
   };
 
-  const hasPendingRumorReview = (targetType, targetId) => {
+  const countPendingRumorReports = (targetType, targetId) => {
     const targetWhereClause = targetType === 'comment'
       ? "target_type = 'comment' AND comment_id = ?"
       : "target_type = 'post' AND post_id = ?";
     const row = db.prepare(`
-      SELECT 1
+      SELECT COUNT(1) AS count
       FROM reports
       WHERE ${targetWhereClause}
         AND ${RUMOR_REASON_SQL}
         AND status = 'pending'
-      LIMIT 1
     `).get(targetId);
-    return Boolean(row);
+    return Number(row?.count || 0);
   };
 
   app.post('/api/reports', (req, res) => {
@@ -193,7 +192,6 @@ export const registerPublicReportsRoutes = (app, deps) => {
     }
 
     const rumorTargetId = targetType === 'comment' ? targetCommentId : targetPostId;
-    const shouldNotifyRumorPending = isRumorReport && !hasPendingRumorReview(targetType, rumorTargetId);
 
     db.prepare(
       `
@@ -231,10 +229,11 @@ export const registerPublicReportsRoutes = (app, deps) => {
 
     incrementDailyStat(formatDateKey(), 'reports', 1);
 
-    if (shouldNotifyRumorPending) {
+    if (isRumorReport) {
+      const pendingReportCount = countPendingRumorReports(targetType, rumorTargetId);
       void wecomWebhookService?.notifyRumorPending?.({
         targetType,
-        pendingReportCount: 1,
+        pendingReportCount,
         contentSnippet: snippet,
         evidence,
         createdAt: now,
