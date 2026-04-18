@@ -3,7 +3,10 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../../api';
 import { useApp } from '../../store/AppContext';
 import type { WikiEntry, WikiEntrySort, WikiRevision } from '../../types';
+import WikiMarkdownComposer from '../WikiMarkdownComposer';
+import MarkdownRenderer from '../MarkdownRenderer';
 import Turnstile, { TurnstileHandle } from '../Turnstile';
+import { getWikiMarkdownExcerpt, getWikiMarkdownPlainText } from './wikiMarkdownPlainText';
 
 type WikiListResponse = {
   items?: WikiEntry[];
@@ -22,6 +25,7 @@ type WikiFormMode = 'create' | 'edit';
 type WikiFeedback = { message: string; type: 'success' | 'error' | 'info' };
 
 const PAGE_SIZE = 12;
+const WIKI_NARRATIVE_MAX_LENGTH = 8000;
 const WIKI_MOBILE_FEED_QUERY = '(max-width: 767px)';
 const WIKI_DETAIL_ENTER_MS = 225;
 const WIKI_DETAIL_EXIT_MS = 195;
@@ -220,7 +224,7 @@ const canvasToBlob = (canvas: HTMLCanvasElement) => new Promise<Blob>((resolve, 
   }, 'image/png');
 });
 
-const saveWikiEntryCardImage = async (entry: WikiEntry, shareUrl: string) => {
+const saveWikiEntryCardImage = async (entry: WikiEntry) => {
   if ('fonts' in document) {
     await document.fonts.ready;
   }
@@ -246,9 +250,11 @@ const saveWikiEntryCardImage = async (entry: WikiEntry, shareUrl: string) => {
   const tagText = entry.tags.length ? entry.tags.map((tag) => `#${tag}`).join('  ') : '暂无标签';
   const tagLines = wrapCanvasText(measureCtx, tagText, contentWidth);
   measureCtx.font = bodyFont;
-  const narrativeLines = wrapCanvasText(measureCtx, entry.narrative, contentWidth);
+  const narrativeText = getWikiMarkdownPlainText(entry.narrative);
+  const narrativeLines = wrapCanvasText(measureCtx, narrativeText, contentWidth);
   measureCtx.font = footerFont;
-  const urlLines = wrapCanvasText(measureCtx, shareUrl, contentWidth);
+  const footerText = '吃瓜就来 JX3 瓜田 · jx3gua.com';
+  const footerLines = wrapCanvasText(measureCtx, footerText, contentWidth);
 
   const titleLineHeight = 82;
   const tagLineHeight = 40;
@@ -266,7 +272,7 @@ const saveWikiEntryCardImage = async (entry: WikiEntry, shareUrl: string) => {
     + narrativeLines.length * bodyLineHeight
     + 78
     + footerLineHeight
-    + urlLines.length * footerLineHeight,
+    + footerLines.length * footerLineHeight,
   );
 
   const canvas = document.createElement('canvas');
@@ -320,7 +326,7 @@ const saveWikiEntryCardImage = async (entry: WikiEntry, shareUrl: string) => {
   ctx.font = footerFont;
   ctx.fillText(`第 ${entry.versionNumber} 版 · 生成于 ${formatDateTime(Date.now())}`, padding, cursorY);
   cursorY += footerLineHeight;
-  cursorY = drawWrappedText(ctx, urlLines, padding, cursorY, footerLineHeight);
+  cursorY = drawWrappedText(ctx, footerLines, padding, cursorY, footerLineHeight);
 
   const blob = await canvasToBlob(canvas);
   const url = URL.createObjectURL(blob);
@@ -596,7 +602,7 @@ const WikiGallery: React.FC<{
                   </h3>
 
                   <p className="mb-6 flex-1 line-clamp-5 font-body text-sm leading-relaxed text-[#2f3334]/70 opacity-90">
-                    {entry.narrative || '暂无叙述详情...'}
+                    {getWikiMarkdownExcerpt(entry.narrative, 120) || '暂无叙述详情...'}
                   </p>
 
                   <div className="mt-auto flex flex-wrap gap-1.5">
@@ -752,11 +758,10 @@ const WikiRevisionDetailModal: React.FC<{
             </div>
           </div>
 
-          <div className="pt-8 font-body text-base leading-loose text-[#2f3334]/80">
-            {narrative.split('\n').map((paragraph, index) => (
-              <p key={index} className="mb-5">{paragraph || '　'}</p>
-            ))}
-          </div>
+          <MarkdownRenderer
+            content={narrative}
+            className="pt-8 font-body text-base leading-loose text-[#2f3334]/80 [&_p]:mb-5 [&_blockquote]:my-5 [&_ol]:my-5 [&_ul]:my-5 [&_pre]:my-5"
+          />
         </main>
       </div>
     </div>
@@ -809,7 +814,7 @@ const WikiEntryDetail: React.FC<{
     }
 
     try {
-      await saveWikiEntryCardImage(entry, getWikiEntryUrl(entry));
+      await saveWikiEntryCardImage(entry);
       showFeedback('瓜条图片已保存');
     } catch {
       showFeedback('保存失败，请稍后重试', 'error');
@@ -866,11 +871,10 @@ const WikiEntryDetail: React.FC<{
             </div>
           </div>
 
-          <div className="prose prose-neutral max-w-none text-base text-[#2f3334]/80 prose-p:mb-6 prose-p:font-body prose-p:font-light prose-p:leading-loose md:prose-lg md:prose-p:mb-8">
-            {entry.narrative.split('\n').map((paragraph, i) => (
-              <p key={i}>{paragraph}</p>
-            ))}
-          </div>
+          <MarkdownRenderer
+            content={entry.narrative}
+            className="font-body text-base leading-loose text-[#2f3334]/80 md:text-lg [&_p]:mb-6 [&_blockquote]:my-6 [&_ol]:my-6 [&_ul]:my-6 [&_pre]:my-6"
+          />
         </div>
 
         <div className="pointer-events-none hidden fixed bottom-5 left-5 z-[70] flex justify-start md:bottom-8 md:left-8 lg:left-[308px] xl:left-[416px]">
@@ -993,6 +997,10 @@ const WikiEntryFormModal: React.FC<{
       setMessage('请填写名字和记录叙述。');
       return;
     }
+    if (trimmedNarrative.length > WIKI_NARRATIVE_MAX_LENGTH) {
+      setMessage(`记录叙述不能超过 ${WIKI_NARRATIVE_MAX_LENGTH} 个字符。`);
+      return;
+    }
     if (mode === 'edit' && !trimmedEditSummary) {
       setMessage('');
       showFeedback('请填写修改原因', 'error');
@@ -1035,7 +1043,7 @@ const WikiEntryFormModal: React.FC<{
       <button type="button" aria-label="关闭弹窗" className="fixed inset-0 bg-on-surface/5 backdrop-blur-sm" onClick={onClose} />
       <form
         onSubmit={handleSubmit}
-        className="relative z-10 flex max-h-[calc(100vh-2rem)] w-full max-w-xl flex-col overflow-hidden rounded-xl bg-surface-container-lowest shadow-[0px_4px_20px_rgba(47,51,52,0.06)] md:max-h-[calc(100vh-3rem)]"
+        className="relative z-10 flex max-h-[calc(100vh-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-surface-container-lowest shadow-[0px_4px_20px_rgba(47,51,52,0.06)] md:max-h-[calc(100vh-3rem)]"
       >
         <header className="flex shrink-0 items-center justify-between bg-surface-container-lowest/80 px-5 py-5 backdrop-blur-md md:px-8 md:py-6">
           <div className="space-y-1">
@@ -1078,16 +1086,21 @@ const WikiEntryFormModal: React.FC<{
               ))}
             </div>
           )}
-          <label className="block">
+          <div className="block">
             <span className="mb-2 block font-label text-[10px] font-semibold uppercase text-on-surface-variant">记录叙述</span>
-            <textarea
+            <WikiMarkdownComposer
               value={narrative}
-              onChange={(event) => setNarrative(event.target.value)}
+              onChange={setNarrative}
               placeholder="客观中立的描述该词条..."
-              rows={7}
-              className="w-full resize-none rounded-lg border-0 bg-surface-container-high/20 px-4 py-4 font-body text-base leading-relaxed outline-none ring-0 transition-all duration-300 placeholder:text-on-surface-variant/30 focus:ring-1 focus:ring-primary"
+              maxLength={WIKI_NARRATIVE_MAX_LENGTH}
+              minHeight="260px"
+              ariaLabel={mode === 'edit' ? '编辑瓜条 Markdown 编辑器' : '新增瓜条 Markdown 编辑器'}
+              toolbarLabel="记录叙述"
+              emptyPreviewText="预览区为空，请先填写记录叙述。"
+              renderClassName="font-body text-[15px] leading-loose text-[#2f3334]/80 [&_p]:mb-5 [&_blockquote]:my-5 [&_ol]:my-5 [&_ul]:my-5 [&_pre]:my-5"
+              theme="wiki"
             />
-          </label>
+          </div>
           {mode === 'edit' && (
             <label className="block">
               <span className="mb-2 block font-label text-[10px] font-semibold text-on-surface-variant">修改原因</span>

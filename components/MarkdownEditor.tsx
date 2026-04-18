@@ -28,6 +28,19 @@ interface MarkdownEditorProps {
   autoFocus?: boolean;
   ariaLabel?: string;
   onPasteImage?: (file: File) => void;
+  themeOptions?: MarkdownEditorThemeOptions;
+}
+
+export interface MarkdownEditorThemeOptions {
+  fontFamily?: string;
+  fontSize?: string;
+  lineHeight?: string;
+  padding?: string;
+  textColor?: string;
+  cursorColor?: string;
+  placeholderColor?: string;
+  selectionColor?: string;
+  focusedSelectionColor?: string;
 }
 
 type TransformInput = {
@@ -41,43 +54,62 @@ type TransformOutput = {
   selectionEnd: number;
 };
 
-const editorTheme = EditorView.theme({
-  '&': {
-    height: '100%',
-    backgroundColor: 'transparent',
-    color: '#2c2c2c',
-    fontFamily: '"Noto Sans SC", sans-serif',
-  },
-  '&.cm-focused': {
-    outline: 'none',
-  },
-  '.cm-scroller': {
-    overflow: 'auto',
-    fontFamily: 'inherit',
-  },
-  '.cm-content': {
-    padding: '16px',
-    fontFamily: 'inherit',
-    fontSize: '1.25rem',
-    lineHeight: '2rem',
-    caretColor: '#2c2c2c',
-  },
-  '.cm-line': {
-    padding: '0',
-  },
-  '.cm-cursor, .cm-dropCursor': {
-    borderLeftColor: '#2c2c2c',
-  },
-  '.cm-selectionBackground': {
-    backgroundColor: 'rgba(255, 245, 157, 0.45)',
-  },
-  '&.cm-focused .cm-selectionBackground': {
-    backgroundColor: 'rgba(255, 245, 157, 0.55)',
-  },
-  '.cm-placeholder': {
-    color: 'rgba(85, 85, 85, 0.45)',
-  },
-});
+const DEFAULT_THEME_OPTIONS: Required<MarkdownEditorThemeOptions> = {
+  fontFamily: '"Noto Sans SC", sans-serif',
+  fontSize: '1.25rem',
+  lineHeight: '2rem',
+  padding: '16px',
+  textColor: '#2c2c2c',
+  cursorColor: '#2c2c2c',
+  placeholderColor: 'rgba(85, 85, 85, 0.45)',
+  selectionColor: 'rgba(255, 245, 157, 0.45)',
+  focusedSelectionColor: 'rgba(255, 245, 157, 0.55)',
+};
+
+const createEditorTheme = (themeOptions?: MarkdownEditorThemeOptions) => {
+  const resolved = {
+    ...DEFAULT_THEME_OPTIONS,
+    ...(themeOptions || {}),
+  };
+
+  return EditorView.theme({
+    '&': {
+      height: '100%',
+      backgroundColor: 'transparent',
+      color: resolved.textColor,
+      fontFamily: resolved.fontFamily,
+    },
+    '&.cm-focused': {
+      outline: 'none',
+    },
+    '.cm-scroller': {
+      overflow: 'auto',
+      fontFamily: 'inherit',
+    },
+    '.cm-content': {
+      padding: resolved.padding,
+      fontFamily: 'inherit',
+      fontSize: resolved.fontSize,
+      lineHeight: resolved.lineHeight,
+      caretColor: resolved.cursorColor,
+    },
+    '.cm-line': {
+      padding: '0',
+    },
+    '.cm-cursor, .cm-dropCursor': {
+      borderLeftColor: resolved.cursorColor,
+    },
+    '.cm-selectionBackground': {
+      backgroundColor: resolved.selectionColor,
+    },
+    '&.cm-focused .cm-selectionBackground': {
+      backgroundColor: resolved.focusedSelectionColor,
+    },
+    '.cm-placeholder': {
+      color: resolved.placeholderColor,
+    },
+  });
+};
 
 const basicSetup = {
   lineNumbers: false,
@@ -278,6 +310,7 @@ const MarkdownEditor = React.forwardRef<MarkdownEditorHandle, MarkdownEditorProp
   autoFocus = false,
   ariaLabel = 'Markdown 编辑器',
   onPasteImage,
+  themeOptions,
 }, ref) => {
   const editorRef = useRef<ReactCodeMirrorRef | null>(null);
   const onPasteImageRef = useRef(onPasteImage);
@@ -325,8 +358,8 @@ const MarkdownEditor = React.forwardRef<MarkdownEditorHandle, MarkdownEditorProp
       ])
     ),
     pasteImageHandler(),
-    editorTheme,
-  ]), [ariaLabel, pasteImageHandler]);
+    createEditorTheme(themeOptions),
+  ]), [ariaLabel, pasteImageHandler, themeOptions]);
 
   useImperativeHandle(ref, () => ({
     focus: () => {

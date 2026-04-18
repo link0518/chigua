@@ -496,3 +496,82 @@ test('Wiki 投稿、编辑和后台编辑不走敏感词校验', async () => {
   assert.equal(adminEditRes.statusCode, 200);
   assert.equal(adminEditRes.payload.entry.name, '敏感词测试瓜条-后台');
 });
+
+test('Wiki 前台投稿和编辑会保留 Markdown 原文', async () => {
+  const { app } = createWikiApp();
+  const createMarkdown = '## 标题\n\n- 第一条\n- 第二条\n\n[链接](https://example.com)';
+  const createRes = await submitWikiEntry(app, {
+    name: 'markdown-front',
+    narrative: createMarkdown,
+    tags: ['测试'],
+  });
+  assert.equal(createRes.statusCode, 201);
+  await approveRevision(app, createRes.payload.id);
+
+  const list = await invoke(app, 'GET', '/api/wiki/entries');
+  const slug = list.payload.items[0].slug;
+  const detailAfterCreate = await invoke(app, 'GET', `/api/wiki/entries/${encodeURIComponent(slug)}`);
+  assert.equal(detailAfterCreate.payload.entry.narrative, createMarkdown);
+  assert.equal(detailAfterCreate.payload.history[0].data.narrative, createMarkdown);
+
+  const editMarkdown = '> 引用段落\n\n**加粗内容** 与 `代码`';
+  const editRes = await submitWikiEdit(app, slug, {
+    name: 'markdown-front',
+    narrative: editMarkdown,
+    tags: ['测试', '编辑'],
+    editSummary: '补充 Markdown 内容',
+  });
+  assert.equal(editRes.statusCode, 201);
+  await approveRevision(app, editRes.payload.id);
+
+  const detailAfterEdit = await invoke(app, 'GET', `/api/wiki/entries/${encodeURIComponent(slug)}`);
+  assert.equal(detailAfterEdit.payload.entry.narrative, editMarkdown);
+  assert.equal(detailAfterEdit.payload.history.length, 2);
+  assert.equal(detailAfterEdit.payload.history[0].data.narrative, editMarkdown);
+  assert.equal(detailAfterEdit.payload.history[1].data.narrative, createMarkdown);
+});
+
+test('Wiki 后台新建和编辑会保留 Markdown 原文', async () => {
+  const { app } = createWikiApp();
+  const adminCreateMarkdown = '## 后台创建\n\n- 条目一\n- 条目二';
+  const adminCreateRes = await invoke(app, 'POST', '/api/admin/wiki/entries', {
+    body: {
+      name: 'markdown-admin',
+      narrative: adminCreateMarkdown,
+      tags: ['后台'],
+      editSummary: '管理员创建 Markdown',
+    },
+  });
+  assert.equal(adminCreateRes.statusCode, 201);
+  assert.equal(adminCreateRes.payload.entry.narrative, adminCreateMarkdown);
+
+  const detailAfterCreate = await invoke(
+    app,
+    'GET',
+    `/api/wiki/entries/${encodeURIComponent(adminCreateRes.payload.entry.slug)}`
+  );
+  assert.equal(detailAfterCreate.payload.entry.narrative, adminCreateMarkdown);
+  assert.equal(detailAfterCreate.payload.history[0].data.narrative, adminCreateMarkdown);
+
+  const adminEditMarkdown = '1. 更新条目\n2. 保留列表\n\n`后台代码`';
+  const adminEditRes = await invoke(app, 'POST', `/api/admin/wiki/entries/${adminCreateRes.payload.entry.id}/edit`, {
+    body: {
+      name: 'markdown-admin',
+      narrative: adminEditMarkdown,
+      tags: ['后台', '编辑'],
+      editSummary: '管理员编辑 Markdown',
+    },
+  });
+  assert.equal(adminEditRes.statusCode, 200);
+  assert.equal(adminEditRes.payload.entry.narrative, adminEditMarkdown);
+
+  const detailAfterEdit = await invoke(
+    app,
+    'GET',
+    `/api/wiki/entries/${encodeURIComponent(adminEditRes.payload.entry.slug)}`
+  );
+  assert.equal(detailAfterEdit.payload.entry.narrative, adminEditMarkdown);
+  assert.equal(detailAfterEdit.payload.history.length, 2);
+  assert.equal(detailAfterEdit.payload.history[0].data.narrative, adminEditMarkdown);
+  assert.equal(detailAfterEdit.payload.history[1].data.narrative, adminCreateMarkdown);
+});

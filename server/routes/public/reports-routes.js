@@ -6,6 +6,9 @@ const REPORT_REASON_LABELS = {
   rumor: '举报谣言',
 };
 
+const RUMOR_REASON_LABEL = REPORT_REASON_LABELS.rumor;
+const RUMOR_REASON_SQL = "(reason_code = 'rumor' OR (reason_code IS NULL AND reason = '举报谣言'))";
+
 const normalizeReasonCode = (value) => {
   const code = String(value || '').trim().toLowerCase();
   return Object.prototype.hasOwnProperty.call(REPORT_REASON_LABELS, code) ? code : '';
@@ -57,6 +60,21 @@ export const registerPublicReportsRoutes = (app, deps) => {
     if (reason.includes('虚假')) return 'medium';
     if (reason.includes('广告')) return 'low';
     return 'low';
+  };
+
+  const hasPendingRumorReview = (targetType, targetId) => {
+    const targetWhereClause = targetType === 'comment'
+      ? "target_type = 'comment' AND comment_id = ?"
+      : "target_type = 'post' AND post_id = ?";
+    const row = db.prepare(`
+      SELECT 1
+      FROM reports
+      WHERE ${targetWhereClause}
+        AND ${RUMOR_REASON_SQL}
+        AND status = 'pending'
+      LIMIT 1
+    `).get(targetId);
+    return Boolean(row);
   };
 
   app.post('/api/reports', (req, res) => {
@@ -126,6 +144,7 @@ export const registerPublicReportsRoutes = (app, deps) => {
     const reportId = crypto.randomUUID();
     const now = Date.now();
     const sessionId = req.sessionID || 'unknown';
+    const isRumorReport = reasonCode === 'rumor' || reason === RUMOR_REASON_LABEL;
 
     if (targetType === 'comment') {
       if (sessionId) {
@@ -173,6 +192,9 @@ export const registerPublicReportsRoutes = (app, deps) => {
         .run(targetPostId, fingerprint, now);
     }
 
+    const rumorTargetId = targetType === 'comment' ? targetCommentId : targetPostId;
+    const shouldNotifyRumorPending = isRumorReport && !hasPendingRumorReview(targetType, rumorTargetId);
+
     db.prepare(
       `
         INSERT INTO reports (
@@ -209,16 +231,26 @@ export const registerPublicReportsRoutes = (app, deps) => {
 
     incrementDailyStat(formatDateKey(), 'reports', 1);
 
+    if (shouldNotifyRumorPending) {
+      void wecomWebhookService?.notifyRumorPending?.({
+        targetType,
+        pendingReportCount: 1,
+        contentSnippet: snippet,
+        evidence,
+        createdAt: now,
+      });
+    }
+
     const autoHideResult = hiddenContentService?.maybeAutoHideTarget({
       targetType,
-      targetId: targetType === 'comment' ? targetCommentId : targetPostId,
+      targetId: rumorTargetId,
       now,
     }) || { autoHidden: false };
 
     if (autoHideResult.autoHidden) {
       void wecomWebhookService?.notifyHiddenContent({
         targetType,
-        targetId: targetType === 'comment' ? targetCommentId : targetPostId,
+        targetId: rumorTargetId,
         postId: targetPostId,
         contentSnippet: snippet,
         pendingReportCount: autoHideResult.pendingCount,
@@ -230,7 +262,7 @@ export const registerPublicReportsRoutes = (app, deps) => {
       id: reportId,
       autoHidden: Boolean(autoHideResult.autoHidden),
       targetType,
-      targetId: targetType === 'comment' ? targetCommentId : targetPostId,
+      targetId: rumorTargetId,
     });
   });
 };

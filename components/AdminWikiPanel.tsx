@@ -4,7 +4,10 @@ import { CheckCircle, Pencil, RotateCcw, Search, Trash2, XCircle } from 'lucide-
 import { api } from '../api';
 import type { Toast } from '../store/AppContext';
 import type { WikiEntry, WikiRevision } from '../types';
+import MarkdownRenderer from './MarkdownRenderer';
 import { Badge, SketchButton } from './SketchUI';
+import WikiMarkdownComposer from './WikiMarkdownComposer';
+import { getWikiMarkdownExcerpt } from './wiki/wikiMarkdownPlainText';
 
 type RevisionStatus = 'pending' | 'approved' | 'rejected';
 type RevisionActionType = 'all' | 'create' | 'edit';
@@ -16,6 +19,7 @@ interface AdminWikiPanelProps {
 }
 
 const WIKI_PAGE_SIZE = 12;
+const WIKI_NARRATIVE_MAX_LENGTH = 8000;
 
 const formatTime = (value?: number | null) => {
   if (!value) {
@@ -70,6 +74,10 @@ const WikiEntryEditor: React.FC<{
       showToast('请填写名字和记录叙述', 'warning');
       return;
     }
+    if (payload.narrative.length > WIKI_NARRATIVE_MAX_LENGTH) {
+      showToast(`记录叙述不能超过 ${WIKI_NARRATIVE_MAX_LENGTH} 个字符`, 'warning');
+      return;
+    }
     setSubmitting(true);
     try {
       if (entry) {
@@ -110,15 +118,21 @@ const WikiEntryEditor: React.FC<{
               className="w-full resize-none rounded-lg border-2 border-gray-200 px-3 py-2 font-sans text-sm outline-none focus:border-ink"
             />
           </label>
-          <label className="space-y-1">
+          <div className="space-y-1">
             <span className="text-sm font-bold text-ink">记录叙述</span>
-            <textarea
+            <WikiMarkdownComposer
               value={narrative}
-              onChange={(event) => setNarrative(event.target.value)}
-              rows={8}
-              className="w-full resize-none rounded-lg border-2 border-gray-200 px-3 py-2 font-sans text-sm outline-none focus:border-ink"
+              onChange={setNarrative}
+              placeholder="请输入记录叙述，支持 Markdown。"
+              maxLength={WIKI_NARRATIVE_MAX_LENGTH}
+              minHeight="240px"
+              ariaLabel={entry ? '后台编辑瓜条 Markdown 编辑器' : '后台新建瓜条 Markdown 编辑器'}
+              toolbarLabel="记录叙述"
+              emptyPreviewText="预览区为空，请先填写记录叙述。"
+              renderClassName="font-sans text-sm leading-relaxed text-ink [&_p]:mb-4 [&_blockquote]:my-4 [&_ol]:my-4 [&_ul]:my-4 [&_pre]:my-4"
+              theme="admin"
             />
-          </label>
+          </div>
         </div>
         <div className="mt-6 flex justify-end gap-3">
           <SketchButton type="button" variant="secondary" onClick={onClose} disabled={submitting}>
@@ -355,7 +369,10 @@ const AdminWikiPanel: React.FC<AdminWikiPanelProps> = ({ showToast, onPendingCou
                           </p>
                         </div>
                       )}
-                      <p className="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed text-ink">{revision.data.narrative}</p>
+                      <MarkdownRenderer
+                        content={revision.data.narrative}
+                        className="font-sans text-sm leading-relaxed text-ink [&_p]:mb-4 [&_blockquote]:my-4 [&_ol]:my-4 [&_ul]:my-4 [&_pre]:my-4"
+                      />
                       <div className="flex flex-wrap gap-3 text-xs text-pencil">
                         <span>ID：{revision.id}</span>
                         {revision.entrySlug && <span>瓜条：{revision.entrySlug}</span>}
@@ -461,7 +478,9 @@ const AdminWikiPanel: React.FC<AdminWikiPanelProps> = ({ showToast, onPendingCou
                           <span key={tag} className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-pencil">#{tag}</span>
                         ))}
                       </div>
-                      <p className="line-clamp-4 break-words font-sans text-sm leading-relaxed text-pencil">{entry.narrative}</p>
+                      <p className="line-clamp-4 break-words font-sans text-sm leading-relaxed text-pencil">
+                        {getWikiMarkdownExcerpt(entry.narrative, 140)}
+                      </p>
                       <p className="text-xs text-pencil">更新：{formatTime(entry.updatedAt)} · slug：{entry.slug}</p>
                     </div>
                     <div className="flex shrink-0 flex-col gap-2">

@@ -105,6 +105,7 @@ test('企业微信 webhook 超时会返回失败结果', async () => {
   assert.equal(result.ok, false);
   assert.match(result.error, /超时/);
 });
+
 test('企业微信推送内容不包含留言ID、所属帖子和内容ID', async () => {
   const bodies = [];
   const service = createWecomWebhookService({
@@ -127,14 +128,13 @@ test('企业微信推送内容不包含留言ID、所属帖子和内容ID', asyn
     pendingReportCount: 10,
     contentSnippet: '待审内容摘要',
   });
-  await service.notifyRumorReview({
+  await service.notifyRumorPending({
     targetType: 'comment',
     targetId: 'rumor-secret-id',
     postId: 'rumor-post-secret-id',
-    action: 'mark',
-    resolvedCount: 2,
-    contentSnippet: '谣言审核摘要',
-    reason: '管理员判定',
+    pendingReportCount: 1,
+    contentSnippet: '谣言待审摘要',
+    evidence: '与公开公告不一致',
   });
 
   const sentText = bodies.map((body) => body.markdown.content).join('\n');
@@ -146,6 +146,35 @@ test('企业微信推送内容不包含留言ID、所属帖子和内容ID', asyn
   assert.ok(!sentText.includes('post-secret-id'));
   assert.ok(!sentText.includes('rumor-secret-id'));
   assert.ok(!sentText.includes('rumor-post-secret-id'));
+});
+
+test('企业微信谣言待审提醒包含类型、举报数量与举报依据', async () => {
+  const bodies = [];
+  const service = createWecomWebhookService({
+    getConfig: () => ({ enabled: true, url: VALID_URL }),
+    fetchImpl: async (_url, options) => {
+      bodies.push(JSON.parse(options.body));
+      return { ok: true, status: 200, json: async () => ({ errcode: 0 }) };
+    },
+    siteUrl: 'https://example.com',
+  });
+
+  const result = await service.notifyRumorPending({
+    targetType: 'post',
+    pendingReportCount: 1,
+    contentSnippet: '谣言待审摘要',
+    evidence: '与公开公告不一致',
+    createdAt: Date.UTC(2024, 0, 1, 0, 0, 0),
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(bodies.length, 1);
+  const sentText = bodies[0].markdown.content;
+  assert.match(sentText, /谣言待审核/);
+  assert.match(sentText, /帖子/);
+  assert.match(sentText, /待处理举报数：1/);
+  assert.match(sentText, /举报依据：与公开公告不一致/);
+  assert.match(sentText, /\[打开后台\]\(https:\/\/example\.com\/tiancai\)/);
 });
 
 test('企业微信瓜条待审提醒包含类型、名称、标签和摘要', async () => {
