@@ -221,6 +221,7 @@ CREATE TABLE IF NOT EXISTS wiki_entries (
   name TEXT NOT NULL,
   narrative TEXT NOT NULL,
   tags TEXT,
+  display_order INTEGER,
   status TEXT NOT NULL DEFAULT 'approved',
   current_revision_id TEXT,
   version_number INTEGER NOT NULL DEFAULT 1,
@@ -407,6 +408,7 @@ ensureColumn('reports', 'comment_id', 'TEXT');
 ensureColumn('reports', 'target_type', "TEXT NOT NULL DEFAULT 'post'");
 ensureColumn('reports', 'reason_code', 'TEXT');
 ensureColumn('reports', 'evidence', 'TEXT');
+ensureColumn('wiki_entries', 'display_order', 'INTEGER');
 ensureColumn('banned_ips', 'expires_at', 'INTEGER');
 ensureColumn('banned_ips', 'permissions', 'TEXT');
 ensureColumn('banned_ips', 'reason', 'TEXT');
@@ -536,6 +538,48 @@ const migratePostReactionsFingerprintTable = () => {
 
 migratePostReactionsFingerprintTable();
 
+const backfillWikiDisplayOrder = () => {
+  const rows = db
+    .prepare('SELECT id, display_order FROM wiki_entries ORDER BY rowid ASC')
+    .all();
+
+  if (!rows.length) {
+    return;
+  }
+
+  const assignedOrders = new Set();
+  const missingRows = [];
+  let nextDisplayOrder = 1;
+
+  rows.forEach((row) => {
+    const currentDisplayOrder = Number(row.display_order || 0);
+    if (currentDisplayOrder > 0 && !assignedOrders.has(currentDisplayOrder)) {
+      assignedOrders.add(currentDisplayOrder);
+      return;
+    }
+    missingRows.push(row);
+  });
+
+  if (!missingRows.length) {
+    return;
+  }
+
+  const updateDisplayOrder = db.prepare('UPDATE wiki_entries SET display_order = ? WHERE id = ?');
+  const assignMissing = db.transaction(() => {
+    missingRows.forEach((row) => {
+      while (assignedOrders.has(nextDisplayOrder)) {
+        nextDisplayOrder += 1;
+      }
+      updateDisplayOrder.run(nextDisplayOrder, row.id);
+      assignedOrders.add(nextDisplayOrder);
+      nextDisplayOrder += 1;
+    });
+  });
+  assignMissing();
+};
+
+backfillWikiDisplayOrder();
+
 const ensureIndexes = () => {
   db.exec(`
   CREATE INDEX IF NOT EXISTS idx_posts_created_at ON posts(created_at);
@@ -561,6 +605,8 @@ const ensureIndexes = () => {
   CREATE INDEX IF NOT EXISTS idx_update_announcements_updated_at ON update_announcements(updated_at DESC);
   CREATE INDEX IF NOT EXISTS idx_wiki_entries_status_deleted_updated_at ON wiki_entries(status, deleted, updated_at DESC);
   CREATE INDEX IF NOT EXISTS idx_wiki_entries_slug ON wiki_entries(slug);
+  DROP INDEX IF EXISTS idx_wiki_entries_display_order;
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_wiki_entries_display_order_unique ON wiki_entries(display_order);
   CREATE INDEX IF NOT EXISTS idx_wiki_entry_revisions_status_created_at ON wiki_entry_revisions(status, created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_wiki_entry_revisions_entry_id_created_at ON wiki_entry_revisions(entry_id, created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_wiki_entry_revisions_action_type ON wiki_entry_revisions(action_type);

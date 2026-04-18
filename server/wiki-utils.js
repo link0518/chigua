@@ -110,6 +110,15 @@ export const resolveUniqueWikiSlug = (db, name, excludeEntryId = '') => {
   return candidate;
 };
 
+export const getNextWikiDisplayOrder = (db) => {
+  const row = db
+    .prepare('SELECT COALESCE(MAX(display_order), 0) AS max_display_order FROM wiki_entries')
+    .get();
+  return Number(row?.max_display_order || 0) + 1;
+};
+
+export const isWikiDisplayOrderConflict = (error) => /wiki_entries\.display_order|idx_wiki_entries_display_order_unique/i.test(String(error?.message || ''));
+
 export const mapWikiEntryRow = (row) => ({
   id: row.id,
   slug: row.slug,

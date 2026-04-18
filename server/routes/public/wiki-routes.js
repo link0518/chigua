@@ -122,9 +122,8 @@ export const registerPublicWikiRoutes = (app, deps) => {
     }
 
     const totalWhereClause = `WHERE ${publicConditions.concat(filterConditions).join(' AND ')}`;
-    const filterClause = filterConditions.length ? `WHERE ${filterConditions.join(' AND ')}` : '';
     const orderClause = normalizedSort === 'number'
-      ? 'display_order ASC'
+      ? 'display_order ASC, rowid ASC'
       : 'updated_at DESC, created_at DESC';
     const total = db
       .prepare(`SELECT COUNT(1) AS count FROM wiki_entries ${totalWhereClause}`)
@@ -132,19 +131,9 @@ export const registerPublicWikiRoutes = (app, deps) => {
     const rows = db
       .prepare(
         `
-        WITH ordered_entries AS (
-          SELECT *,
-            ROW_NUMBER() OVER (ORDER BY created_at ASC, rowid ASC) AS display_order
-          FROM wiki_entries
-          WHERE ${publicConditions.join(' AND ')}
-        ),
-        filtered_entries AS (
-          SELECT *
-          FROM ordered_entries
-          ${filterClause}
-        )
         SELECT *
-        FROM filtered_entries
+        FROM wiki_entries
+        ${totalWhereClause}
         ORDER BY ${orderClause}
         LIMIT ? OFFSET ?
         `

@@ -288,12 +288,88 @@ body.theme-wiki {
   letter-spacing: 0;
 }
 
+.pattern-grid-lg {
+  background-image:
+    radial-gradient(circle at top right, rgba(84, 99, 84, 0.08), transparent 38%),
+    linear-gradient(rgba(84, 99, 84, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(84, 99, 84, 0.03) 1px, transparent 1px);
+  background-position: 0 0, -1px -1px, -1px -1px;
+  background-size: auto, 32px 32px, 32px 32px;
+}
+
+@keyframes wiki-feedback-enter {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 18px, 0) scale(0.96);
+    filter: blur(12px);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes wiki-feedback-progress {
+  0% {
+    transform: scaleX(1);
+  }
+  100% {
+    transform: scaleX(0);
+  }
+}
+
+@keyframes wiki-modal-backdrop-enter {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes wiki-modal-panel-enter {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 28px, 0) scale(0.965);
+    filter: blur(16px);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+    filter: blur(0);
+  }
+}
+
+.wiki-feedback-enter {
+  animation: wiki-feedback-enter 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.wiki-feedback-progress {
+  transform-origin: left center;
+  animation: wiki-feedback-progress var(--wiki-feedback-duration, 2600ms) linear forwards;
+}
+
+.wiki-modal-backdrop-enter {
+  animation: wiki-modal-backdrop-enter 180ms ease-out both;
+}
+
+.wiki-modal-panel-enter {
+  animation: wiki-modal-panel-enter 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .mascot-float {
     animation: none;
   }
   .mascot-pop {
     animation: none;
+  }
+  .wiki-feedback-enter,
+  .wiki-feedback-progress,
+  .wiki-modal-backdrop-enter,
+  .wiki-modal-panel-enter {
+    animation: none !important;
   }
 }
 

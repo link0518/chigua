@@ -1,4 +1,6 @@
 import {
+  getNextWikiDisplayOrder,
+  isWikiDisplayOrderConflict,
   mapWikiEntryRow,
   mapWikiRevisionRow,
   parseWikiRevisionData,
@@ -35,6 +37,21 @@ export const registerAdminWikiRoutes = (app, deps) => {
 
   const getAdminName = (req) => String(req.session?.admin?.username || 'admin');
 
+  const runWithWikiDisplayOrderRetry = (operation) => {
+    let lastError = null;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        return operation();
+      } catch (error) {
+        if (!isWikiDisplayOrderConflict(error)) {
+          throw error;
+        }
+        lastError = error;
+      }
+    }
+    throw lastError || new Error('瓜条编号分配失败，请稍后重试。');
+  };
+
   const getRevision = (id) => db
     .prepare(
       `
@@ -54,6 +71,7 @@ export const registerAdminWikiRoutes = (app, deps) => {
     if (revision.action_type === 'create') {
       const entryId = crypto.randomUUID();
       const slug = resolveUniqueWikiSlug(db, data.name);
+      const displayOrder = getNextWikiDisplayOrder(db);
       db.prepare(
         `
         INSERT INTO wiki_entries (
@@ -62,6 +80,7 @@ export const registerAdminWikiRoutes = (app, deps) => {
           name,
           narrative,
           tags,
+          display_order,
           status,
           current_revision_id,
           version_number,
@@ -69,7 +88,7 @@ export const registerAdminWikiRoutes = (app, deps) => {
           updated_at,
           deleted,
           deleted_at
-        ) VALUES (?, ?, ?, ?, ?, 'approved', ?, 1, ?, ?, 0, NULL)
+        ) VALUES (?, ?, ?, ?, ?, ?, 'approved', ?, 1, ?, ?, 0, NULL)
         `
       ).run(
         entryId,
@@ -77,6 +96,7 @@ export const registerAdminWikiRoutes = (app, deps) => {
         data.name,
         data.narrative,
         JSON.stringify(data.tags),
+        displayOrder,
         revision.id,
         revision.created_at || now,
         now
@@ -144,6 +164,62 @@ export const registerAdminWikiRoutes = (app, deps) => {
       `
     ).run(now, adminName, revision.id);
     return { entryId: entry.id, slug, versionNumber };
+  });
+
+  const createApprovedEntry = db.transaction((data, now, adminName) => {
+    const entryId = crypto.randomUUID();
+    const revisionId = crypto.randomUUID();
+    const slug = resolveUniqueWikiSlug(db, data.name);
+    const displayOrder = getNextWikiDisplayOrder(db);
+
+    db.prepare(
+      `
+      INSERT INTO wiki_entries (
+        id,
+        slug,
+        name,
+        narrative,
+        tags,
+        display_order,
+        status,
+        current_revision_id,
+        version_number,
+        created_at,
+        updated_at,
+        deleted,
+        deleted_at
+      ) VALUES (?, ?, ?, ?, ?, ?, 'approved', ?, 1, ?, ?, 0, NULL)
+      `
+    ).run(entryId, slug, data.name, data.narrative, JSON.stringify(data.tags), displayOrder, revisionId, now, now);
+    db.prepare(
+      `
+      INSERT INTO wiki_entry_revisions (
+        id,
+        entry_id,
+        action_type,
+        base_revision_id,
+        base_version_number,
+        data_json,
+        edit_summary,
+        status,
+        submitter_fingerprint,
+        submitter_ip,
+        created_at,
+        reviewed_at,
+        reviewed_by
+      ) VALUES (?, ?, 'create', NULL, 0, ?, ?, 'approved', NULL, NULL, ?, ?, ?)
+      `
+    ).run(
+      revisionId,
+      entryId,
+      JSON.stringify({ name: data.name, narrative: data.narrative, tags: data.tags }),
+      data.editSummary || '管理员创建',
+      now,
+      now,
+      adminName
+    );
+
+    return { entryId, slug };
   });
 
   app.get('/api/admin/wiki/revisions', requireAdmin, (req, res) => {
@@ -247,69 +323,32 @@ export const registerAdminWikiRoutes = (app, deps) => {
       return;
     }
     const now = Date.now();
-    const entryId = crypto.randomUUID();
-    const revisionId = crypto.randomUUID();
-    const slug = resolveUniqueWikiSlug(db, data.name);
     const adminName = getAdminName(req);
 
-    db.transaction(() => {
-      db.prepare(
-        `
-        INSERT INTO wiki_entries (
-          id,
-          slug,
-          name,
-          narrative,
-          tags,
-          status,
-          current_revision_id,
-          version_number,
-          created_at,
-          updated_at,
-          deleted,
-          deleted_at
-        ) VALUES (?, ?, ?, ?, ?, 'approved', ?, 1, ?, ?, 0, NULL)
-        `
-      ).run(entryId, slug, data.name, data.narrative, JSON.stringify(data.tags), revisionId, now, now);
-      db.prepare(
-        `
-        INSERT INTO wiki_entry_revisions (
-          id,
-          entry_id,
-          action_type,
-          base_revision_id,
-          base_version_number,
-          data_json,
-          edit_summary,
-          status,
-          submitter_fingerprint,
-          submitter_ip,
-          created_at,
-          reviewed_at,
-          reviewed_by
-        ) VALUES (?, ?, 'create', NULL, 0, ?, ?, 'approved', NULL, NULL, ?, ?, ?)
-        `
-      ).run(
-        revisionId,
-        entryId,
-        JSON.stringify({ name: data.name, narrative: data.narrative, tags: data.tags }),
-        data.editSummary || '管理员创建',
-        now,
-        now,
-        adminName
-      );
-    })();
+    try {
+      const result = runWithWikiDisplayOrderRetry(() => createApprovedEntry(data, now, adminName));
+      logAdminAction(req, {
+        action: 'wiki_entry_create',
+        targetType: 'wiki_entry',
+        targetId: result.entryId,
+        before: null,
+        after: { name: data.name, slug: result.slug },
+        reason: data.editSummary || null,
+      });
+      return res.status(201).json({
+        entry: mapWikiEntryRow(
+          db.prepare('SELECT * FROM wiki_entries WHERE id = ?').get(result.entryId)
+        ),
+      });
+    } catch (error) {
+      if (isWikiDisplayOrderConflict(error)) {
+        return res.status(409).json({ error: '瓜条编号分配冲突，请稍后重试。' });
+      }
 
-    logAdminAction(req, {
-      action: 'wiki_entry_create',
-      targetType: 'wiki_entry',
-      targetId: entryId,
-      before: null,
-      after: { name: data.name, slug },
-      reason: data.editSummary || null,
-    });
-
-    return res.status(201).json({ entry: mapWikiEntryRow(db.prepare('SELECT * FROM wiki_entries WHERE id = ?').get(entryId)) });
+      return res.status(500).json({
+        error: error instanceof Error ? error.message : '创建失败，请稍后再试。',
+      });
+    }
   });
 
   app.post('/api/admin/wiki/revisions/:id/action', requireAdmin, requireAdminCsrf, (req, res) => {
@@ -351,7 +390,7 @@ export const registerAdminWikiRoutes = (app, deps) => {
     }
 
     try {
-      const result = approveRevision(req, revision);
+      const result = runWithWikiDisplayOrderRetry(() => approveRevision(req, revision));
       logAdminAction(req, {
         action: 'wiki_revision_approve',
         targetType: 'wiki_revision',
@@ -362,6 +401,9 @@ export const registerAdminWikiRoutes = (app, deps) => {
       });
       return res.json({ id, status: 'approved', ...result });
     } catch (error) {
+      if (isWikiDisplayOrderConflict(error)) {
+        return res.status(409).json({ error: '瓜条编号分配冲突，请稍后重试。' });
+      }
       return res.status(400).json({ error: error instanceof Error ? error.message : '审核失败' });
     }
   });

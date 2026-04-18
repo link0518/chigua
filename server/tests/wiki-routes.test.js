@@ -108,6 +108,7 @@ const createWikiDb = () => {
       name TEXT NOT NULL,
       narrative TEXT NOT NULL,
       tags TEXT,
+      display_order INTEGER,
       status TEXT NOT NULL DEFAULT 'approved',
       current_revision_id TEXT,
       version_number INTEGER NOT NULL DEFAULT 1,
@@ -133,6 +134,8 @@ const createWikiDb = () => {
       reviewed_at INTEGER,
       reviewed_by TEXT
     );
+
+    CREATE UNIQUE INDEX idx_wiki_entries_display_order_unique ON wiki_entries(display_order);
   `);
   return db;
 };
@@ -352,6 +355,114 @@ test('Wiki 列表展示编号按创建顺序递增，不受列表倒序影响', 
   const displayOrderByName = Object.fromEntries(list.payload.items.map((item) => [item.name, item.displayOrder]));
   assert.equal(displayOrderByName.第一条, 1);
   assert.equal(displayOrderByName.第二条, 2);
+});
+
+test('Wiki 编号使用持久字段，不受 created_at 变更影响', async () => {
+  const { app, db } = createWikiApp();
+
+  const firstRes = await submitWikiEntry(app, {
+    name: '编号首条',
+    narrative: '第一条记录。',
+    tags: ['测试'],
+  });
+  await approveRevision(app, firstRes.payload.id);
+
+  const secondRes = await submitWikiEntry(app, {
+    name: '编号二条',
+    narrative: '第二条记录。',
+    tags: ['测试'],
+  });
+  await approveRevision(app, secondRes.payload.id);
+
+  db.prepare('UPDATE wiki_entries SET created_at = ? WHERE name = ?').run(1, '编号二条');
+  db.prepare('UPDATE wiki_entries SET created_at = ? WHERE name = ?').run(999999999999, '编号首条');
+
+  const numberList = await invoke(app, 'GET', '/api/wiki/entries', {
+    query: { sort: 'number' },
+  });
+  assert.deepEqual(numberList.payload.items.map((item) => item.name), ['编号首条', '编号二条']);
+  assert.deepEqual(numberList.payload.items.map((item) => item.displayOrder), [1, 2]);
+});
+
+test('Wiki 管理创建在编号冲突后会自动重试', async () => {
+  const { app, db } = createWikiApp();
+  const originalPrepare = db.prepare.bind(db);
+  let shouldFailFirstInsert = true;
+
+  db.prepare = (sql) => {
+    const statement = originalPrepare(sql);
+    if (!shouldFailFirstInsert || !String(sql).includes('INSERT INTO wiki_entries')) {
+      return statement;
+    }
+
+    return new Proxy(statement, {
+      get(target, prop, receiver) {
+        if (prop === 'run') {
+          return () => {
+            shouldFailFirstInsert = false;
+            throw new Error('UNIQUE constraint failed: wiki_entries.display_order');
+          };
+        }
+        return Reflect.get(target, prop, receiver);
+      },
+    });
+  };
+
+  const createRes = await invoke(app, 'POST', '/api/admin/wiki/entries', {
+    body: {
+      name: '冲突后重试',
+      narrative: '管理员创建的条目。',
+      tags: ['测试'],
+      editSummary: '验证编号冲突重试',
+    },
+  });
+
+  assert.equal(createRes.statusCode, 201);
+  const numberList = await invoke(app, 'GET', '/api/wiki/entries', {
+    query: { sort: 'number' },
+  });
+  assert.deepEqual(numberList.payload.items.map((item) => item.name), ['冲突后重试']);
+  assert.deepEqual(numberList.payload.items.map((item) => item.displayOrder), [1]);
+});
+
+test('Wiki 审核通过在编号冲突后会自动重试', async () => {
+  const { app, db } = createWikiApp();
+  const createRes = await submitWikiEntry(app, {
+    name: '待审核冲突重试',
+    narrative: '等待审核通过的条目。',
+    tags: ['测试'],
+  });
+
+  const originalPrepare = db.prepare.bind(db);
+  let shouldFailFirstInsert = true;
+
+  db.prepare = (sql) => {
+    const statement = originalPrepare(sql);
+    if (!shouldFailFirstInsert || !String(sql).includes('INSERT INTO wiki_entries')) {
+      return statement;
+    }
+
+    return new Proxy(statement, {
+      get(target, prop, receiver) {
+        if (prop === 'run') {
+          return () => {
+            shouldFailFirstInsert = false;
+            throw new Error('UNIQUE constraint failed: wiki_entries.display_order');
+          };
+        }
+        return Reflect.get(target, prop, receiver);
+      },
+    });
+  };
+
+  const approveRes = await approveRevision(app, createRes.payload.id);
+  assert.equal(approveRes.statusCode, 200);
+
+  const numberList = await invoke(app, 'GET', '/api/wiki/entries', {
+    query: { sort: 'number' },
+  });
+  assert.deepEqual(numberList.payload.items.map((item) => item.name), ['待审核冲突重试']);
+  assert.deepEqual(numberList.payload.items.map((item) => item.displayOrder), [1]);
 });
 
 test('Wiki 编辑待审不影响公开内容，拒绝后不进入公开历史', async () => {
