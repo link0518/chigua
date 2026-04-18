@@ -19,6 +19,14 @@ body.theme-cny {
   background-image: none;
 }
 
+html.theme-wiki,
+html.theme-wiki body,
+body.theme-wiki {
+  background-color: #fcfdfc;
+  color: #2f3334;
+  background-image: none;
+}
+
 .min-h-screen-safe {
   min-height: 100vh;
 }

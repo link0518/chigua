@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ViewType } from './types';
 import type { NotificationItem } from './types';
 import Toast from './components/Toast';
@@ -88,6 +88,11 @@ const getPathForView = (view: ViewType) => {
 };
 
 const STREAK7_LOCAL_SEEN_KEY = 'easter:streak7:seen:v1';
+
+const syncDocumentThemeClass = (className: string, enabled: boolean) => {
+  document.documentElement.classList.toggle(className, enabled);
+  document.body.classList.toggle(className, enabled);
+};
 
 const App: React.FC = () => {
   const { loadSettings, state } = useApp();
@@ -235,12 +240,15 @@ const App: React.FC = () => {
     };
   }, [loadSettings]);
 
-  useEffect(() => {
-    document.body.classList.toggle('theme-cny', isCnyTheme);
+  useLayoutEffect(() => {
+    syncDocumentThemeClass('theme-wiki', isWikiView);
+    syncDocumentThemeClass('theme-cny', isCnyTheme);
     return () => {
+      document.documentElement.classList.remove('theme-wiki', 'theme-cny');
       document.body.classList.remove('theme-cny');
+      document.body.classList.remove('theme-wiki');
     };
-  }, [isCnyTheme]);
+  }, [isCnyTheme, isWikiView]);
 
   useEffect(() => {
     if (!settingsChecked) {
