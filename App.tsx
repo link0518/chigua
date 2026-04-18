@@ -8,6 +8,7 @@ import StreakCelebration from './components/StreakCelebration';
 import { api } from './api';
 import HomeView from './components/HomeView';
 import {
+  AlertTriangle,
   Bell,
   BookOpen,
   Megaphone,
@@ -18,6 +19,7 @@ import {
   Settings2,
   ThumbsUp,
   X,
+  XCircle,
 } from 'lucide-react';
 import { useApp } from './store/AppContext';
 import AntigravityBackground from './components/AntigravityBackground';
@@ -339,6 +341,10 @@ const App: React.FC = () => {
         return '你的评论收到新回复';
       case 'post_like':
         return '你的帖子收到新点赞';
+      case 'rumor_marked':
+        return '你举报的内容已被判定为疑似谣言';
+      case 'rumor_rejected':
+        return '你提交的谣言举报已被驳回';
       default:
         return '你有新提醒';
     }
@@ -353,6 +359,10 @@ const App: React.FC = () => {
         return <Reply className={className} />;
       case 'post_like':
         return <ThumbsUp className={className} />;
+      case 'rumor_marked':
+        return <AlertTriangle className={className} />;
+      case 'rumor_rejected':
+        return <XCircle className={className} />;
       default:
         return <Bell className={className} />;
     }
@@ -752,7 +762,7 @@ const App: React.FC = () => {
                                   {!item.readAt && <span className="h-2 w-2 rounded-full bg-red-500" />}
                                 </div>
                                 {item.preview && (
-                                  <div className="text-xs text-pencil font-sans mt-1 line-clamp-2">
+                                  <div className={`text-xs text-pencil font-sans mt-1 break-words ${item.type === 'rumor_rejected' ? 'whitespace-pre-wrap line-clamp-4' : 'line-clamp-2'}`}>
                                     “{item.preview}”
                                   </div>
                                 )}

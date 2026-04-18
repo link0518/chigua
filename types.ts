@@ -94,7 +94,7 @@ export interface Comment {
 
 export interface NotificationItem {
   id: string;
-  type: 'post_comment' | 'post_like' | 'comment_reply';
+  type: 'post_comment' | 'post_like' | 'comment_reply' | 'rumor_marked' | 'rumor_rejected';
   postId?: string | null;
   commentId?: string | null;
   preview?: string | null;

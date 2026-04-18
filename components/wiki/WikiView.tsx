@@ -6,7 +6,7 @@ import type { WikiEntry, WikiEntrySort, WikiRevision } from '../../types';
 import WikiMarkdownComposer from '../WikiMarkdownComposer';
 import MarkdownRenderer from '../MarkdownRenderer';
 import Turnstile, { TurnstileHandle } from '../Turnstile';
-import { getWikiMarkdownExcerpt, getWikiMarkdownPlainText } from './wikiMarkdownPlainText';
+import { getWikiMarkdownExcerpt } from './wikiMarkdownPlainText';
 
 type WikiListResponse = {
   items?: WikiEntry[];
@@ -30,6 +30,11 @@ const WIKI_MOBILE_FEED_QUERY = '(max-width: 767px)';
 const WIKI_DETAIL_ENTER_MS = 225;
 const WIKI_DETAIL_EXIT_MS = 195;
 const WIKI_OVERLAY_MODAL_SELECTOR = '[data-wiki-overlay-modal="true"]';
+const waitForNextPaint = () => new Promise<void>((resolve) => {
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => resolve());
+  });
+});
 const WIKI_SORT_OPTIONS: Array<{ value: WikiEntrySort; label: string }> = [
   { value: 'updated', label: '更新时间' },
   { value: 'number', label: '编号' },
@@ -150,70 +155,6 @@ const sanitizeImageFileName = (value: string) => {
   return cleaned || '瓜条';
 };
 
-const drawRoundedRect = (
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  radius: number,
-) => {
-  const r = Math.min(radius, width / 2, height / 2);
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.arcTo(x + width, y, x + width, y + height, r);
-  ctx.arcTo(x + width, y + height, x, y + height, r);
-  ctx.arcTo(x, y + height, x, y, r);
-  ctx.arcTo(x, y, x + width, y, r);
-  ctx.closePath();
-};
-
-const wrapCanvasText = (ctx: CanvasRenderingContext2D, text: string, maxWidth: number) => {
-  const lines: string[] = [];
-  String(text || '')
-    .replace(/\r\n/g, '\n')
-    .split('\n')
-    .forEach((paragraph) => {
-      const source = paragraph.trim();
-      if (!source) {
-        lines.push('');
-        return;
-      }
-
-      let current = '';
-      Array.from(source).forEach((char) => {
-        const next = current + char;
-        if (current && ctx.measureText(next).width > maxWidth) {
-          lines.push(current);
-          current = char.trim() ? char : '';
-        } else {
-          current = next;
-        }
-      });
-      if (current) {
-        lines.push(current);
-      }
-    });
-  return lines.length ? lines : [''];
-};
-
-const drawWrappedText = (
-  ctx: CanvasRenderingContext2D,
-  lines: string[],
-  x: number,
-  y: number,
-  lineHeight: number,
-) => {
-  let cursorY = y;
-  lines.forEach((line) => {
-    if (line) {
-      ctx.fillText(line, x, cursorY);
-    }
-    cursorY += lineHeight;
-  });
-  return cursorY;
-};
-
 const canvasToBlob = (canvas: HTMLCanvasElement) => new Promise<Blob>((resolve, reject) => {
   canvas.toBlob((blob) => {
     if (blob) {
@@ -224,109 +165,178 @@ const canvasToBlob = (canvas: HTMLCanvasElement) => new Promise<Blob>((resolve, 
   }, 'image/png');
 });
 
-const saveWikiEntryCardImage = async (entry: WikiEntry) => {
+const blobToDataUrl = (blob: Blob) => new Promise<string>((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onloadend = () => {
+    if (typeof reader.result === 'string') {
+      resolve(reader.result);
+      return;
+    }
+    reject(new Error('图片生成失败'));
+  };
+  reader.onerror = () => reject(new Error('图片生成失败'));
+  reader.readAsDataURL(blob);
+});
+
+const waitForImage = (image: HTMLImageElement) => new Promise<void>((resolve, reject) => {
+  image.loading = 'eager';
+  image.decoding = 'sync';
+
+  if (image.complete) {
+    if (image.naturalWidth > 0) {
+      resolve();
+    } else {
+      reject(new Error('存在图片加载失败，无法导出'));
+    }
+    return;
+  }
+
+  let cleanedUp = false;
+  const timer = window.setTimeout(() => {
+    cleanup();
+    reject(new Error('图片加载超时，无法导出'));
+  }, 15000);
+
+  const cleanup = () => {
+    if (cleanedUp) {
+      return;
+    }
+    cleanedUp = true;
+    window.clearTimeout(timer);
+    image.removeEventListener('load', handleLoad);
+    image.removeEventListener('error', handleError);
+  };
+
+  const handleLoad = () => {
+    cleanup();
+    resolve();
+  };
+
+  const handleError = () => {
+    cleanup();
+    reject(new Error('存在图片加载失败，无法导出'));
+  };
+
+  image.addEventListener('load', handleLoad);
+  image.addEventListener('error', handleError);
+});
+
+const waitForNodeImages = async (node: HTMLElement) => {
+  const images = Array.from(node.querySelectorAll('img'));
+  await Promise.all(images.map((image) => waitForImage(image)));
+};
+
+const inlineComputedStyles = (source: Element, target: Element) => {
+  const computed = window.getComputedStyle(source);
+  const styleText = Array.from(computed)
+    .map((property) => `${property}: ${computed.getPropertyValue(property)};`)
+    .join(' ');
+  target.setAttribute('style', styleText);
+};
+
+const cloneNodeWithInlineStyles = <T extends HTMLElement>(node: T) => {
+  const clone = node.cloneNode(true) as T;
+  const sourceElements = [node, ...Array.from(node.querySelectorAll('*'))];
+  const clonedElements = [clone, ...Array.from(clone.querySelectorAll('*'))];
+
+  sourceElements.forEach((sourceElement, index) => {
+    const targetElement = clonedElements[index];
+    if (!targetElement) {
+      return;
+    }
+    inlineComputedStyles(sourceElement, targetElement);
+  });
+
+  return clone;
+};
+
+const embedCloneImages = async (sourceNode: HTMLElement, clonedNode: HTMLElement) => {
+  const sourceImages = Array.from(sourceNode.querySelectorAll('img'));
+  const clonedImages = Array.from(clonedNode.querySelectorAll('img'));
+
+  await Promise.all(sourceImages.map(async (image, index) => {
+    const target = clonedImages[index];
+    if (!target) {
+      return;
+    }
+
+    const imageUrl = image.currentSrc || image.src;
+    if (!imageUrl) {
+      throw new Error('存在无法识别的图片资源，无法导出');
+    }
+
+    let response: Response;
+    try {
+      response = await fetch(imageUrl);
+    } catch {
+      throw new Error('存在无法导出的外链图片，请稍后重试或更换图片来源');
+    }
+
+    if (!response.ok) {
+      throw new Error('存在无法导出的图片资源，请稍后重试');
+    }
+
+    const blob = await response.blob();
+    const dataUrl = await blobToDataUrl(blob);
+    target.removeAttribute('srcset');
+    target.setAttribute('src', dataUrl);
+  }));
+};
+
+const loadImageElement = (src: string) => new Promise<HTMLImageElement>((resolve, reject) => {
+  const image = new Image();
+  image.decoding = 'sync';
+  image.onload = () => resolve(image);
+  image.onerror = () => reject(new Error('图片生成失败'));
+  image.src = src;
+});
+
+const saveWikiEntryCardImage = async (entry: WikiEntry, node: HTMLElement) => {
   if ('fonts' in document) {
     await document.fonts.ready;
   }
 
-  const width = 1080;
-  const padding = 88;
-  const contentWidth = width - padding * 2;
-  const titleFont = '700 64px "Noto Sans SC", "Microsoft YaHei", sans-serif';
-  const tagFont = '500 28px "Noto Sans SC", "Microsoft YaHei", sans-serif';
-  const bodyFont = '300 36px "Noto Sans SC", "Microsoft YaHei", sans-serif';
-  const labelFont = '700 24px "Noto Sans SC", "Microsoft YaHei", sans-serif';
-  const footerFont = '400 24px "Noto Sans SC", "Microsoft YaHei", sans-serif';
+  await waitForNodeImages(node);
+  const clonedNode = cloneNodeWithInlineStyles(node);
+  await embedCloneImages(node, clonedNode);
 
-  const measureCanvas = document.createElement('canvas');
-  const measureCtx = measureCanvas.getContext('2d');
-  if (!measureCtx) {
-    throw new Error('图片生成失败');
+  const width = Math.ceil(node.scrollWidth);
+  const height = Math.ceil(node.scrollHeight);
+  if (!width || !height) {
+    throw new Error('导出区域为空，无法保存图片');
   }
 
-  measureCtx.font = titleFont;
-  const titleLines = wrapCanvasText(measureCtx, entry.name, contentWidth);
-  measureCtx.font = tagFont;
-  const tagText = entry.tags.length ? entry.tags.map((tag) => `#${tag}`).join('  ') : '暂无标签';
-  const tagLines = wrapCanvasText(measureCtx, tagText, contentWidth);
-  measureCtx.font = bodyFont;
-  const narrativeText = getWikiMarkdownPlainText(entry.narrative);
-  const narrativeLines = wrapCanvasText(measureCtx, narrativeText, contentWidth);
-  measureCtx.font = footerFont;
-  const footerText = '吃瓜就来 JX3 瓜田 · jx3gua.com';
-  const footerLines = wrapCanvasText(measureCtx, footerText, contentWidth);
+  const exportWrapper = document.createElement('div');
+  exportWrapper.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
+  exportWrapper.setAttribute('style', [
+    `width: ${width}px`,
+    `height: ${height}px`,
+    'overflow: hidden',
+    'background: #fcfdfc',
+  ].join('; '));
+  exportWrapper.appendChild(clonedNode);
 
-  const titleLineHeight = 82;
-  const tagLineHeight = 40;
-  const bodyLineHeight = 58;
-  const footerLineHeight = 34;
-  const height = Math.max(
-    820,
-    padding * 2
-    + 44
-    + 28
-    + titleLines.length * titleLineHeight
-    + 30
-    + tagLines.length * tagLineHeight
-    + 64
-    + narrativeLines.length * bodyLineHeight
-    + 78
-    + footerLineHeight
-    + footerLines.length * footerLineHeight,
-  );
+  const serializedNode = new XMLSerializer().serializeToString(exportWrapper);
+  const svgMarkup = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+      <foreignObject x="0" y="0" width="100%" height="100%">${serializedNode}</foreignObject>
+    </svg>
+  `;
+  const svgUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgMarkup)}`;
+  const image = await loadImageElement(svgUrl);
 
+  const scale = 2;
   const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
+  canvas.width = width * scale;
+  canvas.height = height * scale;
   const ctx = canvas.getContext('2d');
   if (!ctx) {
     throw new Error('图片生成失败');
   }
-
+  ctx.scale(scale, scale);
   ctx.fillStyle = '#fcfdfc';
   ctx.fillRect(0, 0, width, height);
-  drawRoundedRect(ctx, 36, 36, width - 72, height - 72, 34);
-  ctx.fillStyle = '#ffffff';
-  ctx.fill();
-  ctx.strokeStyle = 'rgba(47, 51, 52, 0.08)';
-  ctx.lineWidth = 2;
-  ctx.stroke();
-
-  let cursorY = padding;
-  ctx.fillStyle = '#546354';
-  ctx.font = labelFont;
-  ctx.fillText('瓜条档案', padding, cursorY);
-  ctx.fillStyle = 'rgba(47, 51, 52, 0.25)';
-  ctx.fillRect(padding, cursorY + 22, 120, 2);
-  cursorY += 86;
-
-  ctx.fillStyle = '#2f3334';
-  ctx.font = titleFont;
-  cursorY = drawWrappedText(ctx, titleLines, padding, cursorY, titleLineHeight);
-  cursorY += 18;
-
-  ctx.fillStyle = 'rgba(47, 51, 52, 0.62)';
-  ctx.font = tagFont;
-  cursorY = drawWrappedText(ctx, tagLines, padding, cursorY, tagLineHeight);
-  cursorY += 58;
-
-  ctx.fillStyle = 'rgba(47, 51, 52, 0.80)';
-  ctx.font = bodyFont;
-  cursorY = drawWrappedText(ctx, narrativeLines, padding, cursorY, bodyLineHeight);
-  cursorY += 64;
-
-  ctx.strokeStyle = 'rgba(47, 51, 52, 0.08)';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(padding, cursorY - 24);
-  ctx.lineTo(width - padding, cursorY - 24);
-  ctx.stroke();
-
-  ctx.fillStyle = 'rgba(47, 51, 52, 0.48)';
-  ctx.font = footerFont;
-  ctx.fillText(`第 ${entry.versionNumber} 版 · 生成于 ${formatDateTime(Date.now())}`, padding, cursorY);
-  cursorY += footerLineHeight;
-  cursorY = drawWrappedText(ctx, footerLines, padding, cursorY, footerLineHeight);
+  ctx.drawImage(image, 0, 0, width, height);
 
   const blob = await canvasToBlob(canvas);
   const url = URL.createObjectURL(blob);
@@ -768,6 +778,60 @@ const WikiRevisionDetailModal: React.FC<{
   );
 };
 
+const WikiEntryNarrativeCard: React.FC<{
+  entry: WikiEntry;
+  mode?: 'detail' | 'export';
+}> = ({ entry, mode = 'detail' }) => {
+  const headerClassName = mode === 'export'
+    ? 'space-y-5 border-b border-black/5 pb-8'
+    : 'space-y-5 border-b border-black/5 pb-8 md:space-y-6 md:pb-10';
+  const titleClassName = mode === 'export'
+    ? 'font-headline text-5xl font-extrabold leading-tight tracking-tight text-[#2f3334]'
+    : 'font-headline text-4xl font-extrabold leading-tight tracking-tight text-[#2f3334] md:text-5xl lg:text-6xl';
+  const bodyClassName = mode === 'export'
+    ? 'font-body text-lg leading-loose text-[#2f3334]/80 [&_p]:mb-6 [&_blockquote]:my-6 [&_ol]:my-6 [&_ul]:my-6 [&_pre]:my-6'
+    : 'font-body text-base leading-loose text-[#2f3334]/80 md:text-lg [&_p]:mb-6 [&_blockquote]:my-6 [&_ol]:my-6 [&_ul]:my-6 [&_pre]:my-6';
+
+  return (
+    <div className="relative z-10 mx-auto max-w-2xl space-y-10 md:space-y-12">
+      <div className={headerClassName}>
+        <span className="inline-block rounded border border-[#546354]/20 bg-[#546354]/5 px-2.5 py-1 font-label text-[9px] font-bold tracking-widest text-[#546354]">公开档案</span>
+        <h1 className={titleClassName}>{entry.name}</h1>
+        <div className="flex flex-wrap gap-2 pt-2">
+          {entry.tags.map((tag) => (
+            <span key={tag} className="rounded-md bg-[#f9faf9] px-2.5 py-1 font-label text-[10px] text-[#2f3334]/70 border border-black/5 shadow-sm">#{tag}</span>
+          ))}
+        </div>
+      </div>
+
+      <MarkdownRenderer content={entry.narrative} className={bodyClassName} />
+    </div>
+  );
+};
+
+const WikiEntryExportCard = React.forwardRef<HTMLDivElement, { entry: WikiEntry }>(({ entry }, ref) => (
+  <div className="pointer-events-none fixed inset-x-0 top-0 z-[-1] flex justify-center opacity-0" aria-hidden="true">
+    <div className="w-[1080px] bg-[#fcfdfc] px-12 py-12">
+      <div
+        ref={ref}
+        className="rounded-[32px] border border-black/5 bg-white px-16 py-16 shadow-[0px_24px_80px_rgba(47,51,52,0.12)]"
+      >
+        <WikiEntryNarrativeCard entry={entry} mode="export" />
+        <div className="mt-12 border-t border-black/5 pt-6 text-center">
+          <div className="font-label text-sm font-bold tracking-[0.18em] text-[#2f3334]/48">
+            吃瓜到 JX3 瓜田
+          </div>
+          <div className="mt-2 font-label text-xs font-bold tracking-[0.16em] text-[#2f3334]/32">
+            jx3gua.com · 公开档案第 {entry.versionNumber} 版
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+));
+
+WikiEntryExportCard.displayName = 'WikiEntryExportCard';
+
 const WikiEntryDetail: React.FC<{
   entry: WikiEntry | null;
   history: WikiRevision[];
@@ -777,6 +841,8 @@ const WikiEntryDetail: React.FC<{
   onEdit: (entry: WikiEntry) => void;
 }> = ({ entry, history, loading, error, onBack, onEdit }) => {
   const [selectedRevision, setSelectedRevision] = useState<WikiRevision | null>(null);
+  const [exportEntry, setExportEntry] = useState<WikiEntry | null>(null);
+  const exportCardRef = useRef<HTMLDivElement | null>(null);
   const { feedback, showFeedback } = useWikiFeedback();
 
   const handleShare = useCallback(async () => {
@@ -809,17 +875,25 @@ const WikiEntryDetail: React.FC<{
   }, [entry, showFeedback]);
 
   const handleSaveImage = useCallback(async () => {
-    if (!entry) {
+    if (!entry || exportEntry) {
       return;
     }
 
     try {
-      await saveWikiEntryCardImage(entry);
+      setExportEntry(entry);
+      await waitForNextPaint();
+      const exportNode = exportCardRef.current;
+      if (!exportNode) {
+        throw new Error('保存失败，请稍后重试');
+      }
+      await saveWikiEntryCardImage(entry, exportNode);
       showFeedback('瓜条图片已保存');
-    } catch {
-      showFeedback('保存失败，请稍后重试', 'error');
+    } catch (error) {
+      showFeedback(error instanceof Error ? error.message : '保存失败，请稍后重试', 'error');
+    } finally {
+      setExportEntry(null);
     }
-  }, [entry, showFeedback]);
+  }, [entry, exportEntry, showFeedback]);
 
   if (loading) {
     return (
@@ -860,22 +934,7 @@ const WikiEntryDetail: React.FC<{
           <span className="font-serif text-[16rem] leading-none md:text-[22rem]">{decorativeChar}</span>
         </div>
 
-        <div className="relative z-10 mx-auto max-w-2xl space-y-10 md:space-y-12">
-          <div className="space-y-5 border-b border-black/5 pb-8 md:space-y-6 md:pb-10">
-            <span className="inline-block rounded border border-[#546354]/20 bg-[#546354]/5 px-2.5 py-1 font-label text-[9px] font-bold tracking-widest text-[#546354]">公开档案</span>
-            <h1 className="font-headline text-4xl font-extrabold leading-tight tracking-tight text-[#2f3334] md:text-5xl lg:text-6xl">{entry.name}</h1>
-            <div className="flex flex-wrap gap-2 pt-2">
-              {entry.tags.map(tag => (
-                <span key={tag} className="rounded-md bg-[#f9faf9] px-2.5 py-1 font-label text-[10px] text-[#2f3334]/70 border border-black/5 shadow-sm">#{tag}</span>
-              ))}
-            </div>
-          </div>
-
-          <MarkdownRenderer
-            content={entry.narrative}
-            className="font-body text-base leading-loose text-[#2f3334]/80 md:text-lg [&_p]:mb-6 [&_blockquote]:my-6 [&_ol]:my-6 [&_ul]:my-6 [&_pre]:my-6"
-          />
-        </div>
+        <WikiEntryNarrativeCard entry={entry} />
 
         <div className="pointer-events-none hidden fixed bottom-5 left-5 z-[70] flex justify-start md:bottom-8 md:left-8 lg:left-[308px] xl:left-[416px]">
           <button
@@ -913,6 +972,8 @@ const WikiEntryDetail: React.FC<{
           </button>
         </div>
       </article>
+
+      {exportEntry ? <WikiEntryExportCard ref={exportCardRef} entry={exportEntry} /> : null}
 
       {/* 右侧版本信息 */}
       <aside className="z-10 w-full shrink-0 border-t border-black/5 bg-[#fcfdfc] p-5 pb-28 shadow-[-20px_0_40px_rgba(0,0,0,0.02)] md:p-8 md:pb-32 lg:w-[320px] lg:overflow-y-auto lg:border-l lg:border-t-0 lg:pb-12 xl:w-[400px] xl:p-12 xl:pb-16">

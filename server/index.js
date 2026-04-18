@@ -1364,6 +1364,7 @@ registerAdminRumorsRoutes(app, {
   logAdminAction,
   resolveStoredIdentityHash,
   wecomWebhookService,
+  createNotification,
 });
 
 registerAdminPostsRoutes(app, {

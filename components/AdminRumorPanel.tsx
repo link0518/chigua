@@ -13,6 +13,7 @@ import { api } from '../api';
 import type { Toast } from '../store/AppContext';
 import type { RumorReviewItem } from '../types';
 import MarkdownRenderer from './MarkdownRenderer';
+import Modal from './Modal';
 import { Badge, SketchButton } from './SketchUI';
 
 interface AdminRumorPanelProps {
@@ -22,6 +23,11 @@ interface AdminRumorPanelProps {
 
 type RumorTab = 'pending' | 'suspected' | 'rejected';
 type RumorTargetFilter = 'all' | 'post' | 'comment';
+type RejectModalState = {
+  isOpen: boolean;
+  item: RumorReviewItem | null;
+  reason: string;
+};
 
 const PAGE_SIZE = 10;
 
@@ -41,6 +47,11 @@ const AdminRumorPanel: React.FC<AdminRumorPanelProps> = ({ showToast, onPendingC
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [actingId, setActingId] = useState('');
+  const [rejectModal, setRejectModal] = useState<RejectModalState>({
+    isOpen: false,
+    item: null,
+    reason: '',
+  });
 
   const totalPages = Math.max(Math.ceil(total / PAGE_SIZE), 1);
 
@@ -74,18 +85,29 @@ const AdminRumorPanel: React.FC<AdminRumorPanelProps> = ({ showToast, onPendingC
     [items, tab, total]
   );
 
-  const handleAction = async (item: RumorReviewItem, action: 'mark' | 'reject' | 'clear') => {
+  const closeRejectModal = () => {
+    setRejectModal({
+      isOpen: false,
+      item: null,
+      reason: '',
+    });
+  };
+
+  const submitAction = async (item: RumorReviewItem, action: 'mark' | 'reject' | 'clear', reason = '') => {
     setActingId(item.id);
     try {
-      await api.handleAdminRumor(item.targetType, item.targetId, action);
+      await api.handleAdminRumor(item.targetType, item.targetId, action, reason);
       showToast(
         action === 'mark'
-          ? '已标记为疑似谣言'
+          ? '已判定为疑似谣言'
           : action === 'reject'
             ? '已驳回谣言举报'
             : '已取消谣言标记',
         'success'
       );
+      if (action === 'reject') {
+        closeRejectModal();
+      }
       await loadItems();
       onPendingCountChange?.();
     } catch (error) {
@@ -93,6 +115,30 @@ const AdminRumorPanel: React.FC<AdminRumorPanelProps> = ({ showToast, onPendingC
     } finally {
       setActingId('');
     }
+  };
+
+  const handleAction = (item: RumorReviewItem, action: 'mark' | 'reject' | 'clear') => {
+    if (action === 'reject') {
+      setRejectModal({
+        isOpen: true,
+        item,
+        reason: '',
+      });
+      return;
+    }
+    void submitAction(item, action);
+  };
+
+  const confirmReject = async () => {
+    if (!rejectModal.item) {
+      return;
+    }
+    const trimmedReason = rejectModal.reason.trim();
+    if (!trimmedReason) {
+      showToast('请输入驳回理由', 'warning');
+      return;
+    }
+    await submitAction(rejectModal.item, 'reject', trimmedReason);
   };
 
   return (
@@ -307,6 +353,57 @@ const AdminRumorPanel: React.FC<AdminRumorPanelProps> = ({ showToast, onPendingC
           下一页
         </SketchButton>
       </div>
+
+      <Modal
+        isOpen={rejectModal.isOpen}
+        onClose={closeRejectModal}
+        title="驳回谣言举报"
+        panelClassName="max-w-xl"
+      >
+        <div className="space-y-4">
+          <div className="rounded-lg border border-orange-200 bg-orange-50/70 p-3">
+            <div className="text-xs font-bold text-orange-700">
+              {rejectModal.item?.targetType === 'comment' ? '被举报评论' : '被举报帖子'}
+            </div>
+            <div className="mt-2 max-h-40 overflow-auto text-sm text-ink">
+              <MarkdownRenderer content={rejectModal.item?.targetContent || ''} className="font-sans" />
+            </div>
+          </div>
+
+          <label className="block">
+            <span className="mb-2 block text-sm font-bold text-ink">驳回理由</span>
+            <textarea
+              value={rejectModal.reason}
+              onChange={(event) => setRejectModal((prev) => ({ ...prev, reason: event.target.value }))}
+              placeholder="请输入驳回该谣言举报的原因，提交后会通知所有待处理举报人。"
+              rows={4}
+              className="w-full rounded-lg border-2 border-ink bg-white px-3 py-2 text-sm outline-none"
+            />
+          </label>
+
+          <div className="flex justify-end gap-3">
+            <SketchButton
+              type="button"
+              variant="secondary"
+              className="px-4 py-2 text-sm"
+              disabled={actingId === rejectModal.item?.id}
+              onClick={closeRejectModal}
+            >
+              取消
+            </SketchButton>
+            <SketchButton
+              type="button"
+              className="px-4 py-2 text-sm"
+              disabled={actingId === rejectModal.item?.id}
+              onClick={() => {
+                void confirmReject();
+              }}
+            >
+              确认驳回
+            </SketchButton>
+          </div>
+        </div>
+      </Modal>
     </section>
   );
 };
