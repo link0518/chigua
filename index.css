@@ -210,6 +210,72 @@ body.theme-wiki {
   word-break: break-word;
 }
 
+.markdown-content--image-viewer .markdown-image-link {
+  position: relative;
+  display: flex;
+  width: fit-content;
+  max-width: min(100%, 35rem);
+  margin: 1rem auto 1.2rem;
+  padding: clamp(0.6rem, 0.5rem + 0.6vw, 0.95rem);
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid rgba(47, 51, 52, 0.12);
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at top right, rgba(255, 245, 157, 0.42), transparent 38%),
+    radial-gradient(circle at bottom left, rgba(129, 212, 250, 0.18), transparent 30%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(247, 249, 246, 0.96));
+  box-shadow:
+    0 16px 40px rgba(47, 51, 52, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.68);
+  text-decoration: none;
+  transition:
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 180ms ease,
+    box-shadow 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.markdown-content--image-viewer .markdown-image-link:hover {
+  transform: translateY(-2px);
+  border-color: rgba(194, 123, 43, 0.24);
+  box-shadow:
+    0 22px 52px rgba(47, 51, 52, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.78);
+}
+
+.markdown-content--image-viewer .markdown-image-link:active {
+  transform: translateY(0);
+}
+
+.markdown-content--image-viewer .markdown-image-link::after {
+  content: '查看原图';
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  padding: 5px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: rgba(32, 36, 37, 0.7);
+  color: #fffef8;
+  font-family: 'Patrick Hand', 'Ma Shan Zheng', cursive;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.18);
+  pointer-events: none;
+}
+
+.markdown-content--image-viewer .markdown-image {
+  display: block;
+  max-width: 100%;
+  margin: 0;
+  border: 1px solid rgba(47, 51, 52, 0.08);
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(247, 247, 242, 0.94));
+  box-shadow: 0 10px 30px rgba(47, 51, 52, 0.08);
+}
+
 @keyframes mascot-float {
   0%,
   100% {
@@ -374,6 +440,24 @@ body.theme-wiki {
 }
 
 @media (max-width: 640px) {
+  .markdown-content--image-viewer .markdown-image-link {
+    max-width: 100%;
+    margin: 0.8rem auto 1rem;
+    padding: 0.55rem;
+    border-radius: 20px;
+  }
+
+  .markdown-content--image-viewer .markdown-image-link::after {
+    right: 10px;
+    bottom: 10px;
+    padding: 4px 8px;
+    font-size: 11px;
+  }
+
+  .markdown-content--image-viewer .markdown-image {
+    border-radius: 14px;
+  }
+
   .mascot-burst {
     right: calc(1rem + env(safe-area-inset-right));
     bottom: calc(1rem + env(safe-area-inset-bottom));
@@ -410,4 +494,176 @@ body.theme-wiki {
 
 ::-webkit-scrollbar-thumb:hover {
   background: #555;
+}
+
+@keyframes markdown-photo-viewer-spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.markdown-photo-slider.PhotoView-Portal {
+  --markdown-photo-viewer-ink: #202425;
+  --markdown-photo-viewer-paper: rgba(252, 253, 249, 0.96);
+  --markdown-photo-viewer-accent: #f6dc87;
+  --markdown-photo-viewer-outline: rgba(255, 255, 255, 0.2);
+  z-index: 2400;
+}
+
+.markdown-photo-slider .PhotoView-Slider__Backdrop {
+  backdrop-filter: blur(14px) saturate(0.92);
+  background:
+    radial-gradient(circle at top, rgba(246, 220, 135, 0.16), transparent 36%),
+    radial-gradient(circle at bottom, rgba(129, 212, 250, 0.12), transparent 34%),
+    rgba(16, 18, 19, 0.9) !important;
+}
+
+.markdown-photo-slider .PhotoView-Slider__BannerWrap {
+  height: calc(58px + env(safe-area-inset-top));
+  padding: env(safe-area-inset-top) 18px 0;
+  background:
+    linear-gradient(180deg, rgba(17, 19, 19, 0.78), rgba(17, 19, 19, 0.28));
+  backdrop-filter: blur(18px);
+}
+
+.markdown-photo-slider .PhotoView-Slider__Counter {
+  border: 1px solid var(--markdown-photo-viewer-outline);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 8px 14px;
+  font-family: 'Patrick Hand', 'Ma Shan Zheng', cursive;
+  font-size: 18px;
+  letter-spacing: 0.04em;
+  opacity: 1;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+}
+
+.markdown-photo-slider .PhotoView-Slider__BannerRight {
+  gap: 10px;
+}
+
+.markdown-photo-slider .PhotoView-Slider__toolbarIcon {
+  border: 1px solid var(--markdown-photo-viewer-outline);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 8px;
+  opacity: 1;
+}
+
+.markdown-photo-slider .PhotoView-Slider__ArrowLeft,
+.markdown-photo-slider .PhotoView-Slider__ArrowRight {
+  width: 88px;
+  opacity: 1;
+}
+
+.markdown-photo-slider .PhotoView-Slider__ArrowLeft svg,
+.markdown-photo-slider .PhotoView-Slider__ArrowRight svg {
+  width: 26px;
+  height: 26px;
+  padding: 12px;
+  border: 1px solid var(--markdown-photo-viewer-outline);
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.08));
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.18);
+}
+
+.markdown-photo-slider .PhotoView__Photo {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 24px;
+  box-shadow:
+    0 30px 90px rgba(0, 0, 0, 0.35),
+    0 0 0 1px rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.markdown-photo-viewer-state {
+  display: flex;
+  min-width: min(22rem, calc(100vw - 3rem));
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 28px 30px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 28px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.13), rgba(255, 255, 255, 0.06));
+  color: #f7f8f4;
+  text-align: center;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(22px);
+}
+
+.markdown-photo-viewer-spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid rgba(255, 255, 255, 0.2);
+  border-top-color: var(--markdown-photo-viewer-accent);
+  border-radius: 999px;
+  animation: markdown-photo-viewer-spin 0.8s linear infinite;
+}
+
+.markdown-photo-viewer-badge {
+  display: flex;
+  width: 40px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgba(246, 220, 135, 0.16);
+  color: var(--markdown-photo-viewer-accent);
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.markdown-photo-viewer-title {
+  margin: 0;
+  font-family: 'Patrick Hand', 'Ma Shan Zheng', cursive;
+  font-size: 24px;
+  line-height: 1.1;
+  letter-spacing: 0.02em;
+}
+
+.markdown-photo-viewer-text {
+  margin: 0;
+  max-width: 18rem;
+  color: rgba(247, 248, 244, 0.76);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+@media (max-width: 640px) {
+  .markdown-photo-slider .PhotoView-Slider__BannerWrap {
+    height: calc(54px + env(safe-area-inset-top));
+    padding: env(safe-area-inset-top) 12px 0;
+  }
+
+  .markdown-photo-slider .PhotoView-Slider__Counter {
+    padding: 6px 12px;
+    font-size: 16px;
+  }
+
+  .markdown-photo-slider .PhotoView-Slider__ArrowLeft,
+  .markdown-photo-slider .PhotoView-Slider__ArrowRight {
+    width: 60px;
+  }
+
+  .markdown-photo-slider .PhotoView__Photo {
+    border-radius: 18px;
+  }
+
+  .markdown-photo-viewer-state {
+    min-width: calc(100vw - 2rem);
+    padding: 24px 20px;
+    border-radius: 24px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .markdown-photo-viewer-spinner {
+    animation: none;
+  }
 }

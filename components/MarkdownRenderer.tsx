@@ -1,13 +1,20 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import createDOMPurify from 'dompurify';
 import { marked } from 'marked';
+import { PhotoSlider } from 'react-photo-view';
 
 import { DEFAULT_MEME_PACK, MEME_KEY_TO_FILE } from './memeManifest';
 
 interface MarkdownRendererProps {
   content: string;
   className?: string;
+  enableImageViewer?: boolean;
 }
+
+type ViewerImage = {
+  key: string;
+  src: string;
+};
 
 const escapeHtml = (value: unknown) => {
   const text = typeof value === 'string' ? value : value == null ? '' : String(value);
@@ -381,7 +388,59 @@ const expandMemeShortcodes = (content: string) => {
   });
 };
 
-const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, className = '' }) => {
+const viewerLoadingElement = (
+  <div className="markdown-photo-viewer-state" role="status" aria-live="polite">
+    <div className="markdown-photo-viewer-spinner" aria-hidden="true" />
+    <p className="markdown-photo-viewer-title">图片加载中</p>
+    <p className="markdown-photo-viewer-text">稍等一下，马上就好。</p>
+  </div>
+);
+
+const renderViewerBrokenElement = () => (
+  <div className="markdown-photo-viewer-state markdown-photo-viewer-state-broken" role="status" aria-live="polite">
+    <div className="markdown-photo-viewer-badge" aria-hidden="true">!</div>
+    <p className="markdown-photo-viewer-title">图片加载失败</p>
+    <p className="markdown-photo-viewer-text">这张图暂时没能打开，可以稍后再试。</p>
+  </div>
+);
+
+// Markdown 仍然通过 innerHTML 输出，这里在渲染完成后回收当前块内的图片，
+// 让每个渲染实例只管理自己的图片分组，不串到别的帖子或评论上。
+const collectViewerImages = (root: HTMLDivElement | null) => {
+  if (!root) {
+    return { images: [] as ViewerImage[], anchors: [] as HTMLAnchorElement[] };
+  }
+
+  const anchors = Array.from(root.querySelectorAll<HTMLAnchorElement>('a.markdown-image-link[href]'));
+  const viewerAnchors: HTMLAnchorElement[] = [];
+  const images: ViewerImage[] = [];
+
+  anchors.forEach((anchor, index) => {
+    const image = anchor.querySelector<HTMLImageElement>('img.markdown-image');
+    if (!image || image.classList.contains('meme-image') || !anchor.href) {
+      return;
+    }
+
+    viewerAnchors.push(anchor);
+    images.push({
+      key: `${index}-${anchor.href}`,
+      src: anchor.href,
+    });
+  });
+
+  return { images, anchors: viewerAnchors };
+};
+
+const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
+  content,
+  className = '',
+  enableImageViewer = false,
+}) => {
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const [viewerVisible, setViewerVisible] = useState(false);
+  const [viewerIndex, setViewerIndex] = useState(0);
+  const [viewerImages, setViewerImages] = useState<ViewerImage[]>([]);
+
   const rendered = useMemo(() => {
     if (!content) return '';
     const normalizedContent = expandMemeShortcodes(content);
@@ -398,6 +457,22 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, className 
     return purifier.sanitize(rawHtml);
   }, [content]);
 
+  useEffect(() => {
+    if (!enableImageViewer) {
+      setViewerImages([]);
+      setViewerVisible(false);
+      setViewerIndex(0);
+      return;
+    }
+
+    const { images } = collectViewerImages(rootRef.current);
+    setViewerImages(images);
+    setViewerIndex((prev) => Math.min(prev, Math.max(images.length - 1, 0)));
+    if (!images.length) {
+      setViewerVisible(false);
+    }
+  }, [enableImageViewer, rendered]);
+
   const handleLinkClick = (event: React.MouseEvent<HTMLDivElement>) => {
     if (event.defaultPrevented || event.button !== 0) {
       return;
@@ -410,16 +485,54 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, className 
     if (!anchor || !anchor.href) {
       return;
     }
+
+    if (enableImageViewer && anchor.classList.contains('markdown-image-link')) {
+      const { images, anchors } = collectViewerImages(rootRef.current);
+      const imageIndex = anchors.indexOf(anchor);
+      if (imageIndex >= 0 && images.length > 0) {
+        event.preventDefault();
+        setViewerImages(images);
+        setViewerIndex(imageIndex);
+        setViewerVisible(true);
+        return;
+      }
+    }
+
     event.preventDefault();
     window.open(anchor.href, '_blank', 'noopener,noreferrer');
   };
 
   return (
-    <div
-      className={`markdown-content min-w-0 max-w-full leading-relaxed ${className}`}
-      dangerouslySetInnerHTML={{ __html: rendered }}
-      onClick={handleLinkClick}
-    />
+    <>
+      <div
+        ref={rootRef}
+        className={`markdown-content min-w-0 max-w-full leading-relaxed ${enableImageViewer ? 'markdown-content--image-viewer' : ''} ${className}`}
+        dangerouslySetInnerHTML={{ __html: rendered }}
+        onClick={handleLinkClick}
+      />
+      {enableImageViewer && viewerImages.length > 0 ? (
+        <PhotoSlider
+          images={viewerImages}
+          visible={viewerVisible}
+          index={viewerIndex}
+          onIndexChange={setViewerIndex}
+          onClose={() => setViewerVisible(false)}
+          loop={false}
+          maskClosable
+          pullClosable
+          bannerVisible
+          maskOpacity={0.94}
+          speed={(type) => (type === 3 ? 520 : 280)}
+          easing={() => 'cubic-bezier(0.22, 1, 0.36, 1)'}
+          className="markdown-photo-slider"
+          maskClassName="markdown-photo-slider-mask"
+          photoWrapClassName="markdown-photo-slider-wrap"
+          photoClassName="markdown-photo-slider-photo"
+          loadingElement={viewerLoadingElement}
+          brokenElement={renderViewerBrokenElement}
+        />
+      ) : null}
+    </>
   );
 };
 

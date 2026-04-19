@@ -56,7 +56,7 @@ const PostItem: React.FC<{
 
         {/* Content - Markdown Rendered */}
         <div className="font-sans text-lg text-ink leading-relaxed mb-4">
-          <MarkdownRenderer content={post.content} />
+          <MarkdownRenderer content={post.content} enableImageViewer />
         </div>
 
         {/* Anonymous Info */}

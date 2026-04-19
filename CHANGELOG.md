@@ -10,6 +10,8 @@
 
 ### Changed
 
+- 前台帖子正文与评论区图片改为站内查看器：点击 Markdown 图片会在页内打开可缩放、拖拽、左右切换的图片查看层，普通链接仍保持新标签页打开；涉及 `components/MarkdownRenderer.tsx`、`components/FeedView.tsx`、`components/HomeView.tsx`、`components/FavoritesView.tsx`、`components/CommentModal.tsx`、`index.css`、`index.tsx`。
+
 - 设置弹窗改为“屏蔽标签 / 更新公告”双模块切换，更新公告支持展示历史记录；涉及 `components/UserSettingsModal.tsx`、`api.ts`、`types.ts`。
 - 新增轻量“更新公告”数据链路：前台新增 `GET /api/update-announcements` 和 `GET /api/update-announcements/latest`，后台新增更新公告发布与删除接口，并落库到 `update_announcements`；涉及 `server/db.js`、`server/index.js`、`api.ts`。
 - 抽出共享 Markdown 发布编辑器，前台投稿与后台投稿/站点公告/更新公告统一为同一套 Markdown 工具栏、预览、图片上传、粘贴上传与表情插入方案；涉及 `components/MarkdownComposeEditor.tsx`、`components/SubmissionView.tsx`、`components/AdminDashboard.tsx`。

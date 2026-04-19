@@ -749,7 +749,7 @@ const HomeView: React.FC = () => {
             )}
 
             <div className="relative z-[1] text-lg leading-relaxed text-black">
-              <MarkdownRenderer content={currentPost.content} />
+              <MarkdownRenderer content={currentPost.content} enableImageViewer />
             </div>
 
             <div className="relative z-[1] mt-4 flex items-center justify-between border-t-2 border-dashed border-black pt-4">

@@ -154,7 +154,7 @@ const FavoritesView: React.FC = () => {
             </div>
 
             <div className="text-black text-base leading-relaxed font-sans">
-              <MarkdownRenderer content={post.content} />
+              <MarkdownRenderer content={post.content} enableImageViewer />
             </div>
 
             <div className="flex items-center justify-between pt-3 border-t-2 border-black border-dashed">

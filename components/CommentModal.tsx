@@ -813,7 +813,8 @@ const CommentModal: React.FC<CommentModalProps> = ({
           <div className="max-h-28 overflow-hidden">
             <MarkdownRenderer
               content={mostLikedComment.content}
-              className="markdown-preview text-sm text-pencil [&_.markdown-image-link]:block [&_.markdown-image]:max-h-24 md:[&_.markdown-image]:max-h-28 [&_.markdown-image]:object-contain [&_.markdown-image]:mx-auto [&_.markdown-image]:w-auto [&_.markdown-image]:!max-w-40 md:[&_.markdown-image]:!max-w-48"
+              enableImageViewer
+              className="markdown-preview text-sm text-pencil [&_.markdown-image]:max-h-24 md:[&_.markdown-image]:max-h-28 [&_.markdown-image]:object-contain [&_.markdown-image]:mx-auto [&_.markdown-image]:w-auto [&_.markdown-image]:!max-w-40 md:[&_.markdown-image]:!max-w-48"
             />
           </div>
         ) : (
@@ -943,7 +944,8 @@ const CommentModal: React.FC<CommentModalProps> = ({
                       ) : (
                         <MarkdownRenderer
                           content={item.content}
-                          className={`${depth === 0 ? 'leading-5' : 'leading-4'} [&_.markdown-image-link]:block [&_.markdown-image]:max-h-32 md:[&_.markdown-image]:max-h-44 [&_.markdown-image]:object-contain [&_.markdown-image]:mx-auto [&_.markdown-image]:w-auto [&_.markdown-image]:!max-w-52 md:[&_.markdown-image]:!max-w-64`}
+                          enableImageViewer
+                          className={`${depth === 0 ? 'leading-5' : 'leading-4'} [&_.markdown-image]:max-h-32 md:[&_.markdown-image]:max-h-44 [&_.markdown-image]:object-contain [&_.markdown-image]:mx-auto [&_.markdown-image]:w-auto [&_.markdown-image]:!max-w-52 md:[&_.markdown-image]:!max-w-64`}
                         />
                       )}
                     </div>
