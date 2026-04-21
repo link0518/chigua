@@ -1100,11 +1100,25 @@ const mapCommentRow = (row) => {
   const deleted = row.deleted === 1;
   const hidden = row.hidden === 1;
   const rumorStatus = row.rumor_status === 'suspected' ? 'suspected' : null;
+  const postIdentityKey = String(row.post_identity_key || '').trim();
+  const postIdentityLabel = String(row.post_identity_label || '').trim();
+  const postIdentityRole = row.post_identity_role === 'op'
+    ? 'op'
+    : row.post_identity_role === 'guest'
+      ? 'guest'
+      : null;
   return {
     id: row.id,
     postId: row.post_id,
     parentId: row.parent_id || null,
     replyToId: row.reply_to_id || null,
+    postIdentity: postIdentityKey && postIdentityLabel && postIdentityRole
+      ? {
+        key: postIdentityKey,
+        label: postIdentityLabel,
+        role: postIdentityRole,
+      }
+      : null,
     content: deleted
       ? '该评论违规已处理'
       : hidden

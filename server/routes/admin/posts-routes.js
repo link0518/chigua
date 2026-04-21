@@ -153,10 +153,21 @@ app.post('/api/admin/posts', requireAdmin, requireAdminCsrf, (req, res) => {
 
   db.prepare(
     `
-    INSERT INTO posts (id, content, author, tags, created_at, session_id, ip, fingerprint)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO posts (
+      id,
+      content,
+      author,
+      tags,
+      created_at,
+      session_id,
+      ip,
+      fingerprint,
+      comment_identity_enabled,
+      comment_identity_guest_seq
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `
-  ).run(postId, content, author, JSON.stringify(tags), now, req.sessionID, clientIp, viewerFingerprint || null);
+  ).run(postId, content, author, JSON.stringify(tags), now, req.sessionID, clientIp, viewerFingerprint || null, 1, 0);
 
   incrementDailyStat(formatDateKey(), 'posts', 1);
 

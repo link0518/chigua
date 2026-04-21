@@ -22,6 +22,10 @@ interface CommentModalProps {
 }
 
 const MAX_LENGTH = 300;
+const COMMENTS_CACHE_KEY_PREFIX = 'comments:v3';
+const PREVIOUS_COMMENTS_CACHE_KEY_PREFIX = 'comments:v2';
+const LEGACY_COMMENTS_CACHE_KEY_PREFIX = 'comments';
+const COMMENT_IDENTITY_FALLBACK_LABEL = '匿名用户';
 
 const formatCompactTime = (value?: number | null) => {
   if (!value) {
@@ -63,6 +67,10 @@ type CommentPick = {
   likes: number;
   createdAt: number;
 };
+
+const getCommentIdentityLabel = (comment?: Comment | null) => (
+  String(comment?.postIdentity?.label || COMMENT_IDENTITY_FALLBACK_LABEL)
+);
 
 const getMostLikedComment = (items: Comment[]): Comment | null => {
   let best: CommentPick | null = null;
@@ -184,7 +192,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
   }, [hasMore]);
 
   const writeCommentsCache = (items: Comment[], nextPage: number, nextHasMore: boolean) => {
-    sessionStorage.setItem(`comments:${postId}`, JSON.stringify({
+    sessionStorage.setItem(`${COMMENTS_CACHE_KEY_PREFIX}:${postId}`, JSON.stringify({
       items,
       page: nextPage,
       hasMore: nextHasMore,
@@ -349,7 +357,9 @@ const CommentModal: React.FC<CommentModalProps> = ({
     setHasMore(true);
     setLoading(true);
     setLoadingMore(false);
-    const cacheKey = `comments:${postId}`;
+    const cacheKey = `${COMMENTS_CACHE_KEY_PREFIX}:${postId}`;
+    sessionStorage.removeItem(`${PREVIOUS_COMMENTS_CACHE_KEY_PREFIX}:${postId}`);
+    sessionStorage.removeItem(`${LEGACY_COMMENTS_CACHE_KEY_PREFIX}:${postId}`);
     const cached = sessionStorage.getItem(cacheKey);
     if (cached) {
       try {
@@ -742,6 +752,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
 
   const totalCount = countComments(comments);
   const mostLikedComment = getMostLikedComment(comments);
+  const rootOrderMap = buildOrderMap(comments);
   const buildLabelMap = (items: Comment[], parentLabel = '', result = new Map<string, string>()) => {
     const orderMap = buildOrderMap(items);
     items
@@ -845,7 +856,6 @@ const CommentModal: React.FC<CommentModalProps> = ({
           [...comments]
             .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0))
             .map((comment) => {
-              const rootOrderMap = buildOrderMap(comments);
               const renderComment = (item: Comment, depth: number, parentLabel: string, siblingOrderMap: Map<string, number>) => {
                 const replies = item.replies || [];
                 const orderedReplies = [...replies].sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
@@ -868,7 +878,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
                     <div className="flex items-center justify-between text-[12px] text-gray-500 font-sans">
                       <div className="min-w-0 flex items-center gap-2 overflow-hidden whitespace-nowrap">
                         <span className="text-[12px] font-mono text-gray-500">{threadLabel}楼</span>
-                        <span className="text-gray-800">匿名用户</span>
+                        <span className="text-gray-800">{getCommentIdentityLabel(item)}</span>
                         {isDeleted && <span className="text-[11px] text-gray-400">已处理</span>}
                         {isHidden && <span className="text-[11px] text-orange-500">已隐藏</span>}
                         {replyLabel && (
@@ -984,7 +994,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
       <form className="shrink-0 flex flex-col gap-3 mt-3" onSubmit={handleSubmit}>
         {replyToId && (
           <div className="flex items-center justify-between text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-            <span>正在回复某条评论</span>
+            <span>正在回复 {replyTargetLabel || '某一'}楼</span>
             <button
               type="button"
               onClick={() => setReplyToId(null)}

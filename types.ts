@@ -78,6 +78,7 @@ export interface Comment {
   postId: string;
   parentId?: string | null;
   replyToId?: string | null;
+  postIdentity?: CommentPostIdentity | null;
   content: string;
   author: string;
   timestamp: string;
@@ -90,6 +91,12 @@ export interface Comment {
   rumorStatusUpdatedAt?: number | null;
   likes?: number;
   viewerLiked?: boolean;
+}
+
+export interface CommentPostIdentity {
+  key: string;
+  label: string;
+  role: 'op' | 'guest';
 }
 
 export interface NotificationItem {

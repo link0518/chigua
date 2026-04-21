@@ -459,10 +459,21 @@ app.post('/api/posts', async (req, res) => {
 
   db.prepare(
     `
-    INSERT INTO posts (id, content, author, tags, created_at, session_id, ip, fingerprint)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO posts (
+      id,
+      content,
+      author,
+      tags,
+      created_at,
+      session_id,
+      ip,
+      fingerprint,
+      comment_identity_enabled,
+      comment_identity_guest_seq
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `
-  ).run(postId, content, '匿名', JSON.stringify(tags), now, req.sessionID, clientIp, fingerprint);
+  ).run(postId, content, '匿名', JSON.stringify(tags), now, req.sessionID, clientIp, fingerprint, 1, 0);
 
   incrementDailyStat(formatDateKey(), 'posts', 1);
 

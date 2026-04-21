@@ -39,7 +39,9 @@ CREATE TABLE IF NOT EXISTS posts (
   likes_count INTEGER NOT NULL DEFAULT 0,
   dislikes_count INTEGER NOT NULL DEFAULT 0,
   comments_count INTEGER NOT NULL DEFAULT 0,
-  views_count INTEGER NOT NULL DEFAULT 0
+  views_count INTEGER NOT NULL DEFAULT 0,
+  comment_identity_enabled INTEGER NOT NULL DEFAULT 0,
+  comment_identity_guest_seq INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS post_reactions (
@@ -91,6 +93,9 @@ CREATE TABLE IF NOT EXISTS comments (
   rumor_status TEXT,
   rumor_status_updated_at INTEGER,
   ip TEXT,
+  post_identity_key TEXT,
+  post_identity_label TEXT,
+  post_identity_role TEXT,
   FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
 );
 
@@ -391,6 +396,8 @@ ensureColumn('posts', 'hidden_at', 'INTEGER');
 ensureColumn('posts', 'hidden_review_status', 'TEXT');
 ensureColumn('posts', 'rumor_status', 'TEXT');
 ensureColumn('posts', 'rumor_status_updated_at', 'INTEGER');
+ensureColumn('posts', 'comment_identity_enabled', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('posts', 'comment_identity_guest_seq', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('comments', 'fingerprint', 'TEXT');
 ensureColumn('comments', 'parent_id', 'TEXT');
 ensureColumn('comments', 'reply_to_id', 'TEXT');
@@ -402,6 +409,9 @@ ensureColumn('comments', 'hidden_review_status', 'TEXT');
 ensureColumn('comments', 'rumor_status', 'TEXT');
 ensureColumn('comments', 'rumor_status_updated_at', 'INTEGER');
 ensureColumn('comments', 'ip', 'TEXT');
+ensureColumn('comments', 'post_identity_key', 'TEXT');
+ensureColumn('comments', 'post_identity_label', 'TEXT');
+ensureColumn('comments', 'post_identity_role', 'TEXT');
 ensureColumn('reports', 'fingerprint', 'TEXT');
 ensureColumn('reports', 'reporter_ip', 'TEXT');
 ensureColumn('reports', 'comment_id', 'TEXT');
@@ -594,6 +604,7 @@ const ensureIndexes = () => {
   CREATE INDEX IF NOT EXISTS idx_comments_hidden_deleted_created_at ON comments(hidden, deleted, created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_comments_rumor_status_updated_at ON comments(rumor_status, rumor_status_updated_at DESC);
   CREATE INDEX IF NOT EXISTS idx_comments_parent_id ON comments(parent_id);
+  CREATE INDEX IF NOT EXISTS idx_comments_post_identity_key ON comments(post_id, post_identity_key);
   CREATE INDEX IF NOT EXISTS idx_comment_likes_comment_id ON comment_likes(comment_id);
   CREATE INDEX IF NOT EXISTS idx_comment_likes_fingerprint_created_at ON comment_likes(fingerprint, created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status);
