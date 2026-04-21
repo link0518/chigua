@@ -37,6 +37,14 @@ const buildAppVersion = () => {
   return `${parts[0]}.${parts[1]}.${parts[2] + patchOffset}`;
 };
 
+const versionedFaviconPlugin = (appVersion: string) => ({
+  name: 'versioned-favicon',
+  // 为 favicon 注入构建版本，避免线上长期命中旧缓存。
+  transformIndexHtml(html: string) {
+    return html.replace(/__APP_VERSION__/g, appVersion);
+  },
+});
+
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
     const appVersion = buildAppVersion();
@@ -59,7 +67,7 @@ export default defineConfig(({ mode }) => {
           },
         },
       },
-      plugins: [react()],
+      plugins: [react(), versionedFaviconPlugin(appVersion)],
       define: {
         'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
         'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
