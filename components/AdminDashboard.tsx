@@ -1,10 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, LabelList,
-  LineChart, Line
-} from 'recharts';
 import { Flag, Gavel, BarChart2, Bell, Search, Trash2, Ban, Eye, EyeOff, LayoutDashboard, LogOut, CheckCircle, XCircle, FileText, Pencil, RotateCcw, Shield, ClipboardList, MessageSquare, Menu, X, Settings, BookOpen, AlertTriangle } from 'lucide-react';
-import { SketchButton, Badge, roughBorderClassSm } from './SketchUI';
+import { SketchButton, Badge } from './SketchUI';
 import { AdminAuditLog, AdminComment, AdminHiddenItem, AdminPost, FeedbackMessage, Report, UpdateAnnouncementItem } from '../types';
 import { useApp } from '../store/AppContext';
 import Modal from './Modal';
@@ -21,6 +17,12 @@ import MarkdownRenderer from './MarkdownRenderer';
 import AdminChatPanel from './AdminChatPanel';
 import AdminWikiPanel from './AdminWikiPanel';
 import AdminRumorPanel from './AdminRumorPanel';
+import AdminOverviewView from '@/features/admin/views/AdminOverviewView';
+import AdminFeedbackView from '@/features/admin/views/AdminFeedbackView';
+import AdminBansView from '@/features/admin/views/AdminBansView';
+import AdminAuditView from '@/features/admin/views/AdminAuditView';
+import AdminReportsView from '@/features/admin/views/AdminReportsView';
+import type { ReportAction } from '@/features/admin/types';
 
 type AdminView = 'overview' | 'reports' | 'processed' | 'posts' | 'hidden' | 'bans' | 'audit' | 'feedback' | 'announcement' | 'settings' | 'chat' | 'wiki' | 'rumors';
 type PostStatusFilter = 'all' | 'active' | 'hidden' | 'deleted';
@@ -28,7 +30,6 @@ type PostSort = 'time' | 'hot' | 'reports';
 type HiddenTypeFilter = 'all' | 'post' | 'comment';
 type HiddenReviewFilter = 'all' | 'pending' | 'kept';
 type HiddenAction = 'keep' | 'restore';
-type ReportAction = 'ignore' | 'delete' | 'mute' | 'ban';
 type ReportConfirmModalState = {
   isOpen: boolean;
   reportId: string;
@@ -192,21 +193,6 @@ const formatRateLimitWindow = (windowMs: number) => {
   }
   return `${seconds} 秒`;
 };
-
-const StatCard: React.FC<{ title: string; value: string; trend: string; trendUp: boolean; icon: React.ReactNode; color?: string; valueClassName?: string }> = ({ title, value, trend, trendUp, icon, color = 'bg-white', valueClassName = '' }) => (
-  <div className={`${color} p-6 border-2 border-ink shadow-sketch relative overflow-hidden group hover:-translate-y-1 transition-transform duration-200 sticky-curl ${roughBorderClassSm}`}>
-    <div className="absolute -right-4 -top-4 text-ink/10 rotate-12 group-hover:rotate-0 transition-transform scale-150 opacity-100">
-      {icon}
-    </div>
-    <p className="text-pencil text-sm font-bold mb-2 uppercase tracking-wider font-sans">{title}</p>
-    <div className="flex items-end gap-3 relative z-10 flex-wrap">
-      <span className={`text-5xl font-display text-ink ${valueClassName}`} title={value}>{value}</span>
-      <span className={`text-xs font-bold border border-ink px-2 py-1 rounded-sm shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] ${trendUp ? 'bg-alert' : 'bg-gray-200'}`}>
-        {trend}
-      </span>
-    </div>
-  </div>
-);
 
 const AdminDashboard: React.FC = () => {
   const { state, handleReport, showToast, getPendingReports, loadReports, loadStats, loadSettings, logoutAdmin } = useApp();
@@ -2011,130 +1997,23 @@ const AdminDashboard: React.FC = () => {
 
             {/* Overview View */}
             {currentView === 'overview' && (
-              <>
-                {/* Stats Row */}
-                <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-6">
-                  <StatCard
-                    title="今日举报"
-                    value={state.stats.todayReports.toString()}
-                    trend={state.stats.todayReports > 10 ? '+15%' : '-5%'}
-                    trendUp={state.stats.todayReports > 10}
-                    icon={<Flag size={80} />}
-                    color="bg-marker-orange"
-                  />
-                  <StatCard
-                    title="待处理"
-                    value={pendingReportCount.toString()}
-                    trend={pendingReportCount > 0 ? '需处理' : '已清空'}
-                    trendUp={pendingReportCount > 0}
-                    icon={<Gavel size={80} />}
-                    color="bg-highlight"
-                  />
-                  <StatCard
-                    title="封禁用户"
-                    value={state.stats.bannedUsers.toString()}
-                    trend="+1"
-                    trendUp={false}
-                    icon={<Ban size={80} />}
-                    color="bg-marker-blue"
-                  />
-                  <StatCard
-                    title="总帖子数"
-                    value={state.stats.totalPosts.toString()}
-                    trend="活跃"
-                    trendUp={true}
-                    icon={<BarChart2 size={80} />}
-                    color="bg-marker-green"
-                  />
-                  <StatCard
-                    title="版本号"
-                    value={appVersionLabel}
-                    trend="自动更新"
-                    trendUp={true}
-                    icon={<CheckCircle size={80} />}
-                    color="bg-white"
-                    valueClassName="text-3xl md:text-4xl leading-tight break-all"
-                  />
-                </section>
-
-                {/* Charts Row */}
-                <section className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                  <div className={`bg-white p-6 border-2 border-ink shadow-sketch ${roughBorderClassSm}`}>
-                    <div className="flex justify-between items-start mb-6">
-                      <div>
-                        <h3 className="font-display text-lg">每日发帖量</h3>
-                        <p className="text-pencil text-xs font-sans">近7天数据</p>
-                      </div>
-                      <p className="font-display text-2xl">{postVolumeData.reduce((a, b) => a + b.value, 0)}</p>
-                    </div>
-                    <div className="h-48 w-full">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={postVolumeData} margin={{ top: 24, right: 12, left: 12, bottom: 6 }}>
-                          <Line type="monotone" dataKey="value" stroke="#2c2c2c" strokeWidth={3} strokeDasharray="5 5" dot={{ r: 4, fill: '#2c2c2c' }}>
-                            <LabelList dataKey="value" position="top" offset={12} fill="#2c2c2c" fontSize={11} />
-                          </Line>
-                          <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#555' }} dy={10} interval={0} />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-
-                  <div className={`bg-white p-6 border-2 border-ink shadow-sketch ${roughBorderClassSm}`}>
-                    <div className="flex items-start justify-between gap-4">
-                      <div>
-                        <h3 className="font-display text-lg">访问统计</h3>
-                        <p className="text-pencil text-xs font-sans">本周独立访客 · {totalWeeklyVisits}</p>
-                        <p className="text-xs text-pencil font-sans mt-2">当前在线</p>
-                        <p className="font-display text-2xl">{state.stats.onlineCount}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-xs text-pencil font-sans">总访问量</p>
-                        <p className="font-display text-2xl">{state.stats.totalVisits}</p>
-                      </div>
-                    </div>
-                    <div className="h-48 w-full">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={visitData} margin={{ top: 28, right: 12, left: 12, bottom: 6 }}>
-                          <Bar dataKey="value" fill="white" stroke="#2c2c2c" strokeWidth={2} radius={[4, 4, 0, 0]}>
-                            <LabelList dataKey="value" position="top" offset={12} fill="#2c2c2c" fontSize={12} />
-                          </Bar>
-                          <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#555' }} dy={10} interval={0} />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-                </section>
-
-                {/* Recent Reports Preview */}
-                {pendingReportCount > 0 && (
-                  <section>
-                    <div className="flex items-center justify-between mb-6">
-                      <h2 className="text-xl font-display flex items-center gap-2">
-                        <Flag size={20} /> 最新待处理举报
-                      </h2>
-                      <button
-                        onClick={() => setCurrentView('reports')}
-                        className="font-hand text-ink hover:underline"
-                      >
-                        查看全部 →
-                      </button>
-                    </div>
-                    <div className="flex flex-col gap-4">
-                      {visiblePendingReports.slice(0, 2).map(report => (
-                        <ReportCard
-                          key={report.id}
-                          report={report}
-                          onAction={handleAction}
-                          onDetail={(item) => setReportDetail({ isOpen: true, report: item })}
-                          renderIdentity={renderIdentity}
-                          showStatus={false}
-                          selectable={false}
-                        />
-                      ))}
-                    </div>
-                  </section>
-                )}
-              </>
+              <AdminOverviewView
+                todayReports={state.stats.todayReports}
+                pendingReportCount={pendingReportCount}
+                bannedUsers={state.stats.bannedUsers}
+                totalPosts={state.stats.totalPosts}
+                totalVisits={state.stats.totalVisits}
+                onlineCount={state.stats.onlineCount}
+                totalWeeklyVisits={totalWeeklyVisits}
+                appVersionLabel={appVersionLabel}
+                postVolumeData={postVolumeData}
+                visitData={visitData}
+                visiblePendingReports={visiblePendingReports}
+                onOpenReports={() => setCurrentView('reports')}
+                onReportAction={handleAction}
+                onReportDetail={(item) => setReportDetail({ isOpen: true, report: item })}
+                renderIdentity={renderIdentity}
+              />
             )}
 
             {/* Posts View */}
@@ -3018,118 +2897,26 @@ const AdminDashboard: React.FC = () => {
 
             {/* Feedback View */}
             {currentView === 'feedback' && (
-              <section>
-                <div className="flex flex-col gap-3 mb-6">
-                  <div className="flex flex-wrap items-center gap-3">
-                    <span className="text-xs text-pencil font-sans">状态</span>
-                    {(['unread', 'read', 'all'] as const).map((status) => (
-                      <button
-                        key={status}
-                        onClick={() => {
-                          setFeedbackStatus(status);
-                          setFeedbackPage(1);
-                        }}
-                        className={`px-3 py-1 text-xs font-bold rounded-full border-2 transition-all ${feedbackStatus === status ? 'border-ink bg-highlight' : 'border-transparent bg-white hover:border-ink'
-                          }`}
-                      >
-                        {status === 'unread' ? '未读' : status === 'read' ? '已读' : '全部'}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="flex items-center justify-between text-xs text-pencil font-sans">
-                    <span>共 {feedbackTotal} 条</span>
-                    <span>第 {feedbackPage} / {totalFeedbackPages} 页</span>
-                  </div>
-                </div>
-
-                {feedbackLoading ? (
-                  <div className="text-center py-16 bg-white border-2 border-ink rounded-lg">
-                    <span className="text-6xl mb-4 block">💬</span>
-                    <h3 className="font-display text-2xl text-ink mb-2">正在加载留言</h3>
-                    <p className="font-hand text-lg text-pencil">请稍等片刻</p>
-                  </div>
-                ) : feedbackItems.length === 0 ? (
-                  <div className="text-center py-16 bg-white border-2 border-ink rounded-lg">
-                    <span className="text-6xl mb-4 block">📭</span>
-                    <h3 className="font-display text-2xl text-ink mb-2">暂无留言</h3>
-                    <p className="font-hand text-lg text-pencil">试试调整筛选条件</p>
-                  </div>
-                ) : (
-                  <div className="flex flex-col gap-4">
-                    {feedbackItems.map((message) => (
-                      <div key={message.id} className="bg-white p-5 rounded-lg border-2 border-ink shadow-sketch-sm">
-                        <div className="flex flex-col md:flex-row gap-6 justify-between items-start">
-                          <div className="flex-1">
-                            <div className="flex flex-wrap items-center gap-3 text-xs font-sans text-pencil mb-2">
-                              <span className="bg-gray-100 border border-ink text-ink text-[10px] font-bold px-2 py-0.5 rounded font-sans">ID: #{message.id}</span>
-                              <span>{formatTimestamp(message.createdAt)}</span>
-                              <Badge color={message.readAt ? 'bg-gray-200' : 'bg-highlight'}>
-                                {message.readAt ? '已读' : '未读'}
-                              </Badge>
-                            </div>
-                            <p className="text-ink text-base leading-relaxed font-sans font-semibold">"{message.content}"</p>
-                            <div className="flex flex-wrap items-center gap-4 text-xs text-pencil font-sans mt-3">
-                              <span>邮箱：{message.email}</span>
-                              {message.wechat && <span>微信：{message.wechat}</span>}
-                              {message.qq && <span>QQ：{message.qq}</span>}
-                              {renderIdentity(message)}
-                            </div>
-                          </div>
-                          <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 min-w-fit mt-2 md:mt-0 font-sans">
-                            {!message.readAt && (
-                              <SketchButton
-                                variant="secondary"
-                                className="h-10 px-3 text-xs flex items-center gap-1"
-                                onClick={() => handleFeedbackRead(message.id)}
-                              >
-                                标记已读
-                              </SketchButton>
-                            )}
-                            <SketchButton
-                              variant="secondary"
-                              className="h-10 px-3 text-xs flex items-center gap-1"
-                              onClick={() => openFeedbackActionModal(message, 'ban')}
-                            >
-                              封禁
-                            </SketchButton>
-                            <SketchButton
-                              variant="danger"
-                              className="h-10 px-3 text-xs flex items-center gap-1"
-                              onClick={() => openFeedbackActionModal(message, 'delete')}
-                            >
-                              删除
-                            </SketchButton>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {feedbackItems.length > 0 && (
-                  <div className="flex items-center justify-center gap-4 mt-6">
-                    <SketchButton
-                      variant="secondary"
-                      className="px-4 py-2 text-sm"
-                      disabled={feedbackPage <= 1}
-                      onClick={() => setFeedbackPage((prev) => Math.max(prev - 1, 1))}
-                    >
-                      上一页
-                    </SketchButton>
-                    <span className="text-xs text-pencil font-sans">第 {feedbackPage} / {totalFeedbackPages} 页</span>
-                    <SketchButton
-                      variant="secondary"
-                      className="px-4 py-2 text-sm"
-                      disabled={feedbackPage >= totalFeedbackPages}
-                      onClick={() => setFeedbackPage((prev) => Math.min(prev + 1, totalFeedbackPages))}
-                    >
-                      下一页
-                    </SketchButton>
-                  </div>
-                )}
-              </section>
+              <AdminFeedbackView
+                feedbackStatus={feedbackStatus}
+                feedbackTotal={feedbackTotal}
+                feedbackPage={feedbackPage}
+                totalFeedbackPages={totalFeedbackPages}
+                feedbackLoading={feedbackLoading}
+                feedbackItems={feedbackItems}
+                formatTimestamp={formatTimestamp}
+                renderIdentity={renderIdentity}
+                onFeedbackStatusChange={(status) => {
+                  setFeedbackStatus(status);
+                  setFeedbackPage(1);
+                }}
+                onFeedbackPageChange={setFeedbackPage}
+                onFeedbackRead={handleFeedbackRead}
+                onOpenFeedbackAction={openFeedbackActionModal}
+              />
             )}
 
+            {/* Chat View */}
             {/* Chat View */}
             {currentView === 'chat' && (
               <AdminChatPanel
@@ -3140,278 +2927,57 @@ const AdminDashboard: React.FC = () => {
 
             {/* Bans View */}
             {currentView === 'bans' && (
-              <section>
-                <div className="flex flex-col gap-3 mb-4">
-                  <div className="flex items-center justify-between text-xs text-pencil font-sans">
-                    <span>共 {mergedBans.length} 条</span>
-                    <span>{banLoading ? '加载中...' : '已更新'}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <input
-                      value={banSearch}
-                      onChange={(e) => setBanSearch(e.target.value)}
-                      placeholder="搜索 IP/身份/理由/权限..."
-                      className="w-full h-9 border-2 border-gray-200 rounded-lg px-3 text-xs font-sans focus:border-ink outline-none"
-                    />
-                  </div>
-                </div>
-
-                <div className="bg-white border-2 border-ink rounded-lg p-4 shadow-sketch-sm mb-4 flex flex-col gap-3">
-                  <p className="text-sm font-bold text-ink font-sans">手动封禁</p>
-                  <div className="grid grid-cols-1 md:grid-cols-[120px_1fr] gap-2">
-                    <select
-                      value={manualBanType}
-                      onChange={(e) => setManualBanType(e.target.value as 'ip' | 'fingerprint' | 'identity')}
-                      className="h-9 border-2 border-gray-200 rounded-lg px-2 text-xs font-sans focus:border-ink outline-none"
-                    >
-                      <option value="identity">身份</option>
-                      <option value="fingerprint">指纹</option>
-                      <option value="ip">IP</option>
-                    </select>
-                    <input
-                      value={manualBanValue}
-                      onChange={(e) => setManualBanValue(e.target.value)}
-                      placeholder={manualBanType === 'ip' ? '输入需要封禁的 IP' : manualBanType === 'fingerprint' ? '输入需要封禁的指纹' : '输入需要封禁的身份'}
-                      className="h-9 border-2 border-gray-200 rounded-lg px-3 text-xs font-sans focus:border-ink outline-none"
-                    />
-                  </div>
-                  <textarea
-                    value={manualBanReason}
-                    onChange={(e) => setManualBanReason(e.target.value)}
-                    className="w-full h-16 resize-none border-2 border-gray-200 rounded-lg p-2 text-xs font-sans focus:border-ink outline-none"
-                    placeholder="封禁理由（可选）"
-                  />
-                  {renderBanOptions()}
-                  <div className="flex justify-end">
-                    <SketchButton
-                      variant="primary"
-                      className="h-9 px-4 text-xs text-white"
-                      onClick={handleManualBan}
-                      disabled={manualBanSubmitting}
-                    >
-                      {manualBanSubmitting ? '封禁中...' : '添加封禁'}
-                    </SketchButton>
-                  </div>
-                </div>
-
-                {banLoading ? (
-                  <div className="text-center py-16 bg-white border-2 border-ink rounded-lg">
-                    <span className="text-6xl mb-4 block">⏳</span>
-                    <h3 className="font-display text-2xl text-ink mb-2">正在加载封禁列表</h3>
-                    <p className="font-hand text-lg text-pencil">请稍等片刻</p>
-                  </div>
-                ) : mergedBans.length === 0 ? (
-                  <div className="text-center py-16 bg-white border-2 border-ink rounded-lg">
-                    <span className="text-6xl mb-4 block">🛡️</span>
-                    <h3 className="font-display text-2xl text-ink mb-2">暂无封禁</h3>
-                    <p className="font-hand text-lg text-pencil">试试调整搜索条件</p>
-                  </div>
-                ) : (
-                  <div className="flex flex-col gap-4">
-                    {mergedBans.map((item) => (
-                      <div key={`${item.type}-${item.value}`} className="bg-white p-5 rounded-lg border-2 border-ink shadow-sketch-sm">
-                        <div className="flex flex-col md:flex-row gap-4 justify-between">
-                          <div className="flex-1">
-                            <div className="flex flex-wrap items-center gap-3 text-xs font-sans text-pencil mb-2">
-                              <Badge color="bg-gray-200">
-                                {item.type === 'ip' ? 'IP' : item.type === 'fingerprint' ? '指纹' : '身份'}
-                              </Badge>
-                              {'identityKey' in item ? (
-                                renderIdentity({
-                                  identityKey: item.identityKey || null,
-                                  identityHashes: item.identityHashes || [],
-                                  fingerprint: item.fingerprint || null,
-                                  ip: item.type === 'ip' ? item.value : null,
-                                }, {
-                                  label: null,
-                                  textClassName: 'text-xs font-bold text-ink',
-                                  enableBanActions: false,
-                                })
-                              ) : (
-                                <span className="text-xs font-bold text-ink break-all">{item.value}</span>
-                              )}
-                              <span>{formatTimestamp(item.bannedAt)}</span>
-                            </div>
-                            <div className="text-xs text-pencil font-sans space-y-1">
-                              <p>权限：{formatBanPermissions(item.permissions)}</p>
-                              <p>到期：{item.expiresAt ? formatTimestamp(item.expiresAt) : '永久'}</p>
-                              {item.reason && <p>理由：{item.reason}</p>}
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <SketchButton
-                              variant="secondary"
-                              className="h-8 px-3 text-xs"
-                              onClick={() => handleUnban(item.type, item.value)}
-                            >
-                              解封
-                            </SketchButton>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </section>
+              <AdminBansView
+                mergedBans={mergedBans}
+                banLoading={banLoading}
+                banSearch={banSearch}
+                manualBanType={manualBanType}
+                manualBanValue={manualBanValue}
+                manualBanReason={manualBanReason}
+                manualBanSubmitting={manualBanSubmitting}
+                formatTimestamp={formatTimestamp}
+                formatBanPermissions={formatBanPermissions}
+                renderIdentity={renderIdentity}
+                renderBanOptions={renderBanOptions}
+                onBanSearchChange={setBanSearch}
+                onManualBanTypeChange={setManualBanType}
+                onManualBanValueChange={setManualBanValue}
+                onManualBanReasonChange={setManualBanReason}
+                onManualBan={handleManualBan}
+                onUnban={handleUnban}
+              />
             )}
 
             {/* Audit View */}
             {currentView === 'audit' && (
-              <section>
-                <div className="flex items-center justify-between text-xs text-pencil font-sans mb-4">
-                  <span>共 {auditTotal} 条</span>
-                  <span>第 {auditPage} / {totalAuditPages} 页</span>
-                </div>
-
-                {auditLoading ? (
-                  <div className="text-center py-16 bg-white border-2 border-ink rounded-lg">
-                    <span className="text-6xl mb-4 block">📜</span>
-                    <h3 className="font-display text-2xl text-ink mb-2">加载审计日志</h3>
-                    <p className="font-hand text-lg text-pencil">请稍等片刻</p>
-                  </div>
-                ) : auditLogs.length === 0 ? (
-                  <div className="text-center py-16 bg-white border-2 border-ink rounded-lg">
-                    <span className="text-6xl mb-4 block">🧾</span>
-                    <h3 className="font-display text-2xl text-ink mb-2">暂无记录</h3>
-                    <p className="font-hand text-lg text-pencil">试试调整搜索条件</p>
-                  </div>
-                ) : (
-                  <div className="flex flex-col gap-4">
-                    {auditLogs.map((log) => (
-                      <div key={log.id} className="bg-white p-5 rounded-lg border-2 border-ink shadow-sketch-sm">
-                        <div className="flex flex-col md:flex-row gap-4 justify-between">
-                          <div className="flex-1">
-                            <div className="flex flex-wrap items-center gap-3 text-xs font-sans text-pencil mb-2">
-                              <span className="bg-gray-100 border border-ink text-ink text-[10px] font-bold px-2 py-0.5 rounded font-sans">
-                                #{log.id}
-                              </span>
-                              <span>{formatTimestamp(log.createdAt)}</span>
-                              <span>操作者：{log.adminUsername || '未知'}</span>
-                              <span>IP：{log.ip || '-'}</span>
-                            </div>
-                            <p className="font-sans text-sm text-ink">
-                              <span className="font-bold">{log.action}</span> · {log.targetType} · {log.targetId}
-                            </p>
-                            {log.reason && (
-                              <p className="text-xs text-pencil font-sans mt-1">理由：{log.reason}</p>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <SketchButton
-                              variant="secondary"
-                              className="h-8 px-3 text-xs"
-                              onClick={() => setAuditDetail({ isOpen: true, log })}
-                            >
-                              查看详情
-                            </SketchButton>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {auditLogs.length > 0 && (
-                  <div className="flex items-center justify-center gap-4 mt-6">
-                    <SketchButton
-                      variant="secondary"
-                      className="px-4 py-2 text-sm"
-                      disabled={auditPage <= 1}
-                      onClick={() => setAuditPage((prev) => Math.max(prev - 1, 1))}
-                    >
-                      上一页
-                    </SketchButton>
-                    <span className="text-xs text-pencil font-sans">第 {auditPage} / {totalAuditPages} 页</span>
-                    <SketchButton
-                      variant="secondary"
-                      className="px-4 py-2 text-sm"
-                      disabled={auditPage >= totalAuditPages}
-                      onClick={() => setAuditPage((prev) => Math.min(prev + 1, totalAuditPages))}
-                    >
-                      下一页
-                    </SketchButton>
-                  </div>
-                )}
-              </section>
+              <AdminAuditView
+                auditTotal={auditTotal}
+                auditPage={auditPage}
+                totalAuditPages={totalAuditPages}
+                auditLoading={auditLoading}
+                auditLogs={auditLogs}
+                formatTimestamp={formatTimestamp}
+                onOpenAuditDetail={(log) => setAuditDetail({ isOpen: true, log })}
+                onAuditPageChange={setAuditPage}
+              />
             )}
 
             {/* Reports View */}
             {(currentView === 'reports' || currentView === 'processed') && (
-              <section>
-                <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-xl font-display flex items-center gap-2">
-                    {currentView === 'reports' ? (
-                      <><Flag size={20} /> 待处理举报</>
-                    ) : (
-                      <><Gavel size={20} /> 已处理</>
-                    )}
-                    <span className="bg-ink text-white text-xs px-2 py-1 rounded-full font-sans">
-                      {reportsLoading ? '...' : filteredReports.length}
-                    </span>
-                  </h2>
-                </div>
-                {currentView === 'reports' && (
-                  <div className="flex flex-wrap items-center justify-between gap-3 text-xs font-sans mb-4">
-                    <label className="flex items-center gap-2 text-pencil">
-                      <input
-                        type="checkbox"
-                        className="accent-black"
-                        checked={filteredReports.length > 0 && filteredReports.every((report) => selectedReports.has(report.id))}
-                        onChange={() => toggleAllReports(filteredReports.map((report) => report.id))}
-                      />
-                      本页全选
-                    </label>
-                    <div className="flex items-center gap-2">
-                      <span className="text-pencil">已选 {selectedReports.size} 条</span>
-                      <SketchButton
-                        variant="secondary"
-                        className="h-8 px-3 text-xs"
-                        disabled={selectedReports.size === 0}
-                        onClick={openBulkReportModal}
-                      >
-                        标记处理
-                      </SketchButton>
-                    </div>
-                  </div>
-                )}
-
-                {reportsLoading ? (
-                  <div className="text-center py-16 bg-white border-2 border-ink rounded-lg">
-                    <h3 className="font-display text-2xl text-ink mb-2">举报加载中</h3>
-                    <p className="font-hand text-lg text-pencil">先拉取完整列表，稍等一下…</p>
-                  </div>
-                ) : filteredReports.length === 0 ? (
-                  <div className="text-center py-16 bg-white border-2 border-ink rounded-lg">
-                    <span className="text-6xl mb-4 block">
-                      {searchQuery ? '🔍' : '✅'}
-                    </span>
-                    <h3 className="font-display text-2xl text-ink mb-2">
-                      {searchQuery ? '没有找到匹配的结果' : '暂无待处理举报'}
-                    </h3>
-                    <p className="font-hand text-lg text-pencil">
-                      {searchQuery ? '尝试其他关键词' : '做得好！保持关注～'}
-                    </p>
-                  </div>
-                ) : (
-                  <div className="flex flex-col gap-4">
-                    {filteredReports.map(report => (
-                      <ReportCard
-                        key={report.id}
-                        report={report}
-                        onAction={handleAction}
-                        onDetail={(item) => setReportDetail({ isOpen: true, report: item })}
-                        renderIdentity={renderIdentity}
-                        showStatus={currentView === 'processed'}
-                        selectable={currentView === 'reports'}
-                        selected={selectedReports.has(report.id)}
-                        onSelect={() => toggleReportSelection(report.id)}
-                      />
-                    ))}
-                  </div>
-                )}
-              </section>
+              <AdminReportsView
+                showProcessed={currentView === 'processed'}
+                reportsLoading={reportsLoading}
+                searchQuery={searchQuery}
+                filteredReports={filteredReports}
+                selectedReports={selectedReports}
+                onReportAction={handleAction}
+                onReportDetail={(item) => setReportDetail({ isOpen: true, report: item })}
+                renderIdentity={renderIdentity}
+                onToggleAllReports={toggleAllReports}
+                onOpenBulkReportModal={openBulkReportModal}
+                onToggleReportSelection={toggleReportSelection}
+              />
             )}
-
           </div>
         </div>
       </main>
@@ -3886,135 +3452,6 @@ const AdminDashboard: React.FC = () => {
           )}
         </div>
       </Modal>
-    </div>
-  );
-};
-
-// Separate ReportCard component
-const ReportCard: React.FC<{
-  report: Report;
-  onAction: (id: string, action: ReportAction, content: string, targetType: Report['targetType'], targetId: string) => void;
-  onDetail?: (report: Report) => void;
-  renderIdentity: (identity?: AdminIdentityLike | null, options?: {
-    label?: string | null;
-    showIp?: boolean;
-    showSession?: boolean;
-    enableSearchActions?: boolean;
-    enableBanActions?: boolean;
-    className?: string;
-    textClassName?: string;
-  }) => React.ReactNode;
-  showStatus?: boolean;
-  selectable?: boolean;
-  selected?: boolean;
-  onSelect?: () => void;
-}> = ({ report, onAction, onDetail, renderIdentity, showStatus = false, selectable = true, selected = false, onSelect }) => {
-  const getRiskBg = (level: string) => {
-    switch (level) {
-      case 'high': return 'bg-highlight';
-      case 'medium': return 'bg-alert';
-      default: return 'bg-gray-200';
-    }
-  };
-  return (
-    <div className="bg-white p-5 rounded-lg border-2 border-ink shadow-sketch-sm hover:shadow-sketch transition-all group">
-      <div className="flex flex-col md:flex-row gap-6 justify-between items-start">
-        <div className="flex-1">
-          <div className="flex items-center gap-3 mb-3 flex-wrap">
-            {selectable && (
-              <input
-                type="checkbox"
-                className="accent-black"
-                checked={selected}
-                onChange={onSelect}
-              />
-            )}
-            <span className="bg-gray-100 border border-ink text-ink text-[10px] font-bold px-2 py-0.5 rounded font-sans">ID: #{report.id}</span>
-            <span className="text-pencil text-xs font-bold font-sans">{report.timestamp}</span>
-            <span className={`text-ink text-xs flex items-center gap-1 border border-ink px-2 py-0.5 rounded font-bold font-sans ${getRiskBg(report.riskLevel)}`}>
-              {report.reason}
-            </span>
-            {report.targetType === 'comment' && (
-              <span className="text-xs flex items-center gap-1 border border-ink px-2 py-0.5 rounded font-bold font-sans bg-blue-50 text-blue-700">
-                评论举报
-              </span>
-            )}
-            {report.targetType === 'chat' && (
-              <span className="text-xs flex items-center gap-1 border border-ink px-2 py-0.5 rounded font-bold font-sans bg-cyan-50 text-cyan-700">
-                聊天室发言举报
-              </span>
-            )}
-            {showStatus && (
-              <span className={`text-xs flex items-center gap-1 border border-ink px-2 py-0.5 rounded font-bold font-sans ${report.status === 'resolved' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
-                }`}>
-                {report.status === 'resolved' ? <CheckCircle size={12} /> : <XCircle size={12} />}
-                {report.status === 'resolved' ? '已处理' : '已忽略'}
-              </span>
-            )}
-          </div>
-          <p className="text-ink text-base leading-relaxed font-sans font-semibold">
-            "{report.contentSnippet}"
-          </p>
-          <div className="flex flex-wrap items-center gap-3 text-xs text-pencil font-sans mt-3">
-            {renderIdentity({
-              ip: report.targetIp,
-              sessionId: report.targetSessionId,
-              fingerprint: report.targetFingerprint,
-              identityKey: report.targetIdentityKey,
-              identityHashes: report.targetIdentityHashes,
-            })}
-            <button
-              type="button"
-              onClick={() => onDetail?.(report)}
-              className="text-xs font-bold text-ink hover:underline"
-            >
-              查看详情
-            </button>
-            <button
-              type="button"
-              onClick={() => onDetail?.(report)}
-              className="text-xs font-bold text-ink hover:underline"
-            >
-              举报者信息
-            </button>
-          </div>
-        </div>
-
-        {!showStatus && (
-          <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 min-w-fit mt-2 md:mt-0 font-sans">
-            <SketchButton
-              variant="secondary"
-              className="h-10 px-3 text-xs flex items-center gap-1"
-              onClick={() => onAction(report.id, 'ignore', report.contentSnippet, report.targetType, report.targetId)}
-            >
-              <EyeOff size={14} /> 忽略
-            </SketchButton>
-            <SketchButton
-              variant="danger"
-              className="h-10 px-3 text-xs flex items-center gap-1"
-              onClick={() => onAction(report.id, 'delete', report.contentSnippet, report.targetType, report.targetId)}
-            >
-              <Trash2 size={14} /> 删除
-            </SketchButton>
-            {report.targetType === 'chat' && (
-              <SketchButton
-                variant="secondary"
-                className="h-10 px-3 text-xs flex items-center gap-1"
-                onClick={() => onAction(report.id, 'mute', report.contentSnippet, report.targetType, report.targetId)}
-              >
-                <MessageSquare size={14} /> 禁言
-              </SketchButton>
-            )}
-            <SketchButton
-              variant="primary"
-              className="h-10 px-3 text-xs flex items-center gap-1 text-white"
-              onClick={() => onAction(report.id, 'ban', report.contentSnippet, report.targetType, report.targetId)}
-            >
-              <Ban size={14} /> 封禁
-            </SketchButton>
-          </div>
-        )}
-      </div>
     </div>
   );
 };

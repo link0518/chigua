@@ -6,7 +6,6 @@ import Modal from './components/Modal';
 import MarkdownRenderer from './components/MarkdownRenderer';
 import StreakCelebration from './components/StreakCelebration';
 import { api } from './api';
-import HomeView from './components/HomeView';
 import {
   AlertTriangle,
   Bell,
@@ -28,66 +27,10 @@ import FallingDecorations from './components/CNY/FallingDecorations';
 import HeaderDecoration from './components/CNY/HeaderDecoration';
 import CNYAtmosphereBackground from './components/CNY/CNYAtmosphereBackground';
 import UserSettingsModal from './components/UserSettingsModal';
-
-const SubmissionView = React.lazy(() => import('./components/SubmissionView'));
-const FeedView = React.lazy(() => import('./components/FeedView'));
-const SearchView = React.lazy(() => import('./components/SearchView'));
-const AdminGate = React.lazy(() => import('./components/AdminGate'));
-const FavoritesView = React.lazy(() => import('./components/FavoritesView'));
-const ChatRoomView = React.lazy(() => import('./components/ChatRoomView'));
-const WikiView = React.lazy(() => import('./components/wiki/WikiView'));
-
-const normalizePath = (path: string) => {
-  if (!path || path === '/') {
-    return '/';
-  }
-  return path.endsWith('/') ? path.slice(0, -1) : path;
-};
-
-// 简易路由映射：仅允许 /tiancai 进入后台，其余未知路径显示提示
-const resolveViewFromPath = (path: string) => {
-  const normalized = normalizePath(path);
-  if (normalized === '/tiancai') {
-    return ViewType.ADMIN;
-  }
-  if (normalized === '/search') {
-    return ViewType.SEARCH;
-  }
-  if (normalized === '/favorites') {
-    return ViewType.FAVORITES;
-  }
-  if (normalized === '/chat') {
-    return ViewType.CHAT;
-  }
-  if (normalized === '/wiki' || /^\/wiki\/[^/]+$/.test(normalized)) {
-    return ViewType.WIKI;
-  }
-  if (normalized === '/' || /^\/post\/[^/]+$/.test(normalized)) {
-    return ViewType.HOME;
-  }
-  return ViewType.NOT_FOUND;
-};
-
-const getPathForView = (view: ViewType) => {
-  if (view === ViewType.ADMIN) {
-    return '/tiancai';
-  }
-  if (view === ViewType.SEARCH) {
-    return '/search';
-  }
-  if (view === ViewType.FAVORITES) {
-    return '/favorites';
-  }
-  if (view === ViewType.CHAT) {
-    return '/chat';
-  }
-  if (view === ViewType.WIKI) {
-    return '/wiki';
-  }
-  return '/';
-};
-
-const STREAK7_LOCAL_SEEN_KEY = 'easter:streak7:seen:v1';
+import AppViewRenderer from '@/features/app/AppViewRenderer';
+import { getPathForView, resolveViewFromPath } from '@/features/app/routing';
+import { useAccessStatus } from '@/features/app/hooks/useAccessStatus';
+import { useStreakCelebration } from '@/features/app/hooks/useStreakCelebration';
 
 const syncDocumentThemeClass = (className: string, enabled: boolean) => {
   document.documentElement.classList.toggle(className, enabled);
@@ -105,17 +48,11 @@ const App: React.FC = () => {
   const [announcementUpdatedAt, setAnnouncementUpdatedAt] = useState<number | null>(null);
   const [announcementUnread, setAnnouncementUnread] = useState(false);
   const [updateAnnouncementUnread, setUpdateAnnouncementUnread] = useState(false);
-  const [accessBlocked, setAccessBlocked] = useState(false);
-  const [accessExpiresAt, setAccessExpiresAt] = useState<number | null>(null);
-  const [accessChecked, setAccessChecked] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [notificationsUnread, setNotificationsUnread] = useState(0);
   const notificationRef = useRef<HTMLDivElement | null>(null);
-  const [streakCelebrationOpen, setStreakCelebrationOpen] = useState(false);
-  const [streakCelebrationDays, setStreakCelebrationDays] = useState(7);
-  const streakCelebrationMarkedRef = useRef(false);
   const [backgroundTasksReady, setBackgroundTasksReady] = useState(false);
   const chatEnabled = settingsChecked ? state.settings.chatEnabled : false;
   const isChatView = currentView === ViewType.CHAT;
@@ -124,6 +61,15 @@ const App: React.FC = () => {
   const isCnyTheme = currentView !== ViewType.ADMIN && !isWikiView && state.settings.cnyThemeActive;
   const showDesktopSettingsEntry = currentView !== ViewType.ADMIN && !isWikiView;
   const showDesktopWikiEntry = currentView !== ViewType.ADMIN && !isWikiView;
+  const { accessBlocked, accessExpiresAt, accessChecked } = useAccessStatus();
+  const {
+    streakCelebrationOpen,
+    streakCelebrationDays,
+    closeStreakCelebration,
+  } = useStreakCelebration({
+    backgroundTasksReady,
+    currentView,
+  });
 
   useEffect(() => {
     const timer = window.setTimeout(() => setBackgroundTasksReady(true), 15000);
@@ -199,19 +145,6 @@ const App: React.FC = () => {
     };
   }, [syncUpdateAnnouncementUnread]);
 
-  useEffect(() => {
-    api.getAccessStatus()
-      .then((data) => {
-        if (data?.blocked || data?.viewBlocked) {
-          setAccessBlocked(true);
-          setAccessExpiresAt(typeof data?.expiresAt === 'number' ? data.expiresAt : null);
-        }
-      })
-      .catch(() => { })
-      .finally(() => {
-        setAccessChecked(true);
-      });
-  }, []);
 
   useEffect(() => {
     loadSettings()
@@ -448,63 +381,6 @@ const App: React.FC = () => {
     setNotificationsOpen(false);
   }, [currentView]);
 
-  useEffect(() => {
-    if (currentView !== ViewType.HOME) {
-      return;
-    }
-    if (!backgroundTasksReady) {
-      return;
-    }
-    if (normalizePath(window.location.pathname) !== '/') {
-      return;
-    }
-    let cancelled = false;
-    const run = async () => {
-      try {
-        const localSeen = localStorage.getItem(STREAK7_LOCAL_SEEN_KEY) === '1';
-        if (localSeen) {
-          return;
-        }
-        const data = await api.getStreak7Status();
-        if (cancelled) return;
-        if (data?.unlocked && !data?.alreadyShown) {
-          streakCelebrationMarkedRef.current = false;
-          setStreakCelebrationDays(Number(data?.streakDays || 7));
-          setStreakCelebrationOpen(true);
-        }
-      } catch {
-        // 忽略彩蛋检查失败
-      }
-    };
-    run();
-    return () => {
-      cancelled = true;
-    };
-  }, [backgroundTasksReady, currentView]);
-
-  const closeStreakCelebration = useCallback(() => {
-    setStreakCelebrationOpen(false);
-    if (streakCelebrationMarkedRef.current) {
-      return;
-    }
-    streakCelebrationMarkedRef.current = true;
-    try {
-      localStorage.setItem(STREAK7_LOCAL_SEEN_KEY, '1');
-    } catch {
-      // ignore
-    }
-    api.markStreak7Seen().catch(() => { });
-  }, []);
-
-  useEffect(() => {
-    if (currentView === ViewType.HOME) {
-      return;
-    }
-    if (!streakCelebrationOpen) {
-      return;
-    }
-    closeStreakCelebration();
-  }, [closeStreakCelebration, currentView, streakCelebrationOpen]);
 
   useEffect(() => {
     if (!notificationsOpen) {
@@ -541,59 +417,6 @@ const App: React.FC = () => {
       document.removeEventListener('mousedown', handleClick);
     };
   }, [notificationsOpen]);
-
-  const renderView = () => {
-    switch (currentView) {
-      case ViewType.HOME:
-        return <HomeView />;
-      case ViewType.SUBMISSION:
-        return <SubmissionView />;
-      case ViewType.FEED:
-        return <FeedView />;
-      case ViewType.SEARCH:
-        return <SearchView />;
-      case ViewType.FAVORITES:
-        return <FavoritesView />;
-      case ViewType.CHAT:
-        if (!chatEnabled) {
-          return <HomeView />;
-        }
-        return <ChatRoomView onExitToFeed={() => navigate(ViewType.HOME)} />;
-      case ViewType.WIKI:
-        return <WikiView />;
-      case ViewType.ADMIN:
-        return (
-          <React.Suspense
-            fallback={(
-              <div className="flex-grow w-full max-w-2xl mx-auto px-4 py-12 flex flex-col text-center min-h-70vh-safe">
-                <span className="text-5xl mb-4 block">⏳</span>
-                <h2 className="font-display text-3xl text-ink mb-2">后台加载中</h2>
-                <p className="font-hand text-lg text-pencil">马上就好</p>
-              </div>
-            )}
-          >
-            <AdminGate />
-          </React.Suspense>
-        );
-      case ViewType.NOT_FOUND:
-        return (
-          <div className="flex-grow w-full max-w-2xl mx-auto px-4 py-12 flex flex-col items-center text-center min-h-70vh-safe">
-            <span className="text-6xl mb-4 block">🧭</span>
-            <h2 className="font-display text-3xl text-ink mb-2">页面不存在</h2>
-            <p className="font-hand text-lg text-pencil mb-6">你访问的地址未找到</p>
-            <button
-              type="button"
-              onClick={() => navigate(ViewType.HOME)}
-              className="px-6 py-2 border-2 border-ink rounded-full font-hand font-bold text-lg bg-white hover:bg-highlight transition-all shadow-sketch"
-            >
-              返回首页
-            </button>
-          </div>
-        );
-      default:
-        return <HomeView />;
-    }
-  };
 
   const NavItem: React.FC<{ view: ViewType; label: string; active?: boolean }> = ({ view, label, active }) => (
     <button
@@ -916,7 +739,11 @@ const App: React.FC = () => {
             )
           )}
         >
-          {renderView()}
+          <AppViewRenderer
+            currentView={currentView}
+            chatEnabled={chatEnabled}
+            onNavigateHome={() => navigate(ViewType.HOME)}
+          />
         </React.Suspense>
       </div>
 
