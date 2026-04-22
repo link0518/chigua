@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+﻿import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Flag, Gavel, BarChart2, Bell, Search, Trash2, Ban, Eye, EyeOff, LayoutDashboard, LogOut, CheckCircle, XCircle, FileText, Pencil, RotateCcw, Shield, ClipboardList, MessageSquare, Menu, X, Settings, BookOpen, AlertTriangle } from 'lucide-react';
 import { SketchButton, Badge } from './SketchUI';
 import { AdminAuditLog, AdminComment, AdminHiddenItem, AdminPost, FeedbackMessage, Report, UpdateAnnouncementItem } from '../types';
@@ -23,6 +23,11 @@ import AdminBansView from '@/features/admin/views/AdminBansView';
 import AdminAuditView from '@/features/admin/views/AdminAuditView';
 import AdminReportsView from '@/features/admin/views/AdminReportsView';
 import type { ReportAction } from '@/features/admin/types';
+import AdminModerationDrawer, {
+  type AdminModerationDrawerRequest,
+  type AdminModerationQuickPreset,
+  type AdminModerationSubmitPayload,
+} from '@/features/admin/components/AdminModerationDrawer';
 
 type AdminView = 'overview' | 'reports' | 'processed' | 'posts' | 'hidden' | 'bans' | 'audit' | 'feedback' | 'announcement' | 'settings' | 'chat' | 'wiki' | 'rumors';
 type PostStatusFilter = 'all' | 'active' | 'hidden' | 'deleted';
@@ -58,14 +63,14 @@ const BAN_PERMISSION_LABELS: Record<string, string> = {
   site: '禁止进入网站',
   chat: '聊天室',
 };
-const BAN_DURATION_OPTIONS = [
-  { id: '1h', label: '1 小时', ms: 60 * 60 * 1000 },
-  { id: '1d', label: '1 天', ms: 24 * 60 * 60 * 1000 },
-  { id: '7d', label: '7 天', ms: 7 * 24 * 60 * 60 * 1000 },
-  { id: 'forever', label: '永久', ms: null },
-  { id: 'custom', label: '自定义日期', ms: null },
-];
 
+const DEFAULT_BAN_PERMISSIONS = Object.keys(BAN_PERMISSION_LABELS);
+const DEFAULT_BAN_PRESETS: AdminModerationQuickPreset[] = [
+  { id: 'chat-7d', label: '聊天室 7 天', description: '只限制聊天室', permissions: ['chat'], duration: '7d' },
+  { id: 'post-comment-7d', label: '发帖+评论 7 天', description: '保留站点查看与聊天室', permissions: ['post', 'comment'], duration: '7d' },
+  { id: 'site-7d', label: '全站 7 天', description: '使用全部权限集', permissions: DEFAULT_BAN_PERMISSIONS, duration: '7d' },
+  { id: 'site-forever', label: '永久封禁', description: '全站长期生效', permissions: DEFAULT_BAN_PERMISSIONS, duration: 'forever' },
+];
 const ADMIN_COMPOSE_INCLUDE_DEVELOPER_STORAGE_KEY = 'admin_compose_include_developer';
 const EMPTY_REPORT_CONFIRM_MODAL: ReportConfirmModalState = {
   isOpen: false,
@@ -78,6 +83,8 @@ const EMPTY_REPORT_CONFIRM_MODAL: ReportConfirmModalState = {
   deleteComment: false,
   deleteChatMessage: false,
 };
+
+type ModerationDrawerState = AdminModerationDrawerRequest | null;
 
 const normalizeTag = (value: string) => String(value || '')
   .trim()
@@ -276,14 +283,9 @@ const AdminDashboard: React.FC = () => {
   const [bannedIps, setBannedIps] = useState<Array<{ ip: string; bannedAt: number; expiresAt?: number | null; permissions?: string[]; reason?: string | null }>>([]);
   const [bannedFingerprints, setBannedFingerprints] = useState<Array<{ type?: 'fingerprint' | 'identity'; fingerprint: string; identityKey?: string | null; identityHashes?: string[]; bannedAt: number; expiresAt?: number | null; permissions?: string[]; reason?: string | null }>>([]);
   const [banLoading, setBanLoading] = useState(false);
-  const [banDuration, setBanDuration] = useState<'1h' | '1d' | '7d' | 'forever' | 'custom'>('7d');
-  const [banCustomUntil, setBanCustomUntil] = useState('');
-  const [banPermissions, setBanPermissions] = useState<string[]>(['post', 'comment', 'like', 'view', 'site', 'chat']);
   const [banSearch, setBanSearch] = useState('');
-  const [manualBanType, setManualBanType] = useState<'ip' | 'fingerprint' | 'identity'>('identity');
-  const [manualBanValue, setManualBanValue] = useState('');
-  const [manualBanReason, setManualBanReason] = useState('');
-  const [manualBanSubmitting, setManualBanSubmitting] = useState(false);
+  const [moderationDrawer, setModerationDrawer] = useState<ModerationDrawerState>(null);
+  const [moderationSubmitting, setModerationSubmitting] = useState(false);
   const [auditLogs, setAuditLogs] = useState<AdminAuditLog[]>([]);
   const [auditSearch, setAuditSearch] = useState('');
   const [auditPage, setAuditPage] = useState(1);
@@ -318,12 +320,6 @@ const AdminDashboard: React.FC = () => {
     content: string;
     reason: string;
   }>({ isOpen: false, postId: '', action: 'delete', content: '', reason: '' });
-  const [postBanModal, setPostBanModal] = useState<{
-    isOpen: boolean;
-    postId: string;
-    content: string;
-    reason: string;
-  }>({ isOpen: false, postId: '', content: '', reason: '' });
   const [postCommentsModal, setPostCommentsModal] = useState<{
     isOpen: boolean;
     postId: string;
@@ -829,6 +825,50 @@ const AdminDashboard: React.FC = () => {
     setSelectedReports(new Set());
   }, [currentView, searchQuery, state.reports]);
 
+  const openReportBanDrawer = (
+    reportId: string,
+    content: string,
+    targetType: Report['targetType'],
+    targetId: string
+  ) => {
+    const report = state.reports.find((item) => item.id === reportId) || overviewPendingReports.find((item) => item.id === reportId);
+    const identity = report ? {
+      ip: report.targetIp,
+      sessionId: report.targetSessionId,
+      fingerprint: report.targetFingerprint,
+      identityKey: report.targetIdentityKey,
+      identityHashes: report.targetIdentityHashes,
+    } : undefined;
+    openModerationDrawer({
+      title: '举报封禁处置',
+      description: '沿用举报处理接口，可直接补充附带删除选项。',
+      summary: content,
+      identity,
+      defaultPermissions: DEFAULT_BAN_PERMISSIONS,
+      defaultDuration: '7d',
+      quickPresets: DEFAULT_BAN_PRESETS,
+      extraOptions: [
+        ...(targetType === 'comment' ? [{ key: 'deleteComment', label: '同时删除被举报评论' }] : []),
+        ...(targetType === 'chat' ? [{ key: 'deleteChatMessage', label: '同时删除被举报发言' }] : []),
+      ],
+      submitLabel: '确认封禁',
+      onSubmit: async (payload) => {
+        await handleReport(reportId, 'ban', payload.reason.trim(), {
+          ...buildBanOptionsFromPayload(payload),
+          ...(targetType === 'comment' ? { deleteComment: Boolean(payload.extras.deleteComment) } : {}),
+          ...(targetType === 'chat' ? { deleteChatMessage: Boolean(payload.extras.deleteChatMessage) } : {}),
+        }, { targetId, targetType });
+        setReportsLoaded(true);
+        const successMessage = targetType === 'comment'
+          ? (payload.extras.deleteComment ? '已封禁用户并删除被举报评论' : '已封禁用户，保留被举报评论')
+          : targetType === 'chat'
+            ? (payload.extras.deleteChatMessage ? '已封禁用户并删除被举报发言' : '已封禁用户，保留被举报发言')
+            : '已封禁用户并删除内容';
+        showToast(successMessage, 'success');
+      },
+    });
+  };
+
   const handleAction = (
     reportId: string,
     action: ReportAction,
@@ -836,6 +876,10 @@ const AdminDashboard: React.FC = () => {
     targetType: Report['targetType'],
     targetId: string
   ) => {
+    if (action === 'ban') {
+      openReportBanDrawer(reportId, content, targetType, targetId);
+      return;
+    }
     setConfirmModal({
       isOpen: true,
       reportId,
@@ -850,27 +894,15 @@ const AdminDashboard: React.FC = () => {
   };
 
   const confirmAction = async () => {
-    const { reportId, targetId, action, reason, targetType, deleteComment, deleteChatMessage } = confirmModal;
+    const { reportId, targetId, action, reason, targetType } = confirmModal;
     try {
-      const options = action === 'ban'
-        ? {
-          ...buildBanOptions(),
-          ...(targetType === 'comment' ? { deleteComment } : {}),
-          ...(targetType === 'chat' ? { deleteChatMessage } : {}),
-        }
-        : undefined;
-      await handleReport(reportId, action, reason, options, { targetId, targetType });
+      await handleReport(reportId, action, reason, undefined, { targetId, targetType });
       setReportsLoaded(true);
-      const banMessage = targetType === 'comment'
-        ? (deleteComment ? '已封禁用户并删除被举报评论' : '已封禁用户，保留被举报评论')
-        : targetType === 'chat'
-          ? (deleteChatMessage ? '已封禁用户并删除被举报发言' : '已封禁用户，保留被举报发言')
-          : '已封禁用户并删除内容';
       const messages = {
         ignore: '已忽略该举报',
         delete: '已删除该内容',
         mute: '已禁言用户',
-        ban: banMessage,
+        ban: '已封禁用户',
       };
       showToast(messages[action], action === 'ignore' ? 'info' : 'success');
       setConfirmModal({ ...EMPTY_REPORT_CONFIRM_MODAL });
@@ -908,14 +940,55 @@ const AdminDashboard: React.FC = () => {
     setPostConfirmModal({ isOpen: true, postId, action, content, reason: '' });
   };
 
-  const openPostBanModal = (post: AdminPost) => {
-    setPostBanModal({ isOpen: true, postId: post.id, content: post.content, reason: '' });
+  const openPostBanDrawer = (post: AdminPost) => {
+    openModerationDrawer({
+      title: '帖子作者封禁',
+      description: '按帖子作者执行封禁，沿用现有帖子批量封禁接口。',
+      summary: post.content,
+      identity: post,
+      defaultPermissions: DEFAULT_BAN_PERMISSIONS,
+      defaultDuration: '7d',
+      quickPresets: DEFAULT_BAN_PRESETS,
+      submitLabel: '确认封禁',
+      onSubmit: async (payload) => {
+        await api.batchAdminPosts('ban', [post.id], payload.reason.trim(), buildBanOptionsFromPayload(payload));
+        showToast('已封禁该用户', 'success');
+        await fetchAdminPosts();
+        await loadStats();
+        await fetchBans();
+      },
+    });
   };
 
   const openPostComments = (post: AdminPost) => {
     setPostCommentsModal({ isOpen: true, postId: post.id, content: post.content });
     fetchPostComments(post.id, postSearch.trim()).catch(() => { });
   };
+
+  const openCommentModerationDrawer = (comment: AdminComment) => {
+    openModerationDrawer({
+      title: '评论作者封禁',
+      description: '会沿用评论处置接口，并保留评论封禁的既有语义。',
+      summary: comment.content || '（无内容）',
+      identity: comment,
+      defaultPermissions: DEFAULT_BAN_PERMISSIONS,
+      defaultDuration: '7d',
+      quickPresets: DEFAULT_BAN_PRESETS,
+      submitLabel: '确认封禁',
+      onSubmit: async (payload) => {
+        if (!postCommentsModal.postId) {
+          throw new Error('评论列表已关闭，请重新打开后再试');
+        }
+        await api.handleAdminComment(comment.id, 'ban', payload.reason.trim(), buildBanOptionsFromPayload(payload));
+        showToast('已封禁并删除评论', 'success');
+        await fetchPostComments(postCommentsModal.postId);
+        await fetchAdminPosts();
+        await loadStats();
+        await fetchBans();
+      },
+    });
+  };
+
 
   const getHighlightedText = (text: string, keyword: string) => {
     const normalized = keyword.trim();
@@ -957,34 +1030,16 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
-  const confirmPostBan = async () => {
-    const { postId, reason } = postBanModal;
-    try {
-      await api.batchAdminPosts('ban', [postId], reason, buildBanOptions());
-      showToast('已封禁该用户', 'success');
-      setPostBanModal({ isOpen: false, postId: '', content: '', reason: '' });
-      await fetchAdminPosts();
-      await loadStats();
-      await fetchBans();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : '封禁失败，请稍后重试';
-      showToast(message, 'error');
-    }
-  };
-
-  const handleAdminCommentAction = async (commentId: string, action: 'delete' | 'ban') => {
+  const handleAdminCommentAction = async (commentId: string) => {
     if (!postCommentsModal.postId) {
       return;
     }
     try {
-      await api.handleAdminComment(commentId, action, '', action === 'ban' ? buildBanOptions() : undefined);
-      showToast(action === 'ban' ? '已封禁并删除评论' : '评论已删除', 'success');
+      await api.handleAdminComment(commentId, 'delete');
+      showToast('评论已删除', 'success');
       await fetchPostComments(postCommentsModal.postId);
       await fetchAdminPosts();
       await loadStats();
-      if (action === 'ban') {
-        await fetchBans();
-      }
     } catch (error) {
       const message = error instanceof Error ? error.message : '操作失败，请稍后重试';
       showToast(message, 'error');
@@ -1052,38 +1107,72 @@ const AdminDashboard: React.FC = () => {
     return list.map((perm) => BAN_PERMISSION_LABELS[perm] || perm).join('、');
   };
 
-  const getBanExpiresAt = () => {
-    const now = Date.now();
-    if (banDuration === 'forever') {
-      return null;
-    }
-    if (banDuration === 'custom') {
-      if (!banCustomUntil) {
-        return null;
-      }
-      const time = new Date(banCustomUntil).getTime();
-      return Number.isFinite(time) && time > now ? time : null;
-    }
-    const option = BAN_DURATION_OPTIONS.find((item) => item.id === banDuration);
-    if (!option || !option.ms) {
-      return null;
-    }
-    return now + option.ms;
+  const toDatetimeLocalValue = (timestamp: number) => {
+    const date = new Date(timestamp);
+    const offset = date.getTimezoneOffset() * 60 * 1000;
+    return new Date(date.getTime() - offset).toISOString().slice(0, 16);
   };
 
-  const toggleBanPermission = (permission: string) => {
-    setBanPermissions((prev) => {
-      if (prev.includes(permission)) {
-        return prev.filter((item) => item !== permission);
-      }
-      return [...prev, permission];
-    });
+  const resolveDurationDefaults = (expiresAt?: number | null) => {
+    if (!expiresAt) {
+      return {
+        defaultDuration: 'forever' as const,
+        defaultCustomUntil: '',
+      };
+    }
+    const diff = expiresAt - Date.now();
+    const hourMs = 60 * 60 * 1000;
+    const dayMs = 24 * hourMs;
+    const within = (target: number) => Math.abs(diff - target) <= 60 * 1000;
+    if (within(hourMs)) {
+      return { defaultDuration: '1h' as const, defaultCustomUntil: '' };
+    }
+    if (within(dayMs)) {
+      return { defaultDuration: '1d' as const, defaultCustomUntil: '' };
+    }
+    if (within(7 * dayMs)) {
+      return { defaultDuration: '7d' as const, defaultCustomUntil: '' };
+    }
+    return {
+      defaultDuration: 'custom' as const,
+      defaultCustomUntil: toDatetimeLocalValue(expiresAt),
+    };
   };
 
-  const buildBanOptions = () => ({
-    permissions: banPermissions,
-    expiresAt: getBanExpiresAt(),
+  const buildBanOptionsFromPayload = (payload: AdminModerationSubmitPayload) => ({
+    permissions: payload.permissions.length ? payload.permissions : DEFAULT_BAN_PERMISSIONS,
+    expiresAt: payload.expiresAt,
   });
+
+  const closeModerationDrawer = useCallback(() => {
+    if (moderationSubmitting) {
+      return;
+    }
+    setModerationDrawer(null);
+  }, [moderationSubmitting]);
+
+  const openModerationDrawer = useCallback((request: AdminModerationDrawerRequest) => {
+    setModerationDrawer(request);
+  }, []);
+
+  const runModerationHandler = useCallback(async (
+    handler: ((payload: AdminModerationSubmitPayload) => Promise<void> | void) | undefined,
+    payload: AdminModerationSubmitPayload
+  ) => {
+    if (!handler) {
+      return;
+    }
+    setModerationSubmitting(true);
+    try {
+      await handler(payload);
+      setModerationDrawer(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '封禁操作失败';
+      showToast(message, 'error');
+    } finally {
+      setModerationSubmitting(false);
+    }
+  }, [showToast]);
 
   const applyIdentitySearch = useCallback((value: string) => {
     const nextValue = String(value || '').trim();
@@ -1117,16 +1206,37 @@ const AdminDashboard: React.FC = () => {
     setSearchQuery(nextValue);
   }, [currentView]);
 
+  const openManualBanDrawer = useCallback((preset?: { type?: AdminIdentityBanTargetType; value?: string; reason?: string }) => {
+    const type = preset?.type || 'identity';
+    const value = String(preset?.value || '').trim();
+    openModerationDrawer({
+      title: '手动封禁',
+      description: '适用于外部身份、指纹或 IP 的手动处理。',
+      target: { type, value, editable: true },
+      defaultReason: preset?.reason || '',
+      defaultPermissions: DEFAULT_BAN_PERMISSIONS,
+      defaultDuration: '7d',
+      quickPresets: DEFAULT_BAN_PRESETS,
+      submitLabel: '确认封禁',
+      onSubmit: async (payload) => {
+        if (!payload.targetValue.trim()) {
+          throw new Error(`请输入要封禁的${getBanTargetLabel(payload.targetType)}`);
+        }
+        await api.handleAdminBan('ban', payload.targetType, payload.targetValue.trim(), payload.reason.trim(), buildBanOptionsFromPayload(payload));
+        showToast(`已封禁指定${getBanTargetLabel(payload.targetType)}`, 'success');
+        await fetchBans();
+        await loadStats();
+      },
+    });
+  }, [fetchBans, loadStats, openModerationDrawer, showToast]);
+
   const prepareManualBan = useCallback((type: AdminIdentityBanTargetType, value: string) => {
     const nextValue = String(value || '').trim();
     if (!nextValue) {
       return;
     }
-    setCurrentView('bans');
-    setManualBanType(type);
-    setManualBanValue(nextValue);
-    setBanSearch(nextValue);
-  }, []);
+    openManualBanDrawer({ type, value: nextValue });
+  }, [openManualBanDrawer]);
 
   const handleIdentitySearch = useCallback((field: AdminIdentityField) => {
     applyIdentitySearch(field.value);
@@ -1135,6 +1245,14 @@ const AdminDashboard: React.FC = () => {
   const handleIdentityBanPrepare = useCallback((field: AdminIdentityField & { type: AdminIdentityBanTargetType }) => {
     prepareManualBan(field.type, field.value);
   }, [prepareManualBan]);
+
+  const moderationSecondaryAction = (() => {
+    const handler = moderationDrawer?.onSecondaryAction;
+    if (!handler) {
+      return undefined;
+    }
+    return (payload: AdminModerationSubmitPayload) => runModerationHandler(handler, payload);
+  })();
 
   const renderIdentity = (
     identity?: AdminIdentityLike | null,
@@ -1209,14 +1327,14 @@ const AdminDashboard: React.FC = () => {
             variant="danger"
             className="h-8 px-3 text-xs"
             disabled={item.deleted}
-            onClick={() => handleAdminCommentAction(item.id, 'delete')}
+            onClick={() => handleAdminCommentAction(item.id)}
           >
             删除
           </SketchButton>
           <SketchButton
             variant="secondary"
             className="h-8 px-3 text-xs"
-            onClick={() => handleAdminCommentAction(item.id, 'ban')}
+            onClick={() => openCommentModerationDrawer(item)}
           >
             封禁
           </SketchButton>
@@ -1230,48 +1348,6 @@ const AdminDashboard: React.FC = () => {
     );
   };
 
-  const renderBanOptions = () => (
-    <div className="flex flex-col gap-3 border-2 border-dashed border-gray-200 rounded-lg p-3">
-      <div>
-        <p className="text-xs text-pencil font-sans mb-2">封禁权限</p>
-        <div className="flex flex-wrap gap-2">
-          {Object.keys(BAN_PERMISSION_LABELS).map((permission) => (
-            <label key={permission} className="flex items-center gap-2 text-xs font-sans text-pencil">
-              <input
-                type="checkbox"
-                className="accent-black"
-                checked={banPermissions.includes(permission)}
-                onChange={() => toggleBanPermission(permission)}
-              />
-              <span>{BAN_PERMISSION_LABELS[permission]}</span>
-            </label>
-          ))}
-        </div>
-      </div>
-      <div>
-        <p className="text-xs text-pencil font-sans mb-2">封禁时间</p>
-        <div className="flex flex-col gap-2">
-          <select
-            value={banDuration}
-            onChange={(e) => setBanDuration(e.target.value as typeof banDuration)}
-            className="w-full h-9 border-2 border-gray-200 rounded-lg px-2 text-xs font-sans focus:border-ink outline-none"
-          >
-            {BAN_DURATION_OPTIONS.map((option) => (
-              <option key={option.id} value={option.id}>{option.label}</option>
-            ))}
-          </select>
-          {banDuration === 'custom' && (
-            <input
-              type="datetime-local"
-              value={banCustomUntil}
-              onChange={(e) => setBanCustomUntil(e.target.value)}
-              className="w-full h-9 border-2 border-gray-200 rounded-lg px-2 text-xs font-sans focus:border-ink outline-none"
-            />
-          )}
-        </div>
-      </div>
-    </div>
-  );
 
   const stripSessionFields = (value: unknown): unknown => {
     if (Array.isArray(value)) {
@@ -1355,6 +1431,27 @@ const AdminDashboard: React.FC = () => {
       showToast('请先选择帖子', 'warning');
       return;
     }
+    if (action === 'ban') {
+      openModerationDrawer({
+        title: '批量封禁帖子作者',
+        description: '会按所选帖子对应作者批量执行封禁。',
+        summary: `本次将处理 ${selectedPosts.size} 条帖子对应的作者`,
+        defaultPermissions: DEFAULT_BAN_PERMISSIONS,
+        defaultDuration: '7d',
+        quickPresets: DEFAULT_BAN_PRESETS,
+        submitLabel: '确认批量封禁',
+        onSubmit: async (payload) => {
+          const ids = Array.from(selectedPosts);
+          await api.batchAdminPosts('ban', ids, payload.reason.trim(), buildBanOptionsFromPayload(payload));
+          showToast('批量封禁已完成', 'success');
+          setSelectedPosts(new Set());
+          await fetchAdminPosts();
+          await loadStats();
+          fetchBans().catch(() => { });
+        },
+      });
+      return;
+    }
     setBulkPostModal({ isOpen: true, action, reason: '' });
   };
 
@@ -1362,7 +1459,7 @@ const AdminDashboard: React.FC = () => {
     const { action, reason } = bulkPostModal;
     const ids = Array.from(selectedPosts);
     try {
-      await api.batchAdminPosts(action, ids, reason, action === 'ban' ? buildBanOptions() : undefined);
+      await api.batchAdminPosts(action, ids, reason);
       showToast('批量操作已完成', 'success');
       setSelectedPosts(new Set());
       setBulkPostModal({ isOpen: false, action: 'delete', reason: '' });
@@ -1426,16 +1523,11 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
-  const handleUnban = async (type: 'ip' | 'fingerprint' | 'identity', value: string) => {
-    try {
-      await api.handleAdminBan('unban', type, value);
-      showToast('已解除封禁', 'success');
-      await fetchBans();
-      await loadStats();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : '解封失败';
-      showToast(message, 'error');
-    }
+  const handleUnban = async (type: 'ip' | 'fingerprint' | 'identity', value: string, reason = '') => {
+    await api.handleAdminBan('unban', type, value, reason);
+    showToast('已解除封禁', 'success');
+    await fetchBans();
+    await loadStats();
   };
 
   const getBanTargetLabel = (type: 'ip' | 'fingerprint' | 'identity') => {
@@ -1445,29 +1537,37 @@ const AdminDashboard: React.FC = () => {
     if (type === 'fingerprint') {
       return '指纹';
     }
-    return '新身份';
+    return '身份';
   };
 
-  const handleManualBan = async () => {
-    const value = manualBanValue.trim();
-    if (!value) {
-      showToast(`请输入要封禁的${getBanTargetLabel(manualBanType)}`, 'warning');
-      return;
-    }
-    setManualBanSubmitting(true);
-    try {
-      await api.handleAdminBan('ban', manualBanType, value, manualBanReason.trim(), buildBanOptions());
-      showToast(`已封禁指定${getBanTargetLabel(manualBanType)}`, 'success');
-      setManualBanValue('');
-      setManualBanReason('');
-      await fetchBans();
-      await loadStats();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : '封禁失败';
-      showToast(message, 'error');
-    } finally {
-      setManualBanSubmitting(false);
-    }
+  const openBanRecordDrawer = (item: { type: 'ip' | 'fingerprint' | 'identity'; value: string; reason?: string | null; permissions?: string[]; expiresAt?: number | null; identityKey?: string | null; identityHashes?: string[]; fingerprint?: string | null; }) => {
+    const { defaultDuration, defaultCustomUntil } = resolveDurationDefaults(item.expiresAt);
+    openModerationDrawer({
+      title: '封禁详情',
+      description: '可直接调整权限、时长，或在抽屉内执行解封。',
+      identity: item.type === 'ip' ? undefined : {
+        identityKey: item.identityKey || null,
+        identityHashes: item.identityHashes || [],
+        fingerprint: item.fingerprint || null,
+      },
+      target: { type: item.type, value: item.value, editable: false },
+      defaultReason: item.reason || '',
+      defaultPermissions: item.permissions?.length ? item.permissions : DEFAULT_BAN_PERMISSIONS,
+      defaultDuration,
+      defaultCustomUntil,
+      quickPresets: DEFAULT_BAN_PRESETS,
+      submitLabel: '更新封禁',
+      secondaryActionLabel: '解除封禁',
+      onSubmit: async (payload) => {
+        await api.handleAdminBan('ban', item.type, item.value, payload.reason.trim(), buildBanOptionsFromPayload(payload));
+        showToast('封禁已更新', 'success');
+        await fetchBans();
+        await loadStats();
+      },
+      onSecondaryAction: async (payload) => {
+        await handleUnban(item.type, item.value, payload.reason.trim());
+      },
+    });
   };
 
   const handleFeedbackRead = async (feedbackId: string) => {
@@ -1483,6 +1583,27 @@ const AdminDashboard: React.FC = () => {
   };
 
   const openFeedbackActionModal = (message: FeedbackMessage, action: 'delete' | 'ban') => {
+    if (action === 'ban') {
+      openModerationDrawer({
+        title: '留言用户封禁',
+        description: '沿用留言封禁接口，可直接设置权限与时长。',
+        summary: message.content,
+        identity: message,
+        defaultPermissions: DEFAULT_BAN_PERMISSIONS,
+        defaultDuration: '7d',
+        quickPresets: DEFAULT_BAN_PRESETS,
+        submitLabel: '确认封禁',
+        onSubmit: async (payload) => {
+          await api.handleAdminFeedback(message.id, 'ban', payload.reason.trim(), buildBanOptionsFromPayload(payload));
+          showToast('已封禁该用户', 'success');
+          await fetchFeedback();
+          await fetchFeedbackUnreadCount();
+          fetchBans().catch(() => { });
+          loadStats().catch(() => { });
+        },
+      });
+      return;
+    }
     setFeedbackActionModal({
       isOpen: true,
       feedbackId: message.id,
@@ -1495,15 +1616,11 @@ const AdminDashboard: React.FC = () => {
   const confirmFeedbackAction = async () => {
     const { feedbackId, action, reason } = feedbackActionModal;
     try {
-      await api.handleAdminFeedback(feedbackId, action, reason, action === 'ban' ? buildBanOptions() : undefined);
-      showToast(action === 'delete' ? '留言已删除' : '已封禁该用户', 'success');
+      await api.handleAdminFeedback(feedbackId, action, reason);
+      showToast('留言已删除', 'success');
       setFeedbackActionModal({ isOpen: false, feedbackId: '', action: 'delete', content: '', reason: '' });
       await fetchFeedback();
       await fetchFeedbackUnreadCount();
-      if (action === 'ban') {
-        fetchBans().catch(() => { });
-        loadStats().catch(() => { });
-      }
     } catch (error) {
       const message = error instanceof Error ? error.message : '操作失败';
       showToast(message, 'error');
@@ -2201,7 +2318,7 @@ const AdminDashboard: React.FC = () => {
                             <SketchButton
                               variant="primary"
                               className="h-10 px-3 text-xs flex items-center gap-1 text-white"
-                              onClick={() => openPostBanModal(post)}
+                              onClick={() => openPostBanDrawer(post)}
                             >
                               <Ban size={14} /> 封禁
                             </SketchButton>
@@ -2922,6 +3039,7 @@ const AdminDashboard: React.FC = () => {
               <AdminChatPanel
                 showToast={showToast}
                 onPrepareBan={prepareManualBan}
+                onOpenModeration={openModerationDrawer}
               />
             )}
 
@@ -2931,20 +3049,12 @@ const AdminDashboard: React.FC = () => {
                 mergedBans={mergedBans}
                 banLoading={banLoading}
                 banSearch={banSearch}
-                manualBanType={manualBanType}
-                manualBanValue={manualBanValue}
-                manualBanReason={manualBanReason}
-                manualBanSubmitting={manualBanSubmitting}
                 formatTimestamp={formatTimestamp}
                 formatBanPermissions={formatBanPermissions}
                 renderIdentity={renderIdentity}
-                renderBanOptions={renderBanOptions}
                 onBanSearchChange={setBanSearch}
-                onManualBanTypeChange={setManualBanType}
-                onManualBanValueChange={setManualBanValue}
-                onManualBanReasonChange={setManualBanReason}
-                onManualBan={handleManualBan}
-                onUnban={handleUnban}
+                onOpenManualBan={openManualBanDrawer}
+                onEditBan={openBanRecordDrawer}
               />
             )}
 
@@ -3019,7 +3129,6 @@ const AdminDashboard: React.FC = () => {
               <span>{confirmModal.targetType === 'comment' ? '同时删除被举报评论' : '同时删除被举报发言'}</span>
             </label>
           )}
-          {confirmModal.action === 'ban' && renderBanOptions()}
           <div className="flex flex-col sm:flex-row gap-3 mt-2">
             <SketchButton
               variant="secondary"
@@ -3074,47 +3183,6 @@ const AdminDashboard: React.FC = () => {
               onClick={confirmPostAction}
             >
               确认{postConfirmModal.action === 'delete' ? '删除' : '恢复'}
-            </SketchButton>
-          </div>
-        </div>
-      </Modal>
-
-      <Modal
-        isOpen={postBanModal.isOpen}
-        onClose={() => setPostBanModal({ isOpen: false, postId: '', content: '', reason: '' })}
-        title="封禁用户"
-      >
-        <div className="flex flex-col gap-4">
-          <p className="font-hand text-lg text-ink">
-            确定要 <strong className="text-red-600">封禁该用户</strong> 吗？
-          </p>
-          <div className="p-3 bg-gray-50 border border-dashed border-ink rounded-lg">
-            <p className="text-sm text-pencil font-sans line-clamp-2">"{postBanModal.content}"</p>
-          </div>
-          <div>
-            <label className="text-xs text-pencil font-sans">处理理由（可选）</label>
-            <textarea
-              value={postBanModal.reason}
-              onChange={(e) => setPostBanModal((prev) => ({ ...prev, reason: e.target.value }))}
-              className="w-full mt-2 h-20 resize-none border-2 border-gray-200 rounded-lg p-2 text-sm font-sans focus:border-ink outline-none"
-              placeholder="填写理由便于审计追溯"
-            />
-          </div>
-          {renderBanOptions()}
-          <div className="flex flex-col sm:flex-row gap-3 mt-2">
-            <SketchButton
-              variant="secondary"
-              className="flex-1"
-              onClick={() => setPostBanModal({ isOpen: false, postId: '', content: '', reason: '' })}
-            >
-              取消
-            </SketchButton>
-            <SketchButton
-              variant="danger"
-              className="flex-1"
-              onClick={confirmPostBan}
-            >
-              确认封禁
             </SketchButton>
           </div>
         </div>
@@ -3210,7 +3278,6 @@ const AdminDashboard: React.FC = () => {
               placeholder="填写理由便于审计追溯"
             />
           </div>
-          {bulkPostModal.action === 'ban' && renderBanOptions()}
           <div className="flex flex-col sm:flex-row gap-3 mt-2">
             <SketchButton
               variant="secondary"
@@ -3220,7 +3287,7 @@ const AdminDashboard: React.FC = () => {
               取消
             </SketchButton>
             <SketchButton
-              variant={bulkPostModal.action === 'delete' || bulkPostModal.action === 'ban' ? 'danger' : 'secondary'}
+              variant={bulkPostModal.action === 'delete' ? 'danger' : 'secondary'}
               className="flex-1"
               onClick={confirmBulkPostAction}
             >
@@ -3288,7 +3355,6 @@ const AdminDashboard: React.FC = () => {
               placeholder="填写理由便于审计追溯"
             />
           </div>
-          {feedbackActionModal.action === 'ban' && renderBanOptions()}
           <div className="flex flex-col sm:flex-row gap-3 mt-2">
             <SketchButton
               variant="secondary"
@@ -3452,9 +3518,19 @@ const AdminDashboard: React.FC = () => {
           )}
         </div>
       </Modal>
+
+      <AdminModerationDrawer
+        isOpen={Boolean(moderationDrawer)}
+        config={moderationDrawer}
+        submitting={moderationSubmitting}
+        onClose={closeModerationDrawer}
+        onSubmit={(payload) => runModerationHandler(moderationDrawer?.onSubmit, payload)}
+        onSecondaryAction={moderationSecondaryAction}
+      />
     </div>
   );
 };
 
 export default AdminDashboard;
+
 

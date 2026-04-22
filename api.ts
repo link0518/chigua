@@ -282,9 +282,9 @@ export const api = {
     method: 'POST',
     body: JSON.stringify(options || {}),
   }),
-  unbanAdminChatUser: (identityValue, reason = '') => apiFetch(`/admin/chat/users/${encodeURIComponent(identityValue)}/unban`, {
+  unbanAdminChatUser: (identityValue, reason = '', options = {}) => apiFetch(`/admin/chat/users/${encodeURIComponent(identityValue)}/unban`, {
     method: 'POST',
-    body: JSON.stringify({ reason }),
+    body: JSON.stringify({ reason, ...(options || {}) }),
   }),
   sendHeartbeat: () => apiFetch('/online/heartbeat', { method: 'POST' }),
   getAccessStatus: () => apiFetch('/access'),

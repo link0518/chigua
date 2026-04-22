@@ -6,10 +6,17 @@ import AdminIdentityCompact from './AdminIdentityCompact';
 import {
   type AdminIdentityBanTargetType,
   type AdminIdentityField,
+  type AdminIdentityLike,
   getAdminIdentitySearchValues,
 } from './adminIdentity';
 import MarkdownRenderer from './MarkdownRenderer';
 import { SketchButton } from './SketchUI';
+import type {
+  AdminModerationDrawerRequest,
+  AdminModerationDurationId,
+  AdminModerationQuickPreset,
+  AdminModerationSubmitPayload,
+} from '@/features/admin/components/AdminModerationDrawer';
 
 type ToastType = 'success' | 'error' | 'info' | 'warning';
 type AdminChatMessage = ChatMessage & {
@@ -22,6 +29,7 @@ type AdminChatMessage = ChatMessage & {
 interface AdminChatPanelProps {
   showToast: (message: string, type?: ToastType) => void;
   onPrepareBan?: (type: AdminIdentityBanTargetType, value: string) => void;
+  onOpenModeration?: (request: AdminModerationDrawerRequest) => void;
 }
 
 const REFRESH_INTERVAL_MS = 5000;
@@ -32,6 +40,11 @@ const formatTime = (value: number | null | undefined) => {
 };
 
 const normalizeSearch = (value: string) => String(value || '').trim().toLowerCase();
+const toDatetimeLocalValue = (timestamp: number) => {
+  const date = new Date(timestamp);
+  const offset = date.getTimezoneOffset() * 60 * 1000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+};
 const toPositiveInt = (value: unknown, fallback: number) => {
   const num = Number(value);
   if (!Number.isFinite(num)) return fallback;
@@ -49,6 +62,14 @@ const DEFAULT_CHAT_CONFIG: ChatRoomConfig = {
   messageIntervalMs: 2000,
   maxTextLength: 500,
 };
+const CHAT_ONLY_PERMISSIONS = ['chat'];
+const SITE_BAN_PERMISSIONS = ['post', 'comment', 'like', 'view', 'site', 'chat'];
+const CHAT_BAN_PRESETS: AdminModerationQuickPreset[] = [
+  { id: 'chat-1d', label: '聊天室 1 天', permissions: CHAT_ONLY_PERMISSIONS, duration: '1d' },
+  { id: 'chat-7d', label: '聊天室 7 天', permissions: CHAT_ONLY_PERMISSIONS, duration: '7d' },
+  { id: 'site-7d', label: '全站 7 天', permissions: SITE_BAN_PERMISSIONS, duration: '7d' },
+  { id: 'site-forever', label: '永久封禁', permissions: SITE_BAN_PERMISSIONS, duration: 'forever' },
+];
 const normalizeChatConfig = (input: any): ChatRoomConfig => ({
   chatEnabled: typeof input?.chatEnabled === 'boolean' ? input.chatEnabled : DEFAULT_CHAT_CONFIG.chatEnabled,
   muteAll: Boolean(input?.muteAll),
@@ -64,12 +85,29 @@ const includesSearch = (query: string, fields: Array<string | number | null | un
   return fields.some((field) => String(field || '').toLowerCase().includes(query));
 };
 
+const resolveDurationDefaultsFromMinutes = (minutes: number) => {
+  const safeMinutes = Math.max(1, Math.trunc(minutes));
+  if (safeMinutes === 60) {
+    return { defaultDuration: '1h' as AdminModerationDurationId, defaultCustomUntil: '' };
+  }
+  if (safeMinutes === 24 * 60) {
+    return { defaultDuration: '1d' as AdminModerationDurationId, defaultCustomUntil: '' };
+  }
+  if (safeMinutes === 7 * 24 * 60) {
+    return { defaultDuration: '7d' as AdminModerationDurationId, defaultCustomUntil: '' };
+  }
+  return {
+    defaultDuration: 'custom' as AdminModerationDurationId,
+    defaultCustomUntil: toDatetimeLocalValue(Date.now() + safeMinutes * 60 * 1000),
+  };
+};
+
 const getActionIdentityValue = (identity: {
   identityKey?: string | null;
   fingerprintHash?: string | null;
 }) => String(identity.identityKey || identity.fingerprintHash || '').trim();
 
-const AdminChatPanel: React.FC<AdminChatPanelProps> = ({ showToast, onPrepareBan }) => {
+const AdminChatPanel: React.FC<AdminChatPanelProps> = ({ showToast, onPrepareBan, onOpenModeration }) => {
   const [onlineUsers, setOnlineUsers] = useState<AdminChatOnlineUser[]>([]);
   const [onlineCount, setOnlineCount] = useState(0);
   const [messages, setMessages] = useState<AdminChatMessage[]>([]);
@@ -195,6 +233,101 @@ const AdminChatPanel: React.FC<AdminChatPanelProps> = ({ showToast, onPrepareBan
     );
   }, [runAction, showToast]);
 
+
+  const openBanDrawer = useCallback((params: {
+    title: string;
+    summary?: string;
+    identity?: AdminIdentityLike | null;
+    targetType?: AdminIdentityBanTargetType;
+    targetValue: string;
+    editableTarget?: boolean;
+    reason?: string;
+    durationMinutes?: number;
+    permissions?: string[];
+    ip?: string;
+    allowUnban?: boolean;
+  }) => {
+    const value = String(params.targetValue || '').trim();
+    if (!value) {
+      showToast('缺少身份，无法执行封禁', 'warning');
+      return;
+    }
+    if (!onOpenModeration) {
+      const permissions = params.permissions?.length ? params.permissions : CHAT_ONLY_PERMISSIONS;
+      const scope = permissions.length === 1 && permissions[0] === 'chat' ? 'chat' : 'site';
+      applyBan({
+        identityValue: value,
+        durationMinutes: Math.max(1, Math.trunc(params.durationMinutes || 7 * 24 * 60)),
+        scope,
+        reason: params.reason,
+        ip: params.ip,
+      });
+      return;
+    }
+    const defaults = resolveDurationDefaultsFromMinutes(Math.max(1, Math.trunc(params.durationMinutes || 7 * 24 * 60)));
+    onOpenModeration({
+      title: params.title,
+      description: params.targetType === 'ip'
+        ? '按 IP 执行通用封禁。'
+        : '默认沿用聊天室封禁逻辑，会同步处理身份链与 IP。',
+      summary: params.summary,
+      identity: params.identity,
+      target: {
+        type: params.targetType || 'identity',
+        value,
+        editable: Boolean(params.editableTarget),
+      },
+      defaultReason: params.reason || '',
+      defaultPermissions: params.permissions?.length ? params.permissions : CHAT_ONLY_PERMISSIONS,
+      defaultDuration: defaults.defaultDuration,
+      defaultCustomUntil: defaults.defaultCustomUntil,
+      quickPresets: CHAT_BAN_PRESETS,
+      submitLabel: '确认封禁',
+      secondaryActionLabel: params.allowUnban ? '解除封禁' : undefined,
+      onSubmit: async (payload: AdminModerationSubmitPayload) => {
+        const targetValue = payload.targetValue.trim();
+        if (!targetValue) {
+          throw new Error('缺少身份，无法执行封禁');
+        }
+        if (payload.targetType === 'ip') {
+          await api.handleAdminBan('ban', 'ip', targetValue, payload.reason.trim(), {
+            permissions: payload.permissions,
+            expiresAt: payload.expiresAt,
+          });
+        } else {
+          const permissions = payload.permissions.length ? payload.permissions : CHAT_ONLY_PERMISSIONS;
+          const scope = permissions.length === 1 && permissions[0] === 'chat' ? 'chat' : 'site';
+          await api.banAdminChatUser(targetValue, {
+            expiresAt: payload.expiresAt,
+            permissions,
+            scope,
+            reason: payload.reason.trim(),
+            ip: String(params.ip || '').trim(),
+            identityType: payload.targetType,
+          });
+        }
+        showToast(payload.permissions.length === 1 && payload.permissions[0] === 'chat' ? '已封禁聊天室' : '已封禁站点访问', 'success');
+        await fetchAll(true);
+      },
+      onSecondaryAction: params.allowUnban ? async (payload: AdminModerationSubmitPayload) => {
+        const targetValue = payload.targetValue.trim();
+        if (!targetValue) {
+          throw new Error('缺少身份，无法解除封禁');
+        }
+        if (payload.targetType === 'ip') {
+          await api.handleAdminBan('unban', 'ip', targetValue, payload.reason.trim());
+        } else {
+          await api.unbanAdminChatUser(targetValue, payload.reason.trim(), {
+            identityType: payload.targetType,
+            ip: String(params.ip || '').trim(),
+          });
+        }
+        showToast('已解除封禁', 'success');
+        await fetchAll(true);
+      } : undefined,
+    });
+  }, [applyBan, fetchAll, onOpenModeration, showToast]);
+
   const saveChatConfig = useCallback(() => {
     const safeIntervalSeconds = Math.min(60, toNonNegativeInt(configIntervalSeconds, 2));
     const safeMaxTextLength = Math.min(2000, Math.max(20, toPositiveInt(configMaxTextLength, 500)));
@@ -222,6 +355,36 @@ const AdminChatPanel: React.FC<AdminChatPanelProps> = ({ showToast, onPrepareBan
   const handleIdentityBanPrepare = useCallback((field: AdminIdentityField & { type: AdminIdentityBanTargetType }) => {
     onPrepareBan?.(field.type, field.value);
   }, [onPrepareBan]);
+  const openIdentityFieldBanDrawer = useCallback((
+    field: AdminIdentityField & { type: AdminIdentityBanTargetType },
+    options: {
+      title: string;
+      summary?: string;
+      identity?: AdminIdentityLike | null;
+      reason?: string;
+      durationMinutes?: number;
+      permissions?: string[];
+      ip?: string;
+      allowUnban?: boolean;
+    }
+  ) => {
+    if (onOpenModeration) {
+      openBanDrawer({
+        title: options.title,
+        summary: options.summary,
+        identity: options.identity,
+        targetType: field.type,
+        targetValue: field.value,
+        reason: options.reason,
+        durationMinutes: options.durationMinutes,
+        permissions: options.permissions,
+        ip: options.ip,
+        allowUnban: options.allowUnban,
+      });
+      return;
+    }
+    handleIdentityBanPrepare(field);
+  }, [handleIdentityBanPrepare, onOpenModeration, openBanDrawer]);
   const renderIpActions = useCallback((ip?: string) => {
     const value = String(ip || '').trim();
     if (!value) {
@@ -236,10 +399,23 @@ const AdminChatPanel: React.FC<AdminChatPanelProps> = ({ showToast, onPrepareBan
         >
           搜索
         </button>
-        {onPrepareBan && (
+        {(onOpenModeration || onPrepareBan) && (
           <button
             type="button"
-            onClick={() => onPrepareBan('ip', value)}
+            onClick={() => {
+              if (onOpenModeration) {
+                openBanDrawer({
+                  title: 'IP 封禁',
+                  targetType: 'ip',
+                  targetValue: value,
+                  permissions: SITE_BAN_PERMISSIONS,
+                  durationMinutes: 7 * 24 * 60,
+                  allowUnban: true,
+                });
+                return;
+              }
+              onPrepareBan?.('ip', value);
+            }}
             className="rounded border border-gray-300 px-1.5 py-0.5 text-[10px] font-bold text-gray-600 hover:border-ink hover:text-ink"
           >
             封禁
@@ -247,7 +423,7 @@ const AdminChatPanel: React.FC<AdminChatPanelProps> = ({ showToast, onPrepareBan
         )}
       </span>
     );
-  }, [onPrepareBan]);
+  }, [onOpenModeration, onPrepareBan, openBanDrawer]);
 
   const filteredOnlineUsers = useMemo(() => {
     if (!search) {
@@ -472,26 +648,17 @@ const AdminChatPanel: React.FC<AdminChatPanelProps> = ({ showToast, onPrepareBan
             variant="secondary"
             className="h-8 px-3 text-xs"
             disabled={!manualIdentityValue || Boolean(busyKey)}
-            onClick={() => applyBan({
-              identityValue: manualIdentityValue,
-              durationMinutes: toPositiveInt(manualBanDays, 7) * 24 * 60,
-              scope: manualScope,
+            onClick={() => openBanDrawer({
+              title: '聊天室封禁处置',
+              targetValue: manualIdentityValue,
+              editableTarget: true,
               reason: manualReason,
+              durationMinutes: toPositiveInt(manualBanDays, 7) * 24 * 60,
+              permissions: manualScope === 'site' ? SITE_BAN_PERMISSIONS : CHAT_ONLY_PERMISSIONS,
+              allowUnban: true,
             })}
           >
-            封禁
-          </SketchButton>
-          <SketchButton
-            variant="secondary"
-            className="h-8 px-3 text-xs"
-            disabled={!manualIdentityValue || Boolean(busyKey)}
-            onClick={() => runAction(
-              `unban:${manualIdentityValue}`,
-              () => api.unbanAdminChatUser(manualIdentityValue, manualReason),
-              '已解除封禁',
-            )}
-          >
-            解除封禁
+            封禁处置
           </SketchButton>
         </div>
       </div>
@@ -514,7 +681,13 @@ const AdminChatPanel: React.FC<AdminChatPanelProps> = ({ showToast, onPrepareBan
                         showSession={false}
                         actions={{
                           onSearch: handleIdentitySearch,
-                          onBan: onPrepareBan ? handleIdentityBanPrepare : undefined,
+                          onBan: (field) => openIdentityFieldBanDrawer(field, {
+                            title: field.type === 'ip' ? 'IP 封禁' : '聊天室封禁处置',
+                            identity: user,
+                            durationMinutes: 7 * 24 * 60,
+                            permissions: field.type === 'ip' ? SITE_BAN_PERMISSIONS : CHAT_ONLY_PERMISSIONS,
+                            allowUnban: true,
+                          }),
                         }}
                       />
                       <p className="break-all"><span className="font-bold text-ink">会话：</span>{user.sessionId}</p>
@@ -529,6 +702,7 @@ const AdminChatPanel: React.FC<AdminChatPanelProps> = ({ showToast, onPrepareBan
           )}
         </div>
 
+
         <div className="bg-white border-2 border-ink rounded-lg p-4 shadow-sketch-sm">
           <h4 className="font-display text-lg text-ink mb-3">当前禁言</h4>
           {filteredMutes.length === 0 ? (
@@ -542,7 +716,15 @@ const AdminChatPanel: React.FC<AdminChatPanelProps> = ({ showToast, onPrepareBan
                     label="身份"
                     actions={{
                       onSearch: handleIdentitySearch,
-                      onBan: onPrepareBan ? handleIdentityBanPrepare : undefined,
+                      onBan: (field) => openIdentityFieldBanDrawer(field, {
+                        title: field.type === 'ip' ? 'IP 封禁' : '禁言转封禁',
+                        summary: item.reason || undefined,
+                        identity: item,
+                        reason: field.type === 'ip' ? item.reason || '' : '禁言转封禁',
+                        durationMinutes: 7 * 24 * 60,
+                        permissions: field.type === 'ip' ? SITE_BAN_PERMISSIONS : CHAT_ONLY_PERMISSIONS,
+                        allowUnban: true,
+                      }),
                     }}
                   />
                   <p className="text-xs text-pencil font-sans">截止：{formatTime(item.mutedUntil)}</p>
@@ -564,11 +746,15 @@ const AdminChatPanel: React.FC<AdminChatPanelProps> = ({ showToast, onPrepareBan
                       variant="secondary"
                       className="h-7 px-2 text-[11px]"
                       disabled={Boolean(busyKey)}
-                      onClick={() => applyBan({
-                        identityValue: getActionIdentityValue(item),
-                        durationMinutes: 7 * 24 * 60,
-                        scope: 'chat',
+                      onClick={() => openBanDrawer({
+                        title: '禁言转封禁',
+                        summary: item.reason || undefined,
+                        identity: item,
+                        targetValue: getActionIdentityValue(item),
                         reason: '禁言转封禁',
+                        durationMinutes: 7 * 24 * 60,
+                        permissions: CHAT_ONLY_PERMISSIONS,
+                        allowUnban: true,
                       })}
                     >
                       转封禁
@@ -605,7 +791,7 @@ const AdminChatPanel: React.FC<AdminChatPanelProps> = ({ showToast, onPrepareBan
             />
           </label>
           <label className="text-xs text-pencil font-sans flex items-center gap-2">
-            封禁权限
+            封禁范围
             <select
               value={messageBanScope}
               onChange={(event) => setMessageBanScope(event.target.value === 'site' ? 'site' : 'chat')}
@@ -636,7 +822,16 @@ const AdminChatPanel: React.FC<AdminChatPanelProps> = ({ showToast, onPrepareBan
                       showIp={false}
                       actions={{
                         onSearch: handleIdentitySearch,
-                        onBan: onPrepareBan ? handleIdentityBanPrepare : undefined,
+                        onBan: (field) => openIdentityFieldBanDrawer(field, {
+                          title: '消息封禁',
+                          summary: message.content || message.imageUrl || message.stickerCode || `消息 #${message.id}`,
+                          identity: message,
+                          reason: `管理员封禁（消息#${message.id}）`,
+                          durationMinutes: messageBanMinutes,
+                          permissions: messageBanScope === 'site' ? SITE_BAN_PERMISSIONS : CHAT_ONLY_PERMISSIONS,
+                          ip: String(message.ip || ''),
+                          allowUnban: true,
+                        }),
                       }}
                     />
                     <p className="break-all">
@@ -675,12 +870,16 @@ const AdminChatPanel: React.FC<AdminChatPanelProps> = ({ showToast, onPrepareBan
                         variant="secondary"
                         className="h-7 px-2 text-[11px] inline-flex items-center gap-1"
                         disabled={Boolean(busyKey) || !getActionIdentityValue(message)}
-                        onClick={() => applyBan({
-                          identityValue: getActionIdentityValue(message),
+                        onClick={() => openBanDrawer({
+                          title: '消息封禁',
+                          summary: message.content || message.imageUrl || message.stickerCode || `消息 #${message.id}`,
+                          identity: message,
+                          targetValue: getActionIdentityValue(message),
                           ip: String(message.ip || ''),
-                          durationMinutes: messageBanMinutes,
-                          scope: messageBanScope,
                           reason: `管理员封禁（消息#${message.id}）`,
+                          durationMinutes: messageBanMinutes,
+                          permissions: messageBanScope === 'site' ? SITE_BAN_PERMISSIONS : CHAT_ONLY_PERMISSIONS,
+                          allowUnban: true,
                         })}
                       >
                         <Ban size={12} /> 封禁
@@ -698,7 +897,7 @@ const AdminChatPanel: React.FC<AdminChatPanelProps> = ({ showToast, onPrepareBan
                   <MarkdownRenderer content={message.content || ''} className="text-sm text-ink" />
                 )}
                 {!message.deleted && !getActionIdentityValue(message) && (
-                  <p className="text-[11px] text-amber-700 font-sans mt-2">该消息缺少身份标识，无法执行禁言/封禁。</p>
+                  <p className="text-[11px] text-amber-700 font-sans mt-2">该消息缺少身份标识，无法执行禁言或封禁。</p>
                 )}
               </div>
             ))}
