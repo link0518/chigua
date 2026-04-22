@@ -97,6 +97,26 @@
     role: 'guest',
   });
 
+  const readGuestPostIdentityByActor = (postId, identityHashes) => {
+    const match = buildIdentityMatch('fingerprint', identityHashes);
+    if (!match.params.length) {
+      return null;
+    }
+    return readStoredPostIdentity(
+      db.prepare(
+        `
+        SELECT post_identity_key, post_identity_label, post_identity_role
+        FROM comments
+        WHERE post_id = ?
+          AND post_identity_role = 'guest'
+          AND ${match.clause}
+        ORDER BY created_at ASC
+        LIMIT 1
+        `
+      ).get(postId, ...match.params)
+    );
+  };
+
   const createCommentWithPostIdentity = db.transaction((payload) => {
     const {
       commentId,
@@ -108,6 +128,7 @@
       finalReplyToId,
       now,
       fingerprint,
+      actorIdentityHashes,
       clientIp,
     } = payload;
 
@@ -119,16 +140,8 @@
       if (actorIdentityKey && postOwnerIdentityKey && actorIdentityKey === postOwnerIdentityKey) {
         postIdentity = { key: 'op', label: '楼主', role: 'op' };
       } else if (actorIdentityKey) {
-        const existingIdentity = readStoredPostIdentity(
-          db.prepare(
-            `
-            SELECT post_identity_key, post_identity_label, post_identity_role
-            FROM comments
-            WHERE post_id = ? AND post_identity_key = ?
-            LIMIT 1
-            `
-          ).get(postId, actorIdentityKey)
-        );
+        // 帖内展示身份存的是 guest-N，需要按评论作者身份查历史评论来复用标签。
+        const existingIdentity = readGuestPostIdentityByActor(postId, actorIdentityHashes);
         if (existingIdentity) {
           postIdentity = existingIdentity;
         } else {
@@ -376,6 +389,7 @@
     const commentId = crypto.randomUUID();
     const finalParentId = parentRow?.parent_id ? parentRow.parent_id : parentId || null;
     const finalReplyToId = replyToId || parentId || null;
+    const actorIdentityHashes = getIdentityLookupHashes(req, res);
 
     const postIdentity = createCommentWithPostIdentity({
       commentId,
@@ -387,12 +401,12 @@
       finalReplyToId,
       now,
       fingerprint,
+      actorIdentityHashes,
       clientIp,
     });
 
     const commentPreview = trimPreview(content);
     const actorIdentityContext = getRequestIdentityContext(req, res);
-    const actorIdentityHashes = getIdentityLookupHashes(req, res);
     let replyRecipient = '';
     let replyRecipientIdentityKey = '';
     if (finalReplyToId) {

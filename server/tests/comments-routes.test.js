@@ -317,6 +317,77 @@ test('新帖下其他用户评论时会创建 post_comment 提醒，并分配首
   db.close();
 });
 
+test('同一用户在同一帖内再次评论时会复用已有的瓜友身份', async () => {
+  const db = createDb();
+  const notifications = [];
+  const postCreatedAt = Date.UTC(2026, 2, 7, 13, 0, 0, 0);
+  insertPost(db, {
+    id: 'post-2-reuse',
+    fingerprint: 'canonical-owner',
+    createdAt: postCreatedAt,
+    commentIdentityEnabled: 1,
+    commentIdentityGuestSeq: 1,
+  });
+  db.prepare(
+    `
+      INSERT INTO comments (
+        id,
+        post_id,
+        parent_id,
+        reply_to_id,
+        content,
+        author,
+        created_at,
+        fingerprint,
+        ip,
+        deleted,
+        post_identity_key,
+        post_identity_label,
+        post_identity_role
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
+    `
+  ).run('comment-reuse-1', 'post-2-reuse', null, null, '昨天的评论', '匿名', postCreatedAt, 'legacy-user', '127.0.0.1', 'guest-1', '瓜友01', 'guest');
+
+  const handler = registerCommentRoute(db, notifications, {
+    actorLegacyHash: 'legacy-user',
+    actorCanonicalHash: 'canonical-user',
+    requiredFingerprint: 'canonical-user',
+    resolveStoredIdentityHash: createIdentityResolver({
+      'canonical-user': {
+        type: 'identity',
+        identityKey: 'canonical-user',
+        identityHashes: ['canonical-user', 'legacy-user'],
+        legacyFingerprintHash: 'legacy-user',
+      },
+      'legacy-user': {
+        type: 'identity',
+        identityKey: 'canonical-user',
+        identityHashes: ['canonical-user', 'legacy-user'],
+        legacyFingerprintHash: 'legacy-user',
+      },
+    }),
+  });
+  const req = {
+    params: { id: 'post-2-reuse' },
+    body: { content: '今天再说一句', parentId: '', replyToId: '' },
+  };
+  const res = createResponse();
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 201);
+  assert.deepEqual(res.payload.comment.postIdentity, {
+    key: 'guest-1',
+    label: '瓜友01',
+    role: 'guest',
+  });
+  assert.equal(
+    db.prepare('SELECT comment_identity_guest_seq FROM posts WHERE id = ?').get('post-2-reuse').comment_identity_guest_seq,
+    1,
+  );
+  db.close();
+});
+
 test('帖子作者既是被回复者又是帖子作者时，不会因为新旧身份并存收到两条提醒', async () => {
   const db = createDb();
   const notifications = [];
