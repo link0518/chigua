@@ -9,6 +9,7 @@ import {
   LineChart,
   Line,
 } from 'recharts';
+import { roughBorderClassSm } from '@/components/SketchUI';
 import AdminReportCard from '@/features/admin/components/AdminReportCard';
 import AdminStatCard from '@/features/admin/components/AdminStatCard';
 import type { AdminChartDatum, RenderIdentity, ReportAction } from '@/features/admin/types';
@@ -85,7 +86,7 @@ const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
         title="总帖子数"
         value={totalPosts.toString()}
         trend="活跃"
-        trendUp={true}
+        trendUp
         icon={<BarChart2 size={80} />}
         color="bg-marker-green"
       />
@@ -93,7 +94,7 @@ const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
         title="版本号"
         value={appVersionLabel}
         trend="自动更新"
-        trendUp={true}
+        trendUp
         icon={<CheckCircle size={80} />}
         color="bg-white"
         valueClassName="text-3xl md:text-4xl leading-tight break-all"
@@ -101,11 +102,11 @@ const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
     </section>
 
     <section className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-      <div className="bg-white p-6 border-2 border-ink shadow-sketch rounded-lg">
+      <div className={`bg-white p-6 border-2 border-ink shadow-sketch ${roughBorderClassSm}`}>
         <div className="flex justify-between items-start mb-6">
           <div>
             <h3 className="font-display text-lg">每日发帖量</h3>
-            <p className="text-pencil text-xs font-sans">近7天数据</p>
+            <p className="text-pencil text-xs font-sans">近 7 天数据</p>
           </div>
           <p className="font-display text-2xl">{postVolumeData.reduce((sum, item) => sum + item.value, 0)}</p>
         </div>
@@ -121,7 +122,7 @@ const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
         </div>
       </div>
 
-      <div className="bg-white p-6 border-2 border-ink shadow-sketch rounded-lg">
+      <div className={`bg-white p-6 border-2 border-ink shadow-sketch ${roughBorderClassSm}`}>
         <div className="flex items-start justify-between gap-4">
           <div>
             <h3 className="font-display text-lg">访问统计</h3>

@@ -6,6 +6,7 @@ module.exports = {
     './api.ts',
     './types.ts',
     './components/**/*.{ts,tsx}',
+    './features/**/*.{ts,tsx}',
     './store/**/*.{ts,tsx}',
   ],
   theme: {
