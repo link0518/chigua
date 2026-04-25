@@ -222,6 +222,10 @@ export const api = {
     method: 'POST',
     body: JSON.stringify({ action, reason }),
   }),
+  batchAdminRumors: (payload = {}) => apiFetch('/admin/rumors/batch', {
+    method: 'POST',
+    body: JSON.stringify(payload || {}),
+  }),
   getAdminFeedback: (params = {}) => apiFetch(`/admin/feedback${toQuery(params)}`),
   getAdminWikiRevisions: (params = {}) => apiFetch(`/admin/wiki/revisions${toQuery(params)}`),
   getAdminWikiEntries: (params = {}) => apiFetch(`/admin/wiki/entries${toQuery(params)}`),

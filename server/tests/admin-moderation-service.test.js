@@ -343,3 +343,39 @@ test('举报批量处理只更新 pending 记录', () => {
 
   db.close();
 });
+
+test('举报批量忽略只更新 pending 记录并写入 ignored 状态', () => {
+  const { db, service, logs, req } = createHarness();
+
+  db.prepare('INSERT INTO reports (id, status, action, target_type, post_id, comment_id) VALUES (?, ?, ?, ?, ?, ?)')
+    .run('report-1', 'pending', null, 'post', 'post-1', null);
+  db.prepare('INSERT INTO reports (id, status, action, target_type, post_id, comment_id) VALUES (?, ?, ?, ?, ?, ?)')
+    .run('report-2', 'pending', null, 'comment', 'post-2', 'comment-2');
+  db.prepare('INSERT INTO reports (id, status, action, target_type, post_id, comment_id) VALUES (?, ?, ?, ?, ?, ?)')
+    .run('report-3', 'resolved', 'reviewed', 'post', 'post-3', null);
+
+  const result = service.executeReportBatchResolve({
+    req,
+    ids: ['report-1', 'report-2', 'report-3'],
+    action: 'ignore',
+    reason: 'batch ignore',
+    now: 1700000000000,
+  });
+
+  assert.deepEqual(result, { updated: 2 });
+  assert.deepEqual(
+    db.prepare('SELECT status, action FROM reports WHERE id = ?').get('report-1'),
+    { status: 'ignored', action: 'ignore' }
+  );
+  assert.deepEqual(
+    db.prepare('SELECT status, action FROM reports WHERE id = ?').get('report-2'),
+    { status: 'ignored', action: 'ignore' }
+  );
+  assert.deepEqual(
+    db.prepare('SELECT status, action FROM reports WHERE id = ?').get('report-3'),
+    { status: 'resolved', action: 'reviewed' }
+  );
+  assert.equal(logs.filter((item) => item.action === 'report_ignore').length, 2);
+
+  db.close();
+});

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
+  EyeOff,
   FileText,
   MessageSquare,
   RotateCcw,
@@ -23,9 +24,18 @@ interface AdminRumorPanelProps {
 
 type RumorTab = 'pending' | 'suspected' | 'rejected';
 type RumorTargetFilter = 'all' | 'post' | 'comment';
+type RumorAction = 'mark' | 'reject' | 'clear' | 'ignore';
+type RumorBatchTarget = Pick<RumorReviewItem, 'targetType' | 'targetId'>;
 type RejectModalState = {
   isOpen: boolean;
   item: RumorReviewItem | null;
+  reason: string;
+};
+type BulkIgnoreModalState = {
+  isOpen: boolean;
+  scope: 'selected' | 'filter';
+  targets: RumorBatchTarget[];
+  targetCount: number;
   reason: string;
 };
 
@@ -47,9 +57,18 @@ const AdminRumorPanel: React.FC<AdminRumorPanelProps> = ({ showToast, onPendingC
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [actingId, setActingId] = useState('');
+  const [bulkIgnoring, setBulkIgnoring] = useState(false);
+  const [selectedRumors, setSelectedRumors] = useState<Set<string>>(new Set());
   const [rejectModal, setRejectModal] = useState<RejectModalState>({
     isOpen: false,
     item: null,
+    reason: '',
+  });
+  const [bulkIgnoreModal, setBulkIgnoreModal] = useState<BulkIgnoreModalState>({
+    isOpen: false,
+    scope: 'selected',
+    targets: [],
+    targetCount: 0,
     reason: '',
   });
 
@@ -80,6 +99,10 @@ const AdminRumorPanel: React.FC<AdminRumorPanelProps> = ({ showToast, onPendingC
     loadItems();
   }, [loadItems]);
 
+  useEffect(() => {
+    setSelectedRumors(new Set());
+  }, [page, search, tab, targetType]);
+
   const pendingPreviewCount = useMemo(
     () => (tab === 'pending' ? total : items.filter((item) => item.pendingReportCount > 0).length),
     [items, tab, total]
@@ -93,7 +116,7 @@ const AdminRumorPanel: React.FC<AdminRumorPanelProps> = ({ showToast, onPendingC
     });
   };
 
-  const submitAction = async (item: RumorReviewItem, action: 'mark' | 'reject' | 'clear', reason = '') => {
+  const submitAction = async (item: RumorReviewItem, action: RumorAction, reason = '') => {
     setActingId(item.id);
     try {
       await api.handleAdminRumor(item.targetType, item.targetId, action, reason);
@@ -102,8 +125,10 @@ const AdminRumorPanel: React.FC<AdminRumorPanelProps> = ({ showToast, onPendingC
           ? '已判定为疑似谣言'
           : action === 'reject'
             ? '已驳回谣言举报'
-            : '已取消谣言标记',
-        'success'
+            : action === 'ignore'
+              ? '已忽略谣言举报'
+              : '已取消谣言标记',
+        action === 'ignore' ? 'info' : 'success'
       );
       if (action === 'reject') {
         closeRejectModal();
@@ -117,7 +142,7 @@ const AdminRumorPanel: React.FC<AdminRumorPanelProps> = ({ showToast, onPendingC
     }
   };
 
-  const handleAction = (item: RumorReviewItem, action: 'mark' | 'reject' | 'clear') => {
+  const handleAction = (item: RumorReviewItem, action: RumorAction) => {
     if (action === 'reject') {
       setRejectModal({
         isOpen: true,
@@ -127,6 +152,105 @@ const AdminRumorPanel: React.FC<AdminRumorPanelProps> = ({ showToast, onPendingC
       return;
     }
     void submitAction(item, action);
+  };
+
+  const selectableItems = useMemo(
+    () => (tab === 'pending' ? items.filter((item) => item.pendingReportCount > 0) : []),
+    [items, tab]
+  );
+
+  const selectedTargets = useMemo(
+    () => selectableItems
+      .filter((item) => selectedRumors.has(item.id))
+      .map((item) => ({ targetType: item.targetType, targetId: item.targetId })),
+    [selectableItems, selectedRumors]
+  );
+
+  const toggleRumorSelection = (itemId: string) => {
+    setSelectedRumors((prev) => {
+      const next = new Set(prev);
+      if (next.has(itemId)) {
+        next.delete(itemId);
+      } else {
+        next.add(itemId);
+      }
+      return next;
+    });
+  };
+
+  const toggleAllRumors = () => {
+    if (selectableItems.length === 0) {
+      return;
+    }
+    setSelectedRumors((prev) => {
+      const allSelected = selectableItems.every((item) => prev.has(item.id));
+      if (allSelected) {
+        return new Set();
+      }
+      return new Set(selectableItems.map((item) => item.id));
+    });
+  };
+
+  const openBulkIgnoreModal = (scope: 'selected' | 'filter') => {
+    if (tab !== 'pending') {
+      showToast('只能忽略待审核的谣言举报', 'warning');
+      return;
+    }
+    const targets = scope === 'selected' ? selectedTargets : [];
+    const targetCount = scope === 'selected' ? targets.length : total;
+    if (targetCount === 0) {
+      showToast('暂无可忽略的谣言举报', 'warning');
+      return;
+    }
+    setBulkIgnoreModal({
+      isOpen: true,
+      scope,
+      targets,
+      targetCount,
+      reason: '',
+    });
+  };
+
+  const closeBulkIgnoreModal = () => {
+    setBulkIgnoreModal({
+      isOpen: false,
+      scope: 'selected',
+      targets: [],
+      targetCount: 0,
+      reason: '',
+    });
+  };
+
+  const confirmBulkIgnore = async () => {
+    setBulkIgnoring(true);
+    try {
+      await api.batchAdminRumors(
+        bulkIgnoreModal.scope === 'filter'
+          ? {
+            action: 'ignore',
+            scope: 'filter',
+            status: tab,
+            targetType,
+            q: search,
+            reason: bulkIgnoreModal.reason,
+          }
+          : {
+            action: 'ignore',
+            scope: 'selected',
+            targets: bulkIgnoreModal.targets,
+            reason: bulkIgnoreModal.reason,
+          }
+      );
+      showToast('已批量忽略谣言举报', 'info');
+      closeBulkIgnoreModal();
+      setSelectedRumors(new Set());
+      await loadItems();
+      onPendingCountChange?.();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : '批量忽略失败', 'error');
+    } finally {
+      setBulkIgnoring(false);
+    }
   };
 
   const confirmReject = async () => {
@@ -216,6 +340,42 @@ const AdminRumorPanel: React.FC<AdminRumorPanelProps> = ({ showToast, onPendingC
             className="w-full rounded-full border-2 border-ink bg-white py-2 pl-9 pr-4 text-sm outline-none"
           />
         </div>
+
+        {tab === 'pending' && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed border-gray-300 bg-gray-50 px-3 py-2 text-xs font-sans">
+            <label className="flex items-center gap-2 text-pencil">
+              <input
+                type="checkbox"
+                className="accent-black"
+                checked={selectableItems.length > 0 && selectableItems.every((item) => selectedRumors.has(item.id))}
+                onChange={toggleAllRumors}
+              />
+              本页全选
+            </label>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-pencil">已选 {selectedRumors.size} 项</span>
+              <SketchButton
+                type="button"
+                variant="secondary"
+                className="h-8 px-3 text-xs"
+                disabled={selectedTargets.length === 0 || bulkIgnoring}
+                onClick={() => openBulkIgnoreModal('selected')}
+              >
+                <EyeOff className="mr-1 inline h-4 w-4" />
+                忽略所选
+              </SketchButton>
+              <SketchButton
+                type="button"
+                variant="secondary"
+                className="h-8 px-3 text-xs"
+                disabled={total === 0 || bulkIgnoring}
+                onClick={() => openBulkIgnoreModal('filter')}
+              >
+                一键忽略当前筛选
+              </SketchButton>
+            </div>
+          </div>
+        )}
       </div>
 
       {loading ? (
@@ -236,6 +396,15 @@ const AdminRumorPanel: React.FC<AdminRumorPanelProps> = ({ showToast, onPendingC
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                   <div className="min-w-0 flex-1 space-y-4">
                     <div className="flex flex-wrap items-center gap-2 text-xs">
+                      {tab === 'pending' && item.pendingReportCount > 0 && (
+                        <input
+                          type="checkbox"
+                          className="accent-black"
+                          checked={selectedRumors.has(item.id)}
+                          onChange={() => toggleRumorSelection(item.id)}
+                          aria-label="选择该谣言举报"
+                        />
+                      )}
                       <Badge color={isComment ? 'bg-marker-blue' : 'bg-marker-green'}>
                         {isComment ? '评论谣言' : '帖子谣言'}
                       </Badge>
@@ -293,6 +462,18 @@ const AdminRumorPanel: React.FC<AdminRumorPanelProps> = ({ showToast, onPendingC
                   </div>
 
                   <div className="flex shrink-0 flex-wrap gap-2 lg:w-[220px] lg:flex-col">
+                    {item.pendingReportCount > 0 && (
+                      <SketchButton
+                        type="button"
+                        variant="secondary"
+                        className="h-10 px-3 text-xs"
+                        disabled={isActing}
+                        onClick={() => handleAction(item, 'ignore')}
+                      >
+                        <EyeOff className="mr-1 inline h-4 w-4" />
+                        忽略举报
+                      </SketchButton>
+                    )}
                     <SketchButton
                       type="button"
                       className="h-10 px-3 text-xs"
@@ -400,6 +581,52 @@ const AdminRumorPanel: React.FC<AdminRumorPanelProps> = ({ showToast, onPendingC
               }}
             >
               确认驳回
+            </SketchButton>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={bulkIgnoreModal.isOpen}
+        onClose={closeBulkIgnoreModal}
+        title="批量忽略谣言举报"
+        panelClassName="max-w-xl"
+      >
+        <div className="space-y-4">
+          <p className="font-hand text-lg text-ink">
+            确定要忽略 <strong className="text-red-600">{bulkIgnoreModal.targetCount}</strong> 项谣言举报吗？
+          </p>
+          <label className="block">
+            <span className="mb-2 block text-sm font-bold text-ink">处理理由（可选）</span>
+            <textarea
+              value={bulkIgnoreModal.reason}
+              onChange={(event) => setBulkIgnoreModal((prev) => ({ ...prev, reason: event.target.value }))}
+              placeholder="填写理由便于审计追溯"
+              rows={4}
+              className="w-full rounded-lg border-2 border-ink bg-white px-3 py-2 text-sm outline-none"
+            />
+          </label>
+
+          <div className="flex justify-end gap-3">
+            <SketchButton
+              type="button"
+              variant="secondary"
+              className="px-4 py-2 text-sm"
+              disabled={bulkIgnoring}
+              onClick={closeBulkIgnoreModal}
+            >
+              取消
+            </SketchButton>
+            <SketchButton
+              type="button"
+              variant="secondary"
+              className="px-4 py-2 text-sm"
+              disabled={bulkIgnoring}
+              onClick={() => {
+                void confirmBulkIgnore();
+              }}
+            >
+              确认忽略
             </SketchButton>
           </div>
         </div>

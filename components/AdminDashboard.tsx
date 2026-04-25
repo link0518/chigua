@@ -278,8 +278,10 @@ const AdminDashboard: React.FC = () => {
   }>({ isOpen: false, action: 'delete', reason: '' });
   const [bulkReportModal, setBulkReportModal] = useState<{
     isOpen: boolean;
+    action: 'resolve' | 'ignore';
+    reportIds: string[];
     reason: string;
-  }>({ isOpen: false, reason: '' });
+  }>({ isOpen: false, action: 'resolve', reportIds: [], reason: '' });
   const [bannedIps, setBannedIps] = useState<Array<{ ip: string; bannedAt: number; expiresAt?: number | null; permissions?: string[]; reason?: string | null }>>([]);
   const [bannedFingerprints, setBannedFingerprints] = useState<Array<{ type?: 'fingerprint' | 'identity'; fingerprint: string; identityKey?: string | null; identityHashes?: string[]; bannedAt: number; expiresAt?: number | null; permissions?: string[]; reason?: string | null }>>([]);
   const [banLoading, setBanLoading] = useState(false);
@@ -1474,21 +1476,22 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
-  const openBulkReportModal = () => {
-    if (selectedReports.size === 0) {
-      showToast('请先选择举报', 'warning');
+  const openBulkReportModal = (action: 'resolve' | 'ignore' = 'resolve', reportIds?: string[]) => {
+    const ids = reportIds ?? Array.from(selectedReports);
+    if (ids.length === 0) {
+      showToast(action === 'ignore' ? '暂无可忽略举报' : '请先选择举报', 'warning');
       return;
     }
-    setBulkReportModal({ isOpen: true, reason: '' });
+    setBulkReportModal({ isOpen: true, action, reportIds: Array.from(new Set(ids)), reason: '' });
   };
 
   const confirmBulkReportAction = async () => {
-    const ids = Array.from(selectedReports);
+    const { action, reportIds, reason } = bulkReportModal;
     try {
-      await api.batchAdminReports('resolve', ids, bulkReportModal.reason);
-      showToast('已标记处理', 'success');
+      await api.batchAdminReports(action, reportIds, reason);
+      showToast(action === 'ignore' ? '已忽略举报' : '已标记处理', action === 'ignore' ? 'info' : 'success');
       setSelectedReports(new Set());
-      setBulkReportModal({ isOpen: false, reason: '' });
+      setBulkReportModal({ isOpen: false, action: 'resolve', reportIds: [], reason: '' });
       await loadReports();
       setReportsLoaded(true);
     } catch (error) {
@@ -3299,12 +3302,12 @@ const AdminDashboard: React.FC = () => {
 
       <Modal
         isOpen={bulkReportModal.isOpen}
-        onClose={() => setBulkReportModal({ isOpen: false, reason: '' })}
-        title="批量标记处理"
+        onClose={() => setBulkReportModal({ isOpen: false, action: 'resolve', reportIds: [], reason: '' })}
+        title={bulkReportModal.action === 'ignore' ? '批量忽略举报' : '批量标记处理'}
       >
         <div className="flex flex-col gap-4">
           <p className="font-hand text-lg text-ink">
-            确定要标记 <strong className="text-red-600">{selectedReports.size}</strong> 条举报为已处理吗？
+            确定要{bulkReportModal.action === 'ignore' ? '忽略' : '标记'} <strong className="text-red-600">{bulkReportModal.reportIds.length}</strong> 条举报吗？
           </p>
           <div>
             <label className="text-xs text-pencil font-sans">处理理由（可选）</label>
@@ -3319,7 +3322,7 @@ const AdminDashboard: React.FC = () => {
             <SketchButton
               variant="secondary"
               className="flex-1"
-              onClick={() => setBulkReportModal({ isOpen: false, reason: '' })}
+              onClick={() => setBulkReportModal({ isOpen: false, action: 'resolve', reportIds: [], reason: '' })}
             >
               取消
             </SketchButton>
@@ -3328,7 +3331,7 @@ const AdminDashboard: React.FC = () => {
               className="flex-1"
               onClick={confirmBulkReportAction}
             >
-              确认标记
+              {bulkReportModal.action === 'ignore' ? '确认忽略' : '确认标记'}
             </SketchButton>
           </div>
         </div>

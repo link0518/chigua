@@ -21,7 +21,7 @@ interface AdminReportsViewProps {
   onReportDetail: (report: Report) => void;
   renderIdentity: RenderIdentity;
   onToggleAllReports: (reportIds: string[]) => void;
-  onOpenBulkReportModal: () => void;
+  onOpenBulkReportModal: (action: 'resolve' | 'ignore', reportIds?: string[]) => void;
   onToggleReportSelection: (reportId: string) => void;
 }
 
@@ -60,17 +60,33 @@ const AdminReportsView: React.FC<AdminReportsViewProps> = ({
             checked={filteredReports.length > 0 && filteredReports.every((report) => selectedReports.has(report.id))}
             onChange={() => onToggleAllReports(filteredReports.map((report) => report.id))}
           />
-          本页全选
+          当前筛选全选
         </label>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <span className="text-pencil">已选 {selectedReports.size} 条</span>
           <SketchButton
             variant="secondary"
             className="h-8 px-3 text-xs"
             disabled={selectedReports.size === 0}
-            onClick={onOpenBulkReportModal}
+            onClick={() => onOpenBulkReportModal('resolve')}
           >
             标记处理
+          </SketchButton>
+          <SketchButton
+            variant="secondary"
+            className="h-8 px-3 text-xs"
+            disabled={selectedReports.size === 0}
+            onClick={() => onOpenBulkReportModal('ignore')}
+          >
+            忽略所选
+          </SketchButton>
+          <SketchButton
+            variant="secondary"
+            className="h-8 px-3 text-xs"
+            disabled={filteredReports.length === 0}
+            onClick={() => onOpenBulkReportModal('ignore', filteredReports.map((report) => report.id))}
+          >
+            一键忽略当前筛选
           </SketchButton>
         </div>
       </div>

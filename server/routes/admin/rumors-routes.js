@@ -51,14 +51,18 @@ export const registerAdminRumorsRoutes = (app, deps) => {
       ? 'suspected'
       : action === 'reject'
         ? 'rejected'
-        : null;
+        : action === 'clear'
+          ? null
+          : (target.rumor_status || null);
 
-    db.prepare(`UPDATE ${table} SET rumor_status = ?, rumor_status_updated_at = ? WHERE id = ?`)
-      .run(nextRumorStatus, now, targetId);
+    if (action !== 'ignore') {
+      db.prepare(`UPDATE ${table} SET rumor_status = ?, rumor_status_updated_at = ? WHERE id = ?`)
+        .run(nextRumorStatus, now, targetId);
+    }
 
     let resolvedCount = 0;
     let notifiedCount = 0;
-    if (action !== 'clear') {
+    if (action === 'mark' || action === 'reject') {
       const notificationType = action === 'mark' ? 'rumor_marked' : 'rumor_rejected';
       const summary = String(
         pendingReports.find((item) => String(item.content_snippet || '').trim())?.content_snippet
@@ -84,20 +88,23 @@ export const registerAdminRumorsRoutes = (app, deps) => {
         });
       });
       notifiedCount = uniqueRecipients.length;
+    }
 
+    if (action === 'mark' || action === 'reject' || action === 'ignore') {
       const targetWhereClause = targetType === 'comment'
         ? "reports.comment_id = ? AND reports.target_type = 'comment'"
         : "reports.post_id = ? AND reports.target_type = 'post'";
       const updateResult = db.prepare(`
         UPDATE reports
-        SET status = 'resolved',
+        SET status = ?,
             action = ?,
             resolved_at = ?
         WHERE ${targetWhereClause}
           AND ${RUMOR_REASON_SQL}
           AND status = 'pending'
       `).run(
-        action === 'mark' ? 'rumor_marked' : 'rumor_rejected',
+        action === 'ignore' ? 'ignored' : 'resolved',
+        action === 'mark' ? 'rumor_marked' : action === 'reject' ? 'rumor_rejected' : 'rumor_ignored',
         now,
         targetId
       );
@@ -112,14 +119,7 @@ export const registerAdminRumorsRoutes = (app, deps) => {
     };
   });
 
-  app.get('/api/admin/rumors', requireAdmin, (req, res) => {
-    const status = normalizeViewStatus(req.query.status);
-    const targetType = normalizeTargetType(req.query.targetType);
-    const search = String(req.query.q || req.query.search || '').trim();
-    const page = Math.max(Number(req.query.page || 1), 1);
-    const limit = Math.min(Math.max(Number(req.query.limit || 10), 1), 50);
-    const offset = (page - 1) * limit;
-
+  const listRumorReviewItems = ({ status, targetType, search }) => {
     const rows = db.prepare(`
       SELECT
         reports.*,
@@ -263,11 +263,74 @@ export const registerAdminRumorsRoutes = (app, deps) => {
       return (b.latestReportedAt || 0) - (a.latestReportedAt || 0);
     });
 
+    return items;
+  };
+
+  const loadRumorTarget = (targetType, targetId) => {
+    const table = targetType === 'comment' ? 'comments' : 'posts';
+    const target = targetType === 'comment'
+      ? db.prepare('SELECT id, post_id, content, rumor_status FROM comments WHERE id = ?').get(targetId)
+      : db.prepare('SELECT id, content, rumor_status FROM posts WHERE id = ?').get(targetId);
+    return { table, target };
+  };
+
+  const getRumorLogAction = (action) => {
+    if (action === 'mark') return 'rumor_mark';
+    if (action === 'reject') return 'rumor_reject';
+    if (action === 'ignore') return 'rumor_ignore';
+    return 'rumor_clear';
+  };
+
+  const runRumorAction = ({ req, targetType, targetId, action, reason }) => {
+    const { table, target } = loadRumorTarget(targetType, targetId);
+    if (!target) {
+      return null;
+    }
+
+    const result = applyRumorAction({
+      action,
+      reason,
+      table,
+      target,
+      targetId,
+      targetType,
+    });
+
+    logAdminAction(req, {
+      action: getRumorLogAction(action),
+      targetType,
+      targetId,
+      before: { rumorStatus: target.rumor_status || null },
+      after: {
+        rumorStatus: result.nextRumorStatus,
+        resolvedCount: result.resolvedCount,
+        notifiedCount: result.notifiedCount,
+      },
+      reason,
+    });
+
+    return {
+      targetType,
+      targetId,
+      rumorStatus: result.nextRumorStatus,
+      resolvedCount: result.resolvedCount,
+      notifiedCount: result.notifiedCount,
+      updatedAt: result.now,
+    };
+  };
+
+  app.get('/api/admin/rumors', requireAdmin, (req, res) => {
+    const status = normalizeViewStatus(req.query.status);
+    const targetType = normalizeTargetType(req.query.targetType);
+    const search = String(req.query.q || req.query.search || '').trim();
+    const page = Math.max(Number(req.query.page || 1), 1);
+    const limit = Math.min(Math.max(Number(req.query.limit || 10), 1), 50);
+    const offset = (page - 1) * limit;
+    const items = listRumorReviewItems({ status, targetType, search });
     const total = items.length;
-    const pagedItems = items.slice(offset, offset + limit);
 
     return res.json({
-      items: pagedItems,
+      items: items.slice(offset, offset + limit),
       total,
       page,
       limit,
@@ -283,51 +346,76 @@ export const registerAdminRumorsRoutes = (app, deps) => {
     if (!['post', 'comment'].includes(targetType) || !targetId) {
       return res.status(400).json({ error: '无效目标' });
     }
-    if (!['mark', 'reject', 'clear'].includes(action)) {
+    if (!['mark', 'reject', 'clear', 'ignore'].includes(action)) {
       return res.status(400).json({ error: '无效操作' });
     }
     if (action === 'reject' && !reason) {
       return res.status(400).json({ error: '请输入驳回理由' });
     }
 
-    const table = targetType === 'comment' ? 'comments' : 'posts';
-    const target = targetType === 'comment'
-      ? db.prepare('SELECT id, post_id, content, rumor_status FROM comments WHERE id = ?').get(targetId)
-      : db.prepare('SELECT id, content, rumor_status FROM posts WHERE id = ?').get(targetId);
-    if (!target) {
+    const result = runRumorAction({ req, targetType, targetId, action, reason });
+    if (!result) {
       return res.status(404).json({ error: '目标不存在' });
     }
 
-    const {
-      now,
-      nextRumorStatus,
-      resolvedCount,
-      notifiedCount,
-    } = applyRumorAction({
-      action,
-      reason,
-      table,
-      target,
-      targetId,
-      targetType,
+    return res.json(result);
+  });
+
+  app.post('/api/admin/rumors/batch', requireAdmin, requireAdminCsrf, (req, res) => {
+    const action = String(req.body?.action || '').trim().toLowerCase();
+    const reason = String(req.body?.reason || '').trim();
+    const scope = String(req.body?.scope || 'selected').trim().toLowerCase();
+
+    if (action !== 'ignore') {
+      return res.status(400).json({ error: '无效操作' });
+    }
+
+    let targets = [];
+    if (scope === 'filter') {
+      const status = normalizeViewStatus(req.body?.status || 'pending');
+      const targetType = normalizeTargetType(req.body?.targetType);
+      const search = String(req.body?.q || req.body?.search || '').trim();
+      // 批量忽略只处理仍有待审举报的目标，避免误改历史审核状态。
+      targets = listRumorReviewItems({ status, targetType, search })
+        .filter((item) => item.pendingReportCount > 0)
+        .map((item) => ({ targetType: item.targetType, targetId: item.targetId }));
+    } else {
+      const rawTargets = Array.isArray(req.body?.targets) ? req.body.targets : [];
+      targets = rawTargets
+        .map((item) => ({
+          targetType: normalizeTargetType(item?.targetType),
+          targetId: String(item?.targetId || '').trim(),
+        }))
+        .filter((item) => ['post', 'comment'].includes(item.targetType) && item.targetId);
+    }
+
+    const dedupedTargets = Array.from(new Map(
+      targets.map((item) => [`${item.targetType}:${item.targetId}`, item])
+    ).values());
+
+    if (!dedupedTargets.length) {
+      return res.status(400).json({ error: '未选择谣言举报' });
+    }
+    if (dedupedTargets.length > 500) {
+      return res.status(400).json({ error: '批量操作数量过多' });
+    }
+
+    let updated = 0;
+    let targetCount = 0;
+    dedupedTargets.forEach((item) => {
+      const result = runRumorAction({
+        req,
+        targetType: item.targetType,
+        targetId: item.targetId,
+        action,
+        reason,
+      });
+      if (result?.resolvedCount > 0) {
+        updated += result.resolvedCount;
+        targetCount += 1;
+      }
     });
 
-    logAdminAction(req, {
-      action: action === 'mark' ? 'rumor_mark' : action === 'reject' ? 'rumor_reject' : 'rumor_clear',
-      targetType,
-      targetId,
-      before: { rumorStatus: target.rumor_status || null },
-      after: { rumorStatus: nextRumorStatus, resolvedCount, notifiedCount },
-      reason,
-    });
-
-    return res.json({
-      targetType,
-      targetId,
-      rumorStatus: nextRumorStatus,
-      resolvedCount,
-      notifiedCount,
-      updatedAt: now,
-    });
+    return res.json({ updated, targetCount });
   });
 };

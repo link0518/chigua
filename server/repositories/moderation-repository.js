@@ -69,6 +69,16 @@ export const createModerationRepository = (db) => {
       .run(resolvedAt, ...ids);
   };
 
+  const ignorePendingReports = (ids, resolvedAt) => {
+    if (!ids.length) {
+      return { changes: 0 };
+    }
+    const placeholders = buildPlaceholders(ids);
+    return db
+      .prepare(`UPDATE reports SET status = 'ignored', action = 'ignore', resolved_at = ? WHERE id IN (${placeholders}) AND status = 'pending'`)
+      .run(resolvedAt, ...ids);
+  };
+
   const listBannedIps = () => db
     .prepare('SELECT ip, banned_at, expires_at, permissions, reason FROM banned_ips ORDER BY banned_at DESC')
     .all();
@@ -105,6 +115,7 @@ export const createModerationRepository = (db) => {
     softDeletePost,
     getReportsByIds,
     resolvePendingReports,
+    ignorePendingReports,
     listBannedIps,
     listBannedFingerprints,
     listBannedIdentities,

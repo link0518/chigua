@@ -256,19 +256,24 @@ export const createAdminModerationService = ({
       return { status: nextStatus, action };
     },
 
-    executeReportBatchResolve({ req, ids, reason, now = Date.now() }) {
+    executeReportBatchResolve({ req, ids, reason, action = 'resolve', now = Date.now() }) {
       const rows = repository.getReportsByIds(ids);
-      const result = repository.resolvePendingReports(ids, now);
+      const isIgnore = action === 'ignore';
+      const result = isIgnore
+        ? repository.ignorePendingReports(ids, now)
+        : repository.resolvePendingReports(ids, now);
+      const nextStatus = isIgnore ? 'ignored' : 'resolved';
+      const nextAction = isIgnore ? 'ignore' : 'reviewed';
 
       rows
         .filter((row) => row.status === 'pending')
         .forEach((row) => {
           logAdminAction(req, {
-            action: 'report_resolve',
+            action: isIgnore ? 'report_ignore' : 'report_resolve',
             targetType: 'report',
             targetId: row.id,
             before: { status: row.status, action: row.action || null },
-            after: { status: 'resolved', action: 'reviewed' },
+            after: { status: nextStatus, action: nextAction },
             reason,
           });
         });

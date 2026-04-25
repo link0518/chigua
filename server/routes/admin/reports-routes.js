@@ -305,7 +305,7 @@ export const registerAdminReportsRoutes = (app, deps) => {
     const reason = String(req.body?.reason || '').trim();
     const reportIds = Array.isArray(req.body?.reportIds) ? req.body.reportIds : [];
 
-    if (action !== 'resolve') {
+    if (!['resolve', 'ignore'].includes(action)) {
       return res.status(400).json({ error: '无效操作' });
     }
 
@@ -322,6 +322,7 @@ export const registerAdminReportsRoutes = (app, deps) => {
         req,
         ids,
         reason,
+        action,
       })
     );
   });
