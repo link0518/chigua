@@ -71,6 +71,7 @@ const DEFAULT_BAN_PRESETS: AdminModerationQuickPreset[] = [
   { id: 'site-7d', label: '全站 7 天', description: '使用全部权限集', permissions: DEFAULT_BAN_PERMISSIONS, duration: '7d' },
   { id: 'site-forever', label: '永久封禁', description: '全站长期生效', permissions: DEFAULT_BAN_PERMISSIONS, duration: 'forever' },
 ];
+const REPORT_BATCH_CHUNK_SIZE = 200;
 const ADMIN_COMPOSE_INCLUDE_DEVELOPER_STORAGE_KEY = 'admin_compose_include_developer';
 const EMPTY_REPORT_CONFIRM_MODAL: ReportConfirmModalState = {
   isOpen: false,
@@ -282,6 +283,7 @@ const AdminDashboard: React.FC = () => {
     reportIds: string[];
     reason: string;
   }>({ isOpen: false, action: 'resolve', reportIds: [], reason: '' });
+  const [bulkReportSubmitting, setBulkReportSubmitting] = useState(false);
   const [bannedIps, setBannedIps] = useState<Array<{ ip: string; bannedAt: number; expiresAt?: number | null; permissions?: string[]; reason?: string | null }>>([]);
   const [bannedFingerprints, setBannedFingerprints] = useState<Array<{ type?: 'fingerprint' | 'identity'; fingerprint: string; identityKey?: string | null; identityHashes?: string[]; bannedAt: number; expiresAt?: number | null; permissions?: string[]; reason?: string | null }>>([]);
   const [banLoading, setBanLoading] = useState(false);
@@ -1487,9 +1489,17 @@ const AdminDashboard: React.FC = () => {
 
   const confirmBulkReportAction = async () => {
     const { action, reportIds, reason } = bulkReportModal;
+    const chunks: string[][] = [];
+    for (let index = 0; index < reportIds.length; index += REPORT_BATCH_CHUNK_SIZE) {
+      chunks.push(reportIds.slice(index, index + REPORT_BATCH_CHUNK_SIZE));
+    }
+    setBulkReportSubmitting(true);
     try {
-      await api.batchAdminReports(action, reportIds, reason);
-      showToast(action === 'ignore' ? '已忽略举报' : '已标记处理', action === 'ignore' ? 'info' : 'success');
+      for (const chunk of chunks) {
+        await api.batchAdminReports(action, chunk, reason);
+      }
+      const batchSuffix = chunks.length > 1 ? `，已自动分 ${chunks.length} 批完成` : '';
+      showToast(`${action === 'ignore' ? '已忽略举报' : '已标记处理'}${batchSuffix}`, action === 'ignore' ? 'info' : 'success');
       setSelectedReports(new Set());
       setBulkReportModal({ isOpen: false, action: 'resolve', reportIds: [], reason: '' });
       await loadReports();
@@ -1497,6 +1507,8 @@ const AdminDashboard: React.FC = () => {
     } catch (error) {
       const message = error instanceof Error ? error.message : '批量处理失败';
       showToast(message, 'error');
+    } finally {
+      setBulkReportSubmitting(false);
     }
   };
 
@@ -3309,6 +3321,11 @@ const AdminDashboard: React.FC = () => {
           <p className="font-hand text-lg text-ink">
             确定要{bulkReportModal.action === 'ignore' ? '忽略' : '标记'} <strong className="text-red-600">{bulkReportModal.reportIds.length}</strong> 条举报吗？
           </p>
+          {bulkReportModal.reportIds.length > REPORT_BATCH_CHUNK_SIZE && (
+            <p className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-3 py-2 text-xs text-pencil font-sans">
+              单批最多处理 {REPORT_BATCH_CHUNK_SIZE} 条，本次会自动分批提交。
+            </p>
+          )}
           <div>
             <label className="text-xs text-pencil font-sans">处理理由（可选）</label>
             <textarea
@@ -3322,6 +3339,7 @@ const AdminDashboard: React.FC = () => {
             <SketchButton
               variant="secondary"
               className="flex-1"
+              disabled={bulkReportSubmitting}
               onClick={() => setBulkReportModal({ isOpen: false, action: 'resolve', reportIds: [], reason: '' })}
             >
               取消
@@ -3329,9 +3347,10 @@ const AdminDashboard: React.FC = () => {
             <SketchButton
               variant="secondary"
               className="flex-1"
+              disabled={bulkReportSubmitting}
               onClick={confirmBulkReportAction}
             >
-              {bulkReportModal.action === 'ignore' ? '确认忽略' : '确认标记'}
+              {bulkReportSubmitting ? '处理中...' : bulkReportModal.action === 'ignore' ? '确认忽略' : '确认标记'}
             </SketchButton>
           </div>
         </div>
