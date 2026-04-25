@@ -2058,7 +2058,7 @@ const AdminDashboard: React.FC = () => {
               aria-label="关闭菜单"
               onClick={() => setMobileNavOpen(false)}
             />
-            <div className="absolute left-0 top-0 h-full w-72 bg-paper border-r-2 border-ink p-6 flex flex-col">
+            <div className="absolute left-0 top-0 h-full h-dvh w-72 bg-paper border-r-2 border-ink px-6 pt-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] flex min-h-0 flex-col">
               <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-2">
                   <div className="w-9 h-9 rounded-full bg-ink border-2 border-ink flex items-center justify-center text-white">
@@ -2078,7 +2078,7 @@ const AdminDashboard: React.FC = () => {
                   <X size={16} />
                 </button>
               </div>
-              <nav className="flex flex-col gap-3 font-sans font-bold text-sm">
+              <nav className="min-h-0 flex-1 overflow-y-auto pr-1 pb-4 flex flex-col gap-3 font-sans font-bold text-sm">
                 <NavItem view="overview" icon={<LayoutDashboard size={18} />} label="概览" onSelect={() => setMobileNavOpen(false)} />
                 <NavItem view="posts" icon={<FileText size={18} />} label="帖子管理" onSelect={() => setMobileNavOpen(false)} />
                 <NavItem view="hidden" icon={<EyeOff size={18} />} label="隐藏内容" onSelect={() => setMobileNavOpen(false)} />
@@ -2093,7 +2093,7 @@ const AdminDashboard: React.FC = () => {
                 <NavItem view="bans" icon={<Shield size={18} />} label="封禁管理" onSelect={() => setMobileNavOpen(false)} />
                 <NavItem view="audit" icon={<ClipboardList size={18} />} label="操作审计" onSelect={() => setMobileNavOpen(false)} />
               </nav>
-              <div className="mt-auto pt-6 border-t-2 border-ink/10">
+              <div className="shrink-0 pt-6 border-t-2 border-ink/10">
                 <button
                   onClick={() => {
                     setMobileNavOpen(false);
