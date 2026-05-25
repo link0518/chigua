@@ -7,7 +7,7 @@ import { SketchButton, Badge } from './SketchUI';
 
 const PAGE_SIZE = 20;
 const DAY_MS = 24 * 60 * 60 * 1000;
-const MAX_DATE_RANGE_DAYS = 7;
+const MAX_DATE_RANGE_DAYS = 30;
 const DATE_INPUT_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 const normalizeTag = (value: string) => String(value || '')
@@ -310,7 +310,7 @@ const SearchView: React.FC = () => {
           <div className="absolute -bottom-2 left-0 w-full h-3 bg-highlight/60 -z-10 -rotate-1 skew-x-12"></div>
         </h2>
         <p className="mt-3 text-sm text-pencil font-sans">
-          支持关键词、标签和日期区间搜索，时间范围最多 7 天
+          支持关键词、标签和日期区间搜索，时间范围最多 30 天
         </p>
 
         <div className="mt-6 flex justify-center">

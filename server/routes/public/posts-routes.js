@@ -27,7 +27,7 @@
   const MAX_TAG_LENGTH = 6;
   const MAX_DEFAULT_TAGS = 50;
   const DAY_MS = 24 * 60 * 60 * 1000;
-  const MAX_SEARCH_RANGE_DAYS = 7;
+  const MAX_SEARCH_RANGE_DAYS = 30;
   const DATE_INPUT_RE = /^\d{4}-\d{2}-\d{2}$/;
 
   const normalizeTag = (value) => String(value || '')
