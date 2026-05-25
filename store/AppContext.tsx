@@ -2,9 +2,13 @@
 import { api } from '../api';
 import { Comment, Post, Report, ReportSubmissionPayload, ReportSubmissionResult } from '../types';
 import {
+  normalizeHiddenPostKeyword,
+  normalizeHiddenPostKeywordList,
   normalizeHiddenPostTag,
   normalizeHiddenPostTagList,
+  readHiddenPostKeywords,
   readHiddenPostTags,
+  writeHiddenPostKeywords,
   writeHiddenPostTags,
 } from './hiddenPostTags';
 import { dispatchAutoHiddenEvent } from './contentVisibility';
@@ -53,6 +57,7 @@ interface AppState {
   dislikedPosts: Set<string>;
   favoritedPosts: Set<string>;
   hiddenPostTags: string[];
+  hiddenPostKeywords: string[];
   adminSession: AdminSession;
   settings: AppSettings;
 }
@@ -90,7 +95,9 @@ interface AppContextType {
   showToast: (message: string, type?: Toast['type']) => void;
   removeToast: (id: string) => void;
   toggleHiddenPostTag: (tag: string) => void;
+  toggleHiddenPostKeyword: (keyword: string) => void;
   clearHiddenPostTags: () => void;
+  clearHiddenPostKeywords: () => void;
   isLiked: (postId: string) => boolean;
   isDisliked: (postId: string) => boolean;
   isFavorited: (postId: string) => boolean;
@@ -134,6 +141,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     dislikedPosts: new Set(),
     favoritedPosts: new Set(),
     hiddenPostTags: readHiddenPostTags(),
+    hiddenPostKeywords: readHiddenPostKeywords(),
     adminSession: { loggedIn: false, checked: false, disabled: false, csrfToken: null },
     settings: {
       chatEnabled: true,
@@ -147,6 +155,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   React.useEffect(() => {
     writeHiddenPostTags(state.hiddenPostTags);
   }, [state.hiddenPostTags]);
+
+  React.useEffect(() => {
+    writeHiddenPostKeywords(state.hiddenPostKeywords);
+  }, [state.hiddenPostKeywords]);
 
   const showToast = useCallback((message: string, type: Toast['type'] = 'info') => {
     const newToast: Toast = {
@@ -189,6 +201,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setState((prev) => ({
       ...prev,
       hiddenPostTags: [],
+    }));
+  }, []);
+
+  const toggleHiddenPostKeyword = useCallback((keyword: string) => {
+    const normalized = normalizeHiddenPostKeyword(keyword);
+    if (!normalized) {
+      return;
+    }
+
+    setState((prev) => {
+      const nextKeywords = prev.hiddenPostKeywords.some((item) => item.toLowerCase() === normalized.toLowerCase())
+        ? prev.hiddenPostKeywords.filter((item) => item.toLowerCase() !== normalized.toLowerCase())
+        : [...prev.hiddenPostKeywords, normalized];
+
+      return {
+        ...prev,
+        hiddenPostKeywords: normalizeHiddenPostKeywordList(nextKeywords),
+      };
+    });
+  }, []);
+
+  const clearHiddenPostKeywords = useCallback(() => {
+    setState((prev) => ({
+      ...prev,
+      hiddenPostKeywords: [],
     }));
   }, []);
 
@@ -591,7 +628,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       showToast,
       removeToast,
       toggleHiddenPostTag,
+      toggleHiddenPostKeyword,
       clearHiddenPostTags,
+      clearHiddenPostKeywords,
       isLiked,
       isDisliked,
       isFavorited,
@@ -624,7 +663,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       showToast,
       removeToast,
       toggleHiddenPostTag,
+      toggleHiddenPostKeyword,
       clearHiddenPostTags,
+      clearHiddenPostKeywords,
       isLiked,
       isDisliked,
       isFavorited,

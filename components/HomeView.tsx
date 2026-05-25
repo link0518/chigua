@@ -24,7 +24,7 @@ import Modal from './Modal';
 import ReportModal from './ReportModal';
 import { SketchButton } from './SketchUI';
 import Turnstile, { TurnstileHandle } from './Turnstile';
-import { postMatchesHiddenTags } from '../store/hiddenPostTags';
+import { postMatchesHiddenFilters } from '../store/hiddenPostTags';
 
 type HomeViewMode = 'focus' | 'grid';
 
@@ -110,17 +110,18 @@ const HomeView: React.FC = () => {
   const routeCommentKey = routePostId && routeCommentId ? `${routePostId}:${routeCommentId}` : '';
   const allPosts = getHomePosts();
   const hiddenPostTags = state.hiddenPostTags;
+  const hiddenPostKeywords = state.hiddenPostKeywords;
   const posts = useMemo(
     () => (
       routePostId
         ? allPosts
-        : allPosts.filter((post) => !postMatchesHiddenTags(post.tags, hiddenPostTags))
+        : allPosts.filter((post) => !postMatchesHiddenFilters(post, hiddenPostTags, hiddenPostKeywords))
     ),
-    [allPosts, hiddenPostTags, routePostId]
+    [allPosts, hiddenPostKeywords, hiddenPostTags, routePostId]
   );
   const loadedPostCount = allPosts.length;
-  const hasHiddenTagFilter = hiddenPostTags.length > 0;
-  const hiddenOnlyEmptyState = !routePostId && loadedPostCount > 0 && posts.length === 0 && hasHiddenTagFilter;
+  const hasHiddenPostFilter = hiddenPostTags.length > 0 || hiddenPostKeywords.length > 0;
+  const hiddenOnlyEmptyState = !routePostId && loadedPostCount > 0 && posts.length === 0 && hasHiddenPostFilter;
   const boundedIndex = posts.length ? Math.min(currentIndex, posts.length - 1) : 0;
   const currentPost = posts[boundedIndex];
   const commentTargetPost = useMemo(

@@ -4,7 +4,12 @@ import { Bell, Settings2 } from 'lucide-react';
 import { api } from '../api';
 import type { UpdateAnnouncementItem } from '../types';
 import { useApp } from '../store/AppContext';
-import { normalizeHiddenPostTag, normalizeHiddenPostTagList } from '../store/hiddenPostTags';
+import {
+  HIDDEN_POST_KEYWORDS_LIMIT,
+  normalizeHiddenPostKeyword,
+  normalizeHiddenPostTag,
+  normalizeHiddenPostTagList,
+} from '../store/hiddenPostTags';
 import MarkdownRenderer from './MarkdownRenderer';
 import Modal from './Modal';
 import { SketchButton } from './SketchUI';
@@ -33,11 +38,18 @@ const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
   updateAnnouncementsUnread = false,
   onUpdateAnnouncementsSeen,
 }) => {
-  const { state, toggleHiddenPostTag, clearHiddenPostTags } = useApp();
+  const {
+    state,
+    toggleHiddenPostTag,
+    toggleHiddenPostKeyword,
+    clearHiddenPostTags,
+    clearHiddenPostKeywords,
+  } = useApp();
   const [activeTab, setActiveTab] = useState<SettingsTab>('hiddenTags');
   const [loadingTags, setLoadingTags] = useState(false);
   const [loadingAnnouncements, setLoadingAnnouncements] = useState(false);
   const [availableTags, setAvailableTags] = useState<string[]>([]);
+  const [keywordInput, setKeywordInput] = useState('');
   const [updateAnnouncements, setUpdateAnnouncements] = useState<UpdateAnnouncementItem[]>([]);
 
   useEffect(() => {
@@ -112,6 +124,25 @@ const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
     });
     return normalizeHiddenPostTagList(merged);
   }, [availableTags, state.hiddenPostTags]);
+
+  const addHiddenPostKeyword = () => {
+    const normalized = normalizeHiddenPostKeyword(keywordInput);
+    if (!normalized) {
+      return;
+    }
+    if (state.hiddenPostKeywords.some((keyword) => keyword.toLowerCase() === normalized.toLowerCase())) {
+      setKeywordInput('');
+      return;
+    }
+    toggleHiddenPostKeyword(normalized);
+    setKeywordInput('');
+  };
+
+  const clearHiddenPostFilters = () => {
+    clearHiddenPostTags();
+    clearHiddenPostKeywords();
+    setKeywordInput('');
+  };
 
   const formatAnnouncementTime = (value: number) => new Date(value).toLocaleString('zh-CN');
 
@@ -190,6 +221,52 @@ const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
 
             <div>
               <div className="mb-2 flex items-center justify-between gap-3">
+                <span className="font-sans text-sm font-bold text-ink">已屏蔽关键词</span>
+                <span className="text-xs text-pencil">{state.hiddenPostKeywords.length} / {HIDDEN_POST_KEYWORDS_LIMIT}</span>
+              </div>
+              {state.hiddenPostKeywords.length > 0 && (
+                <div className="mb-3 flex flex-wrap gap-2">
+                  {state.hiddenPostKeywords.map((keyword) => (
+                    <button
+                      key={`hidden-keyword-${keyword}`}
+                      type="button"
+                      onClick={() => toggleHiddenPostKeyword(keyword)}
+                      className="rounded-full border border-ink bg-highlight px-3 py-1 text-xs font-bold text-ink transition-opacity hover:opacity-80"
+                    >
+                      {keyword} ×
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={keywordInput}
+                  onChange={(event) => setKeywordInput(event.target.value)}
+                  aria-label="屏蔽关键词"
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      addHiddenPostKeyword();
+                    }
+                  }}
+                  className="min-w-0 flex-1 rounded-full border-2 border-ink bg-white px-4 py-2 text-sm font-sans outline-none focus:shadow-sketch-sm"
+                  disabled={state.hiddenPostKeywords.length >= HIDDEN_POST_KEYWORDS_LIMIT}
+                />
+                <SketchButton
+                  type="button"
+                  variant="secondary"
+                  className="px-4 text-base"
+                  onClick={addHiddenPostKeyword}
+                  disabled={state.hiddenPostKeywords.length >= HIDDEN_POST_KEYWORDS_LIMIT}
+                >
+                  添加
+                </SketchButton>
+              </div>
+            </div>
+
+            <div>
+              <div className="mb-2 flex items-center justify-between gap-3">
                 <span className="font-sans text-sm font-bold text-ink">可选标签</span>
                 <span className="text-xs text-pencil">点击即可切换</span>
               </div>
@@ -262,8 +339,8 @@ const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
               type="button"
               variant="secondary"
               className="flex-1 text-base"
-              onClick={clearHiddenPostTags}
-              disabled={state.hiddenPostTags.length === 0}
+              onClick={clearHiddenPostFilters}
+              disabled={state.hiddenPostTags.length === 0 && state.hiddenPostKeywords.length === 0}
             >
               清空屏蔽
             </SketchButton>

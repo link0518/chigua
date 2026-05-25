@@ -6,7 +6,7 @@ import { useApp } from '../store/AppContext';
 import ReportModal from './ReportModal';
 import MarkdownRenderer from './MarkdownRenderer';
 import DeveloperMiniCard from './DeveloperMiniCard';
-import { postMatchesHiddenTags } from '../store/hiddenPostTags';
+import { postMatchesHiddenFilters } from '../store/hiddenPostTags';
 
 type FilterType = 'week' | 'today' | 'all';
 const DISPLAY_LIMIT = 10;
@@ -144,13 +144,15 @@ const FeedView: React.FC = () => {
   }, [filter, loadFeedPosts]);
 
   const posts = useMemo(() => {
-    const visiblePosts = state.feedPosts.filter((post) => !postMatchesHiddenTags(post.tags, state.hiddenPostTags));
+    const visiblePosts = state.feedPosts.filter((post) => (
+      !postMatchesHiddenFilters(post, state.hiddenPostTags, state.hiddenPostKeywords)
+    ));
     // Add ranks to top posts
     return visiblePosts.map((post, index) => ({
       ...post,
       rank: index + 1,
     }));
-  }, [state.feedPosts, state.hiddenPostTags]);
+  }, [state.feedPosts, state.hiddenPostKeywords, state.hiddenPostTags]);
 
   const displayedPosts = posts.slice(0, DISPLAY_LIMIT);
 
