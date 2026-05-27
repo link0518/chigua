@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   ArrowLeft,
   ArrowRight,
+  ArrowUp,
   ArrowUpRight,
   Flag,
   MessageCircle,
@@ -98,6 +99,7 @@ const HomeView: React.FC = () => {
   const [mascotPop, setMascotPop] = useState(false);
   const [mascotBurstKey, setMascotBurstKey] = useState(0);
   const [showMascot, setShowMascot] = useState(false);
+  const [showGridBackToTop, setShowGridBackToTop] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
@@ -195,6 +197,14 @@ const HomeView: React.FC = () => {
       window.history.pushState({}, '', targetPath);
       window.dispatchEvent(new PopStateEvent('popstate'));
     }
+  }, []);
+
+  const handleBackToTop = useCallback(() => {
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    window.scrollTo({
+      top: 0,
+      behavior: reduceMotion ? 'auto' : 'smooth',
+    });
   }, []);
 
   const copyShareLink = useCallback(async (postId: string) => {
@@ -431,6 +441,34 @@ const HomeView: React.FC = () => {
     }
     viewPost(currentPost.id).catch(() => { });
   }, [currentPost?.id, effectiveViewMode, viewPost]);
+
+  useEffect(() => {
+    if (effectiveViewMode !== 'grid') {
+      setShowGridBackToTop(false);
+      return;
+    }
+
+    let frameId = 0;
+    const syncBackToTopVisibility = () => {
+      frameId = 0;
+      setShowGridBackToTop(window.scrollY > 480);
+    };
+    const handleScroll = () => {
+      if (frameId) {
+        return;
+      }
+      frameId = window.requestAnimationFrame(syncBackToTopVisibility);
+    };
+
+    syncBackToTopVisibility();
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      if (frameId) {
+        window.cancelAnimationFrame(frameId);
+      }
+      window.removeEventListener('scroll', handleScroll);
+    };
+  }, [effectiveViewMode]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setShowMascot(true), 1000);
@@ -965,6 +1003,19 @@ const HomeView: React.FC = () => {
 
       {renderModeHeader()}
       {effectiveViewMode === 'grid' ? renderGridMode() : renderFocusMode()}
+
+      {effectiveViewMode === 'grid' && showGridBackToTop && (
+        <button
+          type="button"
+          onClick={handleBackToTop}
+          className="fixed right-[calc(6.75rem+env(safe-area-inset-right))] bottom-[calc(1.5rem+env(safe-area-inset-bottom))] z-20 inline-flex items-center gap-2 rounded-full border-[3px] border-ink bg-marker-yellow px-4 py-3 font-hand text-base font-bold text-ink shadow-sketch-lg transition-all hover:-translate-y-1 hover:bg-highlight hover:shadow-sketch-hover active:translate-x-[2px] active:translate-y-[2px] active:shadow-sketch-active sm:right-[calc(8.75rem+env(safe-area-inset-right))]"
+          aria-label="回到顶部"
+          title="回到顶部"
+        >
+          <ArrowUp className="h-5 w-5" />
+          <span className="hidden sm:inline">回到顶部</span>
+        </button>
+      )}
 
       <ReportModal
         isOpen={reportModal.isOpen}
