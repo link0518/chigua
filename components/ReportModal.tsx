@@ -150,8 +150,18 @@ const ReportModal: React.FC<ReportModalProps> = ({
     || isSubmitting;
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="举报内容">
-      <div className="flex flex-col gap-4">
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="举报内容"
+      panelClassName="flex max-h-[calc(100dvh-2rem)] flex-col overflow-visible"
+      panelStyle={{
+        maxHeight: 'calc(100dvh - 2rem - env(safe-area-inset-top) - env(safe-area-inset-bottom))',
+      }}
+    >
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
+          <div className="flex flex-col gap-4">
         {contentPreview && (
           <div className="rounded-lg border border-dashed border-ink bg-gray-50 p-3">
             <p className="line-clamp-2 font-sans text-sm text-pencil">"{contentPreview}"</p>
@@ -230,7 +240,10 @@ const ReportModal: React.FC<ReportModalProps> = ({
           </div>
         )}
 
-        <div className="mt-2 flex gap-3">
+          </div>
+        </div>
+
+        <div className="mt-3 flex shrink-0 gap-3 border-t-2 border-dashed border-ink/20 bg-white pt-3">
           <SketchButton
             variant="secondary"
             className="flex-1"
@@ -248,7 +261,7 @@ const ReportModal: React.FC<ReportModalProps> = ({
             disabled={isSubmitDisabled}
           >
             <Flag className="h-4 w-4" />
-            {isSubmitting ? '提交中...' : '提交举报'}
+            {isSubmitting ? '提交中...' : '举报'}
           </SketchButton>
         </div>
       </div>
