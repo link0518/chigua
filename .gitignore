@@ -19,6 +19,10 @@ server/data
 AGENTS.md
 CLAUDE.md
 .claude
+.agents
+.codex
+.cursor
+.trellis
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

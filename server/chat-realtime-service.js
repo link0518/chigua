@@ -2,207 +2,55 @@ import crypto from 'crypto';
 import { WebSocket, WebSocketServer } from 'ws';
 import { buildAdminIdentity } from './admin-identity-utils.js';
 import { resolveBanStorageHashes } from './ban-identity.js';
+export {
+  CHAT_DEFAULT_CONFIG,
+  CHAT_TEXT_MAX_LENGTH,
+  buildChatReplyPreview,
+  buildUniqueChatNickname,
+  findPresenceByIdentityHashes,
+  getChatMessageRateLimitKey,
+  hasOwn,
+  isAllowedImageUrl,
+  isAllowedMemePath,
+  isStickerShortcode,
+  normalizeAllowedImageHosts,
+  normalizeChatMessagePayload,
+  normalizeChatRoomConfig,
+  normalizeIdentityHashes,
+  normalizeMessageIntervalMs,
+  normalizeTextMaxLength,
+  resolveJoinIdentity,
+  toBoolean,
+} from './chat-utils.js';
+import {
+  CHAT_DEFAULT_CONFIG,
+  buildChatReplyPreview,
+  buildUniqueChatNickname,
+  findPresenceByIdentityHashes,
+  getChatMessageRateLimitKey,
+  hasOwn,
+  normalizeAllowedImageHosts,
+  normalizeChatMessagePayload,
+  normalizeChatRoomConfig,
+  normalizeIdentityHashes,
+  normalizeMessageIntervalMs,
+  normalizeTextMaxLength,
+  resolveJoinIdentity,
+  toBoolean,
+} from './chat-utils.js';
 
 const CHAT_PATH = '/ws/chat';
-const CHAT_TEXT_MAX_LENGTH = 2000;
 const CHAT_HISTORY_MAX_LIMIT = 100;
 const CHAT_DEFAULT_HISTORY_LIMIT = 50;
 const CHAT_JOIN_CLOSE_CODE = 4003;
 const CHAT_KICK_CLOSE_CODE = 4004;
 const CHAT_PING_INTERVAL_MS = 30 * 1000;
-const CHAT_REPLY_PREVIEW_MAX_LENGTH = 120;
 const CHAT_CONFIG_SETTINGS_KEY = 'chat_room_config';
-const CHAT_DEFAULT_MESSAGE_INTERVAL_MS = 2000;
-const CHAT_DEFAULT_TEXT_MAX_LENGTH = 500;
-const CHAT_CONFIG_MIN_TEXT_MAX_LENGTH = 20;
-const CHAT_CONFIG_MAX_TEXT_MAX_LENGTH = CHAT_TEXT_MAX_LENGTH;
-const CHAT_CONFIG_MAX_MESSAGE_INTERVAL_MS = 60 * 1000;
-const CHAT_DEFAULT_CONFIG = Object.freeze({
-  chatEnabled: true,
-  muteAll: false,
-  adminOnly: false,
-  messageIntervalMs: CHAT_DEFAULT_MESSAGE_INTERVAL_MS,
-  maxTextLength: CHAT_DEFAULT_TEXT_MAX_LENGTH,
-});
-const IMAGE_HOSTS = new Set(['img.zsix.de', 'ibed.933211.xyz']);
-
-const isAllowedMemePath = (value) => {
-  const raw = String(value || '').trim();
-  if (!raw) return false;
-  const normalized = raw.startsWith('/meme/')
-    ? raw
-    : raw.startsWith('meme/')
-      ? `/${raw}`
-      : '';
-  if (!normalized || normalized.includes('..')) return false;
-  const pathname = normalized.split('?')[0]?.split('#')[0] || '';
-  if (!/^\/meme\/[^/]+\/[^/]+/i.test(pathname)) return false;
-  return /\.(png|jpe?g|gif|webp|avif|bmp|svg)$/i.test(pathname);
-};
-
-const isAllowedImageUrl = (value) => {
-  const text = String(value || '').trim();
-  if (!text) return false;
-  if (isAllowedMemePath(text)) {
-    return true;
-  }
-  try {
-    const url = new URL(text);
-    if (!['http:', 'https:'].includes(url.protocol)) {
-      return false;
-    }
-    if (!IMAGE_HOSTS.has(url.hostname)) {
-      return false;
-    }
-    return /\.(png|jpe?g|gif|webp|avif|bmp|svg)$/i.test(url.pathname);
-  } catch {
-    return false;
-  }
-};
-
-const isStickerShortcode = (value) => /^\[:[^\]\n]{1,80}:\]$/.test(String(value || '').trim());
 
 const toSafeInt = (value, fallback = 0) => {
   const num = Number(value);
   if (!Number.isFinite(num)) return fallback;
   return Math.trunc(num);
-};
-
-const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
-const toBoolean = (value) => value === true || value === 'true' || value === 1 || value === '1';
-const hasOwn = (target, key) => Object.prototype.hasOwnProperty.call(target || {}, key);
-const normalizeIdentityHashes = (value) => {
-  const source = Array.isArray(value) ? value : [value];
-  return Array.from(new Set(
-    source
-      .flatMap((item) => (Array.isArray(item) ? item : [item]))
-      .map((item) => String(item || '').trim())
-      .filter(Boolean)
-  ));
-};
-
-export const resolveJoinIdentity = ({
-  resolvedIdentity = null,
-  rawFingerprint = '',
-  hashFingerprint = null,
-}) => {
-  const resolvedFingerprintHash = String(
-    resolvedIdentity?.stableIdentityHash
-    || resolvedIdentity?.preferredFingerprintHash
-    || resolvedIdentity?.canonicalHash
-    || ''
-  ).trim();
-  const fallbackFingerprintHash = String(rawFingerprint || '').trim() && typeof hashFingerprint === 'function'
-    ? String(hashFingerprint(rawFingerprint) || '').trim()
-    : '';
-  const identityHashes = normalizeIdentityHashes([
-    Array.isArray(resolvedIdentity?.lookupHashes) ? resolvedIdentity.lookupHashes : [],
-    fallbackFingerprintHash,
-  ]);
-  return {
-    fingerprintHash: resolvedFingerprintHash || fallbackFingerprintHash,
-    identityHashes,
-  };
-};
-
-const hasSharedIdentityHashes = (left, right) => {
-  const leftHashes = normalizeIdentityHashes(left);
-  const rightHashes = new Set(normalizeIdentityHashes(right));
-  if (!leftHashes.length || !rightHashes.size) {
-    return false;
-  }
-  return leftHashes.some((identityHash) => rightHashes.has(identityHash));
-};
-export const findPresenceByIdentityHashes = (presences, fingerprintHash, identityHashes = []) => {
-  const normalizedFingerprintHash = String(fingerprintHash || '').trim();
-  if (!normalizedFingerprintHash) {
-    return null;
-  }
-  const iterable = presences instanceof Map ? presences.values() : presences;
-  for (const presence of iterable || []) {
-    if (!presence) {
-      continue;
-    }
-    const presenceFingerprintHash = String(presence.fingerprintHash || '').trim();
-    if (normalizedFingerprintHash && presenceFingerprintHash === normalizedFingerprintHash) {
-      return presence;
-    }
-  }
-  return null;
-};
-export const getChatMessageRateLimitKey = (connection, presence) => {
-  const sessionId = String(presence?.sessionId || connection?.sessionId || '').trim();
-  if (sessionId) {
-    return `session:${sessionId}`;
-  }
-  const fingerprintHash = String(presence?.fingerprintHash || connection?.fingerprintHash || '').trim();
-  if (fingerprintHash) {
-    return `fingerprint:${fingerprintHash}`;
-  }
-  return '';
-};
-const normalizeMessageIntervalMs = (value, fallback = CHAT_DEFAULT_CONFIG.messageIntervalMs) => {
-  const raw = Number(value);
-  if (!Number.isFinite(raw)) {
-    return fallback;
-  }
-  return clamp(Math.trunc(raw), 0, CHAT_CONFIG_MAX_MESSAGE_INTERVAL_MS);
-};
-const normalizeTextMaxLength = (value, fallback = CHAT_DEFAULT_CONFIG.maxTextLength) => {
-  const raw = Number(value);
-  if (!Number.isFinite(raw)) {
-    return fallback;
-  }
-  return clamp(Math.trunc(raw), CHAT_CONFIG_MIN_TEXT_MAX_LENGTH, CHAT_CONFIG_MAX_TEXT_MAX_LENGTH);
-};
-const normalizeChatRoomConfig = (value, fallback = CHAT_DEFAULT_CONFIG) => {
-  const source = value && typeof value === 'object' ? value : {};
-  const base = fallback && typeof fallback === 'object' ? fallback : CHAT_DEFAULT_CONFIG;
-  return {
-    chatEnabled: hasOwn(source, 'chatEnabled') ? toBoolean(source.chatEnabled) : Boolean(base.chatEnabled),
-    muteAll: hasOwn(source, 'muteAll') ? toBoolean(source.muteAll) : Boolean(base.muteAll),
-    adminOnly: hasOwn(source, 'adminOnly') ? toBoolean(source.adminOnly) : Boolean(base.adminOnly),
-    messageIntervalMs: normalizeMessageIntervalMs(
-      hasOwn(source, 'messageIntervalMs') ? source.messageIntervalMs : base.messageIntervalMs,
-      CHAT_DEFAULT_CONFIG.messageIntervalMs
-    ),
-    maxTextLength: normalizeTextMaxLength(
-      hasOwn(source, 'maxTextLength') ? source.maxTextLength : base.maxTextLength,
-      CHAT_DEFAULT_CONFIG.maxTextLength
-    ),
-  };
-};
-
-const truncateText = (value, maxLength) => {
-  const text = String(value || '').trim();
-  if (!text) return '';
-  if (text.length <= maxLength) return text;
-  return `${text.slice(0, maxLength)}...`;
-};
-
-const buildReplyPreview = (row) => {
-  if (!row) return '';
-  const type = String(row.msg_type || 'text');
-  if (type === 'image') {
-    const text = truncateText(row.text_content, 72);
-    return text ? `[图片] ${text}` : '[图片]';
-  }
-  if (type === 'sticker') {
-    return row.sticker_shortcode ? `[表情] ${row.sticker_shortcode}` : '[表情]';
-  }
-  const text = truncateText(row.text_content, CHAT_REPLY_PREVIEW_MAX_LENGTH);
-  return text || '[消息]';
-};
-
-const buildUniqueNickname = (onlineNameSet) => {
-  for (let i = 0; i < 60; i += 1) {
-    const code = Math.floor(Math.random() * 90000) + 10000;
-    const next = `侠士${code}`;
-    if (!onlineNameSet.has(next)) {
-      return next;
-    }
-  }
-  return `侠士${Date.now().toString().slice(-6)}`;
 };
 
 const parseWsMessage = (raw) => {
@@ -244,7 +92,9 @@ export const createChatRealtimeService = (deps) => {
     logAdminAction,
     getAdminFromRequest,
     adminNickname,
+    getRuntimeConfig,
   } = deps;
+  const getAllowedImageHosts = () => normalizeAllowedImageHosts(getRuntimeConfig?.()?.imgbedBaseUrl);
   const ADMIN_NICKNAME = String(adminNickname || '闰土').trim() || '闰土';
 
   const resolveAdminIdentity = ({ fingerprintHash = '', identityHashes = [], sessionId = '', ip = '' }) => buildAdminIdentity({
@@ -613,7 +463,7 @@ export const createChatRealtimeService = (deps) => {
       return '匿名';
     }
     if (!presence.baseNickname) {
-      presence.baseNickname = buildUniqueNickname(collectOnlineNicknameSet(presence.fingerprintHash));
+      presence.baseNickname = buildUniqueChatNickname(collectOnlineNicknameSet(presence.fingerprintHash));
     }
     if (!presence.isAdmin) {
       return presence.baseNickname;
@@ -622,7 +472,7 @@ export const createChatRealtimeService = (deps) => {
       if (!presence.adminAlias) {
         const onlineNameSet = collectOnlineNicknameSet(presence.fingerprintHash);
         onlineNameSet.add(presence.baseNickname);
-        presence.adminAlias = buildUniqueNickname(onlineNameSet);
+        presence.adminAlias = buildUniqueChatNickname(onlineNameSet);
       }
       return presence.adminAlias;
     }
@@ -907,80 +757,6 @@ export const createChatRealtimeService = (deps) => {
     return { ok: true, config: normalizeChatRoomConfig(next, chatConfig) };
   };
 
-  const normalizeMessagePayload = (payload, textMaxLength = CHAT_TEXT_MAX_LENGTH) => {
-    const safeTextMaxLength = normalizeTextMaxLength(textMaxLength, CHAT_DEFAULT_CONFIG.maxTextLength);
-    const clientMsgId = String(payload?.clientMsgId || '').trim();
-    if (!clientMsgId || clientMsgId.length > 80) {
-      return { ok: false, error: '消息标识无效' };
-    }
-
-    const rawType = String(payload?.type || 'text').trim();
-    const type = ['text', 'image', 'sticker'].includes(rawType) ? rawType : 'text';
-    const textContent = String(payload?.content || '').trim();
-    const imageUrl = String(payload?.imageUrl || '').trim();
-    const stickerCode = String(payload?.stickerCode || '').trim();
-    const replyToMessageId = toSafeInt(payload?.replyToMessageId, 0);
-    const normalizedReplyToMessageId = replyToMessageId > 0 ? replyToMessageId : null;
-
-    if (type === 'text') {
-      if (!textContent) {
-        return { ok: false, error: '消息不能为空' };
-      }
-      if (textContent.length > safeTextMaxLength) {
-        return { ok: false, error: `消息不能超过 ${safeTextMaxLength} 字` };
-      }
-      return {
-        ok: true,
-        data: {
-          clientMsgId,
-          type,
-          textContent,
-          imageUrl: null,
-          stickerCode: null,
-          replyToMessageId: normalizedReplyToMessageId,
-        },
-      };
-    }
-
-    if (type === 'image') {
-      if (!imageUrl || !isAllowedImageUrl(imageUrl)) {
-        return { ok: false, error: '图片链接不合法或不在允许域名内' };
-      }
-      if (textContent && textContent.length > safeTextMaxLength) {
-        return { ok: false, error: `消息不能超过 ${safeTextMaxLength} 字` };
-      }
-      return {
-        ok: true,
-        data: {
-          clientMsgId,
-          type,
-          textContent: textContent || null,
-          imageUrl,
-          stickerCode: null,
-          replyToMessageId: normalizedReplyToMessageId,
-        },
-      };
-    }
-
-    if (!stickerCode || !isStickerShortcode(stickerCode)) {
-      return { ok: false, error: '表情短码格式不合法' };
-    }
-    if (textContent && textContent.length > safeTextMaxLength) {
-      return { ok: false, error: `消息不能超过 ${safeTextMaxLength} 字` };
-    }
-    return {
-      ok: true,
-      data: {
-        clientMsgId,
-        type,
-        textContent: textContent || null,
-        imageUrl: null,
-        stickerCode,
-        replyToMessageId: normalizedReplyToMessageId,
-      },
-    };
-  };
-
   const buildAdminStatePayload = (presence) => ({
     isAdmin: true,
     anonymous: Boolean(presence?.adminAnonymous),
@@ -1029,7 +805,7 @@ export const createChatRealtimeService = (deps) => {
       normalizedIdentityHashes
     );
     if (!presence) {
-      const baseNickname = buildUniqueNickname(collectOnlineNicknameSet());
+      const baseNickname = buildUniqueChatNickname(collectOnlineNicknameSet());
       const sessionId = crypto.randomUUID();
       presence = {
         fingerprintHash,
@@ -1061,7 +837,7 @@ export const createChatRealtimeService = (deps) => {
       if (presence.adminAnonymous && !presence.adminAlias) {
         const onlineNameSet = collectOnlineNicknameSet(presence.fingerprintHash);
         onlineNameSet.add(presence.baseNickname);
-        presence.adminAlias = buildUniqueNickname(onlineNameSet);
+        presence.adminAlias = buildUniqueChatNickname(onlineNameSet);
       }
     } else {
       const hasAdminConnection = Array.from(presence.connections).some((item) => item.isAdmin);
@@ -1170,7 +946,9 @@ export const createChatRealtimeService = (deps) => {
       return;
     }
 
-    const normalized = normalizeMessagePayload(payload, currentConfig.maxTextLength);
+    const normalized = normalizeChatMessagePayload(payload, currentConfig.maxTextLength, {
+      allowedImageHosts: getAllowedImageHosts(),
+    });
     if (!normalized.ok) {
       sendEvent(connection.socket, 'chat.error', { message: normalized.error });
       return;
@@ -1192,7 +970,7 @@ export const createChatRealtimeService = (deps) => {
       replyMeta = {
         id: Number(replied.id),
         nickname: replied.nickname_snapshot || '匿名',
-        preview: buildReplyPreview(replied),
+        preview: buildChatReplyPreview(replied),
       };
     }
 
@@ -1296,7 +1074,7 @@ export const createChatRealtimeService = (deps) => {
     if (presence.adminAnonymous && !presence.adminAlias) {
       const onlineNameSet = collectOnlineNicknameSet(connection.fingerprintHash);
       onlineNameSet.add(presence.baseNickname);
-      presence.adminAlias = buildUniqueNickname(onlineNameSet);
+      presence.adminAlias = buildUniqueChatNickname(onlineNameSet);
     }
 
     syncPresenceConnections(presence);

@@ -36,22 +36,32 @@ export const initializeRuntimeEnv = () => {
   loadEnvFile('.env');
 };
 
-export const createRuntimeConfig = () => {
-  const sessionSecretRaw = String(process.env.SESSION_SECRET || '').trim();
-  const adminUsername = String(process.env.ADMIN_USERNAME || '').trim();
-  const adminPassword = String(process.env.ADMIN_PASSWORD || '').trim();
+const readImageBedEnv = (env, key) => {
+  const preferred = String(env[key] || '').trim();
+  if (preferred) {
+    return preferred;
+  }
+  return String(env[`VITE_${key}`] || '').trim();
+};
+
+export const createRuntimeConfig = (env = process.env) => {
+  const sessionSecretRaw = String(env.SESSION_SECRET || '').trim();
+  const adminUsername = String(env.ADMIN_USERNAME || '').trim();
+  const adminPassword = String(env.ADMIN_PASSWORD || '').trim();
 
   return {
-    port: Number(process.env.PORT || 4395),
-    turnstileSecretKey: String(process.env.TURNSTILE_SECRET_KEY || '').trim(),
+    port: Number(env.PORT || 4395),
+    turnstileSecretKey: String(env.TURNSTILE_SECRET_KEY || '').trim(),
     turnstileVerifyUrl: 'https://challenges.cloudflare.com/turnstile/v0/siteverify',
+    imgbedBaseUrl: readImageBedEnv(env, 'IMGBED_BASE_URL'),
+    imgbedToken: readImageBedEnv(env, 'IMGBED_TOKEN'),
     fingerprintHeader: 'x-client-fingerprint',
-    fingerprintSalt: String(process.env.FINGERPRINT_SALT || sessionSecretRaw || 'gossipsketch-fingerprint-salt').trim(),
+    fingerprintSalt: String(env.FINGERPRINT_SALT || sessionSecretRaw || 'gossipsketch-fingerprint-salt').trim(),
     sessionSecret: sessionSecretRaw || crypto.randomBytes(32).toString('hex'),
     sessionSecretConfigured: Boolean(sessionSecretRaw),
     adminUsername,
     adminPassword,
     adminEnabled: Boolean(sessionSecretRaw && adminUsername && adminPassword),
-    siteUrl: String(process.env.SITE_URL || 'https://933211.xyz').replace(/\/+$/, ''),
+    siteUrl: String(env.SITE_URL || 'https://933211.xyz').replace(/\/+$/, ''),
   };
 };

@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { AlertTriangle, Image, Send, Smile, ThumbsUp } from 'lucide-react';
 import { SketchButton } from './SketchUI';
 import { api } from '../api';
@@ -10,7 +10,7 @@ import ReportModal from './ReportModal';
 import MemePicker, { useMemeInsert } from './MemePicker';
 import CommentInputModal from './CommentInputModal';
 import { useInsertAtCursor } from './useInsertAtCursor';
-import { consumeUploadQuota } from './uploadRateLimit';
+import { isImageUploadFile, uploadImageAsMarkdown } from './imageUpload';
 import { AUTO_HIDDEN_EVENT, HIDDEN_COMMENT_PLACEHOLDER, type AutoHiddenEventDetail } from '../store/contentVisibility';
 
 interface CommentModalProps {
@@ -210,22 +210,14 @@ const CommentModal: React.FC<CommentModalProps> = ({
     if (!file) {
       return;
     }
-    if (!file.type.startsWith('image/')) {
+    if (!isImageUploadFile(file)) {
       showToast('只支持上传图片文件', 'warning');
-      return;
-    }
-
-    const quota = consumeUploadQuota({ windowMs: 30_000, max: 3 });
-    if (!quota.allowed) {
-      const seconds = Math.max(1, Math.ceil(quota.retryAfterMs / 1000));
-      showToast(`上传太频繁啦，请 ${seconds}s 后再试`, 'warning');
       return;
     }
 
     setUploading(true);
     try {
-      const result = await api.uploadImage(file, { uploadChannel: 'telegram' });
-      insertAtCursor(`![](${result.url}) `);
+      insertAtCursor(await uploadImageAsMarkdown(file, { usage: 'comment' }));
       showToast('图片上传成功', 'success');
     } catch (error) {
       const message = error instanceof Error ? error.message : '图片上传失败，请稍后重试';

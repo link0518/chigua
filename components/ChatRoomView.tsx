@@ -9,8 +9,8 @@ import MemePicker, { useMemeInsert } from './MemePicker';
 import ReportModal from './ReportModal';
 import { SketchButton, SketchCard } from './SketchUI';
 import { SketchIconButton } from './SketchIconButton';
-import { consumeUploadQuota } from './uploadRateLimit';
 import { useInsertAtCursor } from './useInsertAtCursor';
+import { isImageUploadFile, uploadImageAsMarkdown } from './imageUpload';
 
 type WsPacket<T = any> = {
   event: string;
@@ -860,22 +860,14 @@ const ChatRoomView: React.FC<ChatRoomViewProps> = ({ onExitToFeed }) => {
     if (!file) {
       return;
     }
-    if (!file.type.startsWith('image/')) {
+    if (!isImageUploadFile(file)) {
       showToast('仅支持图片上传', 'warning');
-      return;
-    }
-
-    const quota = consumeUploadQuota({ windowMs: 30_000, max: 3 });
-    if (!quota.allowed) {
-      const seconds = Math.max(1, Math.ceil(quota.retryAfterMs / 1000));
-      showToast(`上传过于频繁，请 ${seconds}s 后重试`, 'warning');
       return;
     }
 
     setUploading(true);
     try {
-      const result = await api.uploadImage(file, { uploadChannel: 'telegram' });
-      insertAtCursor(`![](${result.url})`);
+      insertAtCursor(await uploadImageAsMarkdown(file, { usage: 'chat', trailingSpace: false }));
       showToast('图片上传成功', 'success');
     } catch (error) {
       const message = error instanceof Error ? error.message : '图片上传失败';

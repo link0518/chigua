@@ -1,4 +1,4 @@
-﻿import assert from 'node:assert/strict';
+import assert from 'node:assert/strict';
 import test from 'node:test';
 import Database from 'better-sqlite3';
 import { createSiteSettingsService } from '../site-settings.js';
@@ -117,6 +117,37 @@ test('admin settings saves auto hide report threshold', async () => {
   assert.equal(settings.getAutoHideReportThreshold(), 3);
   assert.equal(db.prepare('SELECT value FROM app_settings WHERE key = ?').get('auto_hide_report_threshold').value, '3');
   assert.equal(logs.at(-1).after.autoHideReportThreshold, 3);
+  db.close();
+});
+
+test('后台设置默认返回图片上传限流配置', async () => {
+  const { db, routes } = createHarness();
+  const res = await runHandlers(routes.get('GET /api/admin/settings'), { body: {} });
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.payload.rateLimits.upload.limit, 3);
+  assert.equal(res.payload.rateLimits.upload.windowMs, 30 * 1000);
+  db.close();
+});
+
+test('后台设置保存图片上传限流并校正非法数值', async () => {
+  const { db, logs, routes } = createHarness();
+  const res = await runHandlers(routes.get('POST /api/admin/settings'), {
+    body: {
+      rateLimits: {
+        post: { limit: 0, windowMs: 0 },
+        upload: { limit: 9, windowMs: 120 * 1000 },
+      },
+    },
+  });
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.payload.rateLimits.post, { limit: 1, windowMs: 1000 });
+  assert.deepEqual(res.payload.rateLimits.upload, { limit: 9, windowMs: 120 * 1000 });
+  assert.deepEqual(logs.at(-1).after.rateLimits.upload, { limit: 9, windowMs: 120 * 1000 });
+
+  const stored = JSON.parse(db.prepare('SELECT value FROM app_settings WHERE key = ?').get('rate_limits').value);
+  assert.deepEqual(stored.upload, { limit: 9, windowMs: 120 * 1000 });
   db.close();
 });
 

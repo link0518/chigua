@@ -1,4 +1,6 @@
-﻿export const registerPublicSystemRoutes = (app, deps) => {
+import { buildIdentityMatch } from '../../sql-utils.js';
+
+export const registerPublicSystemRoutes = (app, deps) => {
   const {
     db,
     requireFingerprint,
@@ -17,23 +19,6 @@
 
   const EASTER_EGG_STREAK7_KEY = 'streak7_confetti_v1';
 
-  const buildIdentityMatch = (column, identityHashes) => {
-    const values = Array.from(new Set(
-      (Array.isArray(identityHashes) ? identityHashes : [identityHashes])
-        .map((item) => String(item || '').trim())
-        .filter(Boolean)
-    ));
-    if (!values.length) {
-      return { clause: '1 = 0', params: [] };
-    }
-    if (values.length === 1) {
-      return { clause: `${column} = ?`, params: values };
-    }
-    return {
-      clause: `${column} IN (${values.map(() => '?').join(', ')})`,
-      params: values,
-    };
-  };
 
   const resolveConsecutiveLoginDays = (identityHashes, maxDays = 30) => {
     const identityMatch = buildIdentityMatch('fingerprint', identityHashes);

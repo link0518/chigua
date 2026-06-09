@@ -1,4 +1,6 @@
-﻿const toSafeInt = (value, fallback = 0) => {
+import { buildIdentityMatch } from '../../sql-utils.js';
+
+const toSafeInt = (value, fallback = 0) => {
   const num = Number(value);
   if (!Number.isFinite(num)) {
     return fallback;
@@ -32,23 +34,6 @@ export const registerPublicChatRoutes = (app, deps) => {
     chatRealtime,
   } = deps;
 
-  const buildIdentityMatch = (column, identityHashes) => {
-    const values = Array.from(new Set(
-      (Array.isArray(identityHashes) ? identityHashes : [identityHashes])
-        .map((item) => String(item || '').trim())
-        .filter(Boolean)
-    ));
-    if (!values.length) {
-      return { clause: '1 = 0', params: [] };
-    }
-    if (values.length === 1) {
-      return { clause: `${column} = ?`, params: values };
-    }
-    return {
-      clause: `${column} IN (${values.map(() => '?').join(', ')})`,
-      params: values,
-    };
-  };
 
   const ensureChatEnabled = (res) => {
     const enabled = Boolean(chatRealtime?.getChatConfig?.().chatEnabled);

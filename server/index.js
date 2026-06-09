@@ -21,6 +21,7 @@ import { registerPublicCommentsRoutes } from './routes/public/comments-routes.js
 import { registerPublicReportsRoutes } from './routes/public/reports-routes.js';
 import { registerPublicSystemRoutes } from './routes/public/system-routes.js';
 import { registerPublicChatRoutes } from './routes/public/chat-routes.js';
+import { registerPublicUploadRoutes } from './routes/public/upload-routes.js';
 import { registerPublicWikiRoutes } from './routes/public/wiki-routes.js';
 import { registerAdminAuthRoutes } from './routes/admin/auth-routes.js';
 import { registerAdminAnnouncementRoutes } from './routes/admin/announcement-routes.js';
@@ -55,6 +56,8 @@ const {
   port: PORT,
   turnstileSecretKey: TURNSTILE_SECRET_KEY,
   turnstileVerifyUrl: TURNSTILE_VERIFY_URL,
+  imgbedBaseUrl: IMGBED_BASE_URL,
+  imgbedToken: IMGBED_TOKEN,
   fingerprintHeader: FINGERPRINT_HEADER,
   fingerprintSalt: FINGERPRINT_SALT,
   sessionSecret,
@@ -517,6 +520,7 @@ const RATE_LIMIT_ERROR_MESSAGES = {
   report: '举报过于频繁，请稍后再试',
   feedback: '留言过于频繁，请稍后再试',
   wiki: 'Wiki 提交过于频繁，请稍后再试',
+  upload: '图片上传过于频繁，请稍后再试',
 };
 const ONLINE_WINDOW_MS = 2 * 60 * 1000;
 const onlineSessions = new Map();
@@ -1231,6 +1235,9 @@ const chatRealtime = createChatRealtimeService({
   BAN_PERMISSIONS,
   logAdminAction,
   getAdminFromRequest,
+  getRuntimeConfig: () => ({
+    imgbedBaseUrl: IMGBED_BASE_URL,
+  }),
   adminNickname: '闰土',
 });
 
@@ -1260,6 +1267,17 @@ registerPublicChatRoutes(app, {
   formatDateKey,
   crypto,
   chatRealtime,
+});
+
+registerPublicUploadRoutes(app, {
+  parseImageBody: express.raw({ type: ['image/png', 'image/jpeg', 'image/gif', 'image/webp'], limit: '5mb' }),
+  requireFingerprint,
+  checkBanFor,
+  enforceRateLimit,
+  getRuntimeConfig: () => ({
+    imgbedBaseUrl: IMGBED_BASE_URL,
+    imgbedToken: IMGBED_TOKEN,
+  }),
 });
 
 registerPublicSiteRoutes(app, {

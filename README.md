@@ -33,6 +33,7 @@ copy .env.example .env.local
 - `ADMIN_USERNAME` / `ADMIN_PASSWORD`：后台账号密码（未配置会导致后台禁用）
 - `VITE_TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY`：Cloudflare Turnstile（发帖/评论相关）
 - `FINGERPRINT_SALT`：指纹盐（不填会回退到 `SESSION_SECRET` 或内置默认值）
+- `IMGBED_BASE_URL` / `IMGBED_TOKEN`：服务端图片上传代理使用的图床配置（不填时图片上传不可用）
 
 ### 4）初始化数据（可选）
 

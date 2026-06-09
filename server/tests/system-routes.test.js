@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import test from 'node:test';
 import Database from 'better-sqlite3';
 import { getNotificationRecipientValues, registerPublicSystemRoutes } from '../routes/public/system-routes.js';
+import { buildIdentityMatch } from '../sql-utils.js';
 
 const createNotificationsDb = () => {
   const db = new Database(':memory:');
@@ -15,24 +16,6 @@ const createNotificationsDb = () => {
     );
   `);
   return db;
-};
-
-const buildIdentityMatch = (column, values) => {
-  const normalizedValues = Array.from(new Set(
-    (Array.isArray(values) ? values : [values])
-      .map((item) => String(item || '').trim())
-      .filter(Boolean)
-  ));
-  if (!normalizedValues.length) {
-    return { clause: '1 = 0', params: [] };
-  }
-  if (normalizedValues.length === 1) {
-    return { clause: `${column} = ?`, params: normalizedValues };
-  }
-  return {
-    clause: `${column} IN (${normalizedValues.map(() => '?').join(', ')})`,
-    params: normalizedValues,
-  };
 };
 
 test('通知查询同时命中旧指纹和新身份，不依赖通知创建时间', () => {

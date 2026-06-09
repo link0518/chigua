@@ -1,4 +1,4 @@
-﻿import { getBrowserFingerprint } from './fingerprint';
+import { getBrowserFingerprint } from './fingerprint';
 
 const toQuery = (params: Record<string, unknown>) => {
   const entries = Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== '');
@@ -10,9 +10,6 @@ const toQuery = (params: Record<string, unknown>) => {
 };
 
 let csrfToken = '';
-
-const IMGBED_BASE_URL = import.meta.env.VITE_IMGBED_BASE_URL || '';
-const IMGBED_TOKEN = import.meta.env.VITE_IMGBED_TOKEN || '';
 
 const needsAdminCsrf = (path: string) => path.startsWith('/admin') || path.startsWith('/reports');
 
@@ -44,6 +41,10 @@ const shouldAttachFingerprint = (path: string, options: RequestInit) => {
   }
 
   if (cleanPath.startsWith('/reports')) {
+    return true;
+  }
+
+  if (cleanPath.startsWith('/uploads')) {
     return true;
   }
 
@@ -88,6 +89,7 @@ const apiFetch = async (path: string, options: RequestInit = {}) => {
     ? await getBrowserFingerprint().catch(() => '')
     : '';
   const response = await fetch(`/api${path}`, {
+    ...options,
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
@@ -95,7 +97,6 @@ const apiFetch = async (path: string, options: RequestInit = {}) => {
       ...(fingerprint ? { 'X-Client-Fingerprint': fingerprint } : {}),
       ...normalizeHeaders(options.headers),
     },
-    ...options,
   });
 
   if (response.status === 204) {
@@ -318,7 +319,7 @@ export const api = {
     turnstileEnabled?: boolean;
     cnyThemeEnabled?: boolean;
     defaultPostTags?: string[];
-    rateLimits?: Partial<Record<'post' | 'comment' | 'report' | 'feedback' | 'wiki', { limit?: number; windowMs?: number }>>;
+    rateLimits?: Partial<Record<'post' | 'comment' | 'report' | 'feedback' | 'wiki' | 'upload', { limit?: number; windowMs?: number }>>;
     autoHideReportThreshold?: number;
     wecomWebhook?: { enabled?: boolean; url?: string; clearUrl?: boolean };
   }) => apiFetch('/admin/settings', {
@@ -362,19 +363,10 @@ export const api = {
       uploadNameType?: 'default' | 'index' | 'origin' | 'short';
       returnFormat?: 'default' | 'full';
       uploadFolder?: string;
+      usage?: 'post' | 'comment' | 'chat';
     } = {}
   ): Promise<{ src: string; url: string }> => {
-    if (!IMGBED_BASE_URL) {
-      throw new Error('未配置图床地址（VITE_IMGBED_BASE_URL）');
-    }
-    if (!IMGBED_TOKEN) {
-      throw new Error('未配置图床 Token（VITE_IMGBED_TOKEN）');
-    }
-
-    const form = new FormData();
-    form.append('file', file);
-
-    const query = toQuery({
+    return apiFetch(`/uploads/image${toQuery({
       uploadChannel: options.uploadChannel,
       channelName: options.channelName,
       serverCompress: options.serverCompress ?? true,
@@ -382,33 +374,13 @@ export const api = {
       uploadNameType: options.uploadNameType ?? 'default',
       returnFormat: options.returnFormat ?? 'default',
       uploadFolder: options.uploadFolder,
-    });
-
-    const base = String(IMGBED_BASE_URL).replace(/\/$/, '');
-    const response = await fetch(`${base}/upload${query}`, {
+      usage: options.usage,
+    })}`, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${IMGBED_TOKEN}`,
+        'Content-Type': file.type,
       },
-      body: form,
+      body: file,
     });
-
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      const message = (data as any)?.error || '上传失败';
-      throw new Error(message);
-    }
-
-    const first = Array.isArray(data) ? data[0] : (data as any)?.data?.[0];
-    const src = String(first?.src || '');
-    if (!src) {
-      throw new Error('上传成功但未返回 src');
-    }
-
-    const url = src.startsWith('http')
-      ? src
-      : `${base}${src.startsWith('/') ? '' : '/'}${src}`;
-
-    return { src, url };
   },
 };

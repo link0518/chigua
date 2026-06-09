@@ -3,10 +3,9 @@ import { Image, Send, Smile } from 'lucide-react';
 import Modal from './Modal';
 import { SketchButton } from './SketchUI';
 import MemePicker, { useMemeInsert } from './MemePicker';
-import { api } from '../api';
 import { useInsertAtCursor } from './useInsertAtCursor';
 import { SketchIconButton } from './SketchIconButton';
-import { consumeUploadQuota } from './uploadRateLimit';
+import { isImageUploadFile, uploadImageAsMarkdown } from './imageUpload';
 
 interface CommentInputModalProps {
   isOpen: boolean;
@@ -55,21 +54,13 @@ const CommentInputModal: React.FC<CommentInputModalProps> = ({
     if (!file) {
       return;
     }
-    if (!file.type.startsWith('image/')) {
-      return;
-    }
-
-    const quota = consumeUploadQuota({ windowMs: 30_000, max: 3 });
-    if (!quota.allowed) {
-      const seconds = Math.max(1, Math.ceil(quota.retryAfterMs / 1000));
-      showToast(`上传太频繁啦，请 ${seconds}s 后再试`, 'warning');
+    if (!isImageUploadFile(file)) {
       return;
     }
 
     setUploading(true);
     try {
-      const result = await api.uploadImage(file, { uploadChannel: 'telegram' });
-      insertAtCursor(`![](${result.url}) `);
+      insertAtCursor(await uploadImageAsMarkdown(file, { usage: 'comment' }));
       showToast('图片上传成功', 'success');
     } catch (error) {
       const message = error instanceof Error ? error.message : '图片上传失败，请稍后重试';

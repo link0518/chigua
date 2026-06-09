@@ -27,6 +27,7 @@ import FallingDecorations from './components/CNY/FallingDecorations';
 import HeaderDecoration from './components/CNY/HeaderDecoration';
 import CNYAtmosphereBackground from './components/CNY/CNYAtmosphereBackground';
 import UserSettingsModal from './components/UserSettingsModal';
+import { buildPostPath } from './components/clipboard';
 import AppViewRenderer from '@/features/app/AppViewRenderer';
 import { getPathForView, resolveViewFromPath } from '@/features/app/routing';
 import { useAccessStatus } from '@/features/app/hooks/useAccessStatus';
@@ -327,8 +328,7 @@ const App: React.FC = () => {
       setCurrentView(ViewType.HOME);
       setMobileMenuOpen(false);
       setNotificationsOpen(false);
-      const commentParam = item.commentId ? `?comment=${encodeURIComponent(item.commentId)}` : '';
-      const targetPath = `/post/${encodeURIComponent(item.postId)}${commentParam}`;
+      const targetPath = buildPostPath(item.postId, item.commentId || null);
       if (window.location.pathname + window.location.search !== targetPath) {
         window.history.pushState({}, '', targetPath);
       }

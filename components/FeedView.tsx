@@ -7,6 +7,7 @@ import ReportModal from './ReportModal';
 import MarkdownRenderer from './MarkdownRenderer';
 import DeveloperMiniCard from './DeveloperMiniCard';
 import { postMatchesHiddenFilters } from '../store/hiddenPostTags';
+import { buildPostPath, buildPostShareUrl, copyTextToClipboard } from './clipboard';
 
 type FilterType = 'week' | 'today' | 'all';
 const DISPLAY_LIMIT = 10;
@@ -189,21 +190,8 @@ const FeedView: React.FC = () => {
   };
 
   const handleShare = async (postId: string) => {
-    const shareUrl = `${window.location.origin}/post/${encodeURIComponent(postId)}`;
     try {
-      if (navigator.clipboard && window.isSecureContext) {
-        await navigator.clipboard.writeText(shareUrl);
-      } else {
-        const textarea = document.createElement('textarea');
-        textarea.value = shareUrl;
-        textarea.setAttribute('readonly', 'true');
-        textarea.style.position = 'fixed';
-        textarea.style.opacity = '0';
-        document.body.appendChild(textarea);
-        textarea.select();
-        document.execCommand('copy');
-        document.body.removeChild(textarea);
-      }
+      await copyTextToClipboard(buildPostShareUrl(postId));
       showToast('分享链接已复制', 'success');
     } catch {
       showToast('复制失败，请手动复制链接', 'error');
@@ -211,7 +199,7 @@ const FeedView: React.FC = () => {
   };
 
   const handleComment = (postId: string, content: string) => {
-    const targetPath = `/post/${encodeURIComponent(postId)}`;
+    const targetPath = buildPostPath(postId);
     if (window.location.pathname + window.location.search !== targetPath) {
       window.history.pushState({}, '', targetPath);
       window.dispatchEvent(new PopStateEvent('popstate'));

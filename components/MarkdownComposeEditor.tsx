@@ -1,8 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Eye, EyeOff, Image, Smile } from 'lucide-react';
 
-import { api } from '../api';
-import { consumeUploadQuota } from './uploadRateLimit';
 import MarkdownEditor, {
   type MarkdownEditorCommand,
   type MarkdownEditorHandle,
@@ -12,6 +10,7 @@ import MemePicker from './MemePicker';
 import { DEFAULT_MEME_PACK } from './memeManifest';
 import { SketchIconButton } from './SketchIconButton';
 import { roughBorderClassSm } from './SketchUI';
+import { isImageUploadFile, uploadImageAsMarkdown } from './imageUpload';
 
 const MARKDOWN_TOOLS: Array<{
   key: MarkdownEditorCommand;
@@ -127,22 +126,14 @@ const MarkdownComposeEditor: React.FC<MarkdownComposeEditorProps> = ({
     if (!file) {
       return;
     }
-    if (!file.type.startsWith('image/')) {
+    if (!isImageUploadFile(file)) {
       showToast?.('仅支持上传图片文件', 'warning');
-      return;
-    }
-
-    const quota = consumeUploadQuota({ windowMs: 30_000, max: 3 });
-    if (!quota.allowed) {
-      const seconds = Math.max(1, Math.ceil(quota.retryAfterMs / 1000));
-      showToast?.(`图片上传过于频繁，请 ${seconds}s 后再试`, 'warning');
       return;
     }
 
     setUploading(true);
     try {
-      const result = await api.uploadImage(file, { uploadChannel: 'telegram' });
-      insertIntoEditor(`![](${result.url}) `);
+      insertIntoEditor(await uploadImageAsMarkdown(file));
       showToast?.('图片上传成功', 'success');
     } catch {
       showToast?.('图片上传失败，请稍后重试', 'error');

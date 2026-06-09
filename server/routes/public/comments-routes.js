@@ -1,4 +1,6 @@
-﻿export const registerPublicCommentsRoutes = (app, deps) => {
+import { buildIdentityMatch } from '../../sql-utils.js';
+
+export const registerPublicCommentsRoutes = (app, deps) => {
   const {
     db,
     checkBanFor,
@@ -17,23 +19,6 @@
     crypto,
   } = deps;
 
-  const buildIdentityMatch = (column, identityHashes) => {
-    const values = Array.from(new Set(
-      (Array.isArray(identityHashes) ? identityHashes : [identityHashes])
-        .map((item) => String(item || '').trim())
-        .filter(Boolean)
-    ));
-    if (!values.length) {
-      return { clause: '1 = 0', params: [] };
-    }
-    if (values.length === 1) {
-      return { clause: `${column} = ?`, params: values };
-    }
-    return {
-      clause: `${column} IN (${values.map(() => '?').join(', ')})`,
-      params: values,
-    };
-  };
 
   const buildViewerLikedSelect = (identityHashes) => {
     const match = buildIdentityMatch('viewer.fingerprint', identityHashes);

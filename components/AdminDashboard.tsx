@@ -1,4 +1,4 @@
-﻿import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Flag, Gavel, BarChart2, Bell, Search, Trash2, Ban, Eye, EyeOff, LayoutDashboard, LogOut, CheckCircle, XCircle, FileText, Pencil, RotateCcw, Shield, ClipboardList, MessageSquare, Menu, X, Settings, BookOpen, AlertTriangle } from 'lucide-react';
 import { SketchButton, Badge } from './SketchUI';
 import { AdminAuditLog, AdminComment, AdminHiddenItem, AdminPost, FeedbackMessage, Report, UpdateAnnouncementItem } from '../types';
@@ -12,17 +12,31 @@ import {
   type AdminIdentityField,
   type AdminIdentityLike,
 } from './adminIdentity';
-import MarkdownComposeEditor from './MarkdownComposeEditor';
 import MarkdownRenderer from './MarkdownRenderer';
 import AdminChatPanel from './AdminChatPanel';
 import AdminWikiPanel from './AdminWikiPanel';
 import AdminRumorPanel from './AdminRumorPanel';
+import { copyTextToClipboard } from './clipboard';
 import AdminOverviewView from '@/features/admin/views/AdminOverviewView';
 import AdminFeedbackView from '@/features/admin/views/AdminFeedbackView';
 import AdminBansView from '@/features/admin/views/AdminBansView';
 import AdminAuditView from '@/features/admin/views/AdminAuditView';
 import AdminReportsView from '@/features/admin/views/AdminReportsView';
+import AdminPublishCenterView from '@/features/admin/views/AdminPublishCenterView';
+import AdminSystemSettingsView from '@/features/admin/views/AdminSystemSettingsView';
 import type { ReportAction } from '@/features/admin/types';
+import {
+  AUTO_HIDE_REPORT_THRESHOLD_DEFAULT,
+  RATE_LIMIT_DEFAULTS,
+  RATE_LIMIT_FIELDS,
+  RATE_LIMIT_MAX_COUNT,
+  RATE_LIMIT_MAX_WINDOW_SECONDS,
+  normalizeAutoHideReportThreshold,
+  normalizeRateLimitNumber,
+  normalizeRateLimits,
+  type RateLimitAction,
+  type RateLimitSettings,
+} from '@/features/admin/domains/system/rateLimitSettings';
 import AdminModerationDrawer, {
   type AdminModerationDrawerRequest,
   type AdminModerationQuickPreset,
@@ -126,81 +140,6 @@ const parseDefaultPostTagsInput = (value: string) => {
 };
 
 const formatDefaultPostTagsInput = (tags: unknown) => sanitizeTagArray(tags, MAX_DEFAULT_POST_TAGS).join('\n');
-
-type RateLimitAction = 'post' | 'comment' | 'report' | 'feedback' | 'wiki';
-type RateLimitItem = { limit: number; windowMs: number };
-type RateLimitSettings = Record<RateLimitAction, RateLimitItem>;
-
-const RATE_LIMIT_MAX_COUNT = 1000;
-const RATE_LIMIT_MAX_WINDOW_SECONDS = 30 * 24 * 60 * 60;
-const AUTO_HIDE_REPORT_THRESHOLD_DEFAULT = 10;
-const AUTO_HIDE_REPORT_THRESHOLD_MAX = 1000;
-const RATE_LIMIT_DEFAULTS: RateLimitSettings = {
-  post: { limit: 2, windowMs: 30 * 60 * 1000 },
-  comment: { limit: 1, windowMs: 10 * 1000 },
-  report: { limit: 1, windowMs: 60 * 1000 },
-  feedback: { limit: 1, windowMs: 60 * 60 * 1000 },
-  wiki: { limit: 3, windowMs: 60 * 60 * 1000 },
-};
-const RATE_LIMIT_FIELDS: Array<{ key: RateLimitAction; label: string; hint: string }> = [
-  { key: 'post', label: '发帖限流', hint: '限制普通用户发帖频率' },
-  { key: 'comment', label: '评论限流', hint: '限制普通用户评论频率' },
-  { key: 'report', label: '举报限流', hint: '限制普通用户举报频率' },
-  { key: 'feedback', label: '留言限流', hint: '限制反馈留言提交频率' },
-  { key: 'wiki', label: '瓜条提交限流', hint: '限制角色瓜条新建和编辑提交频率' },
-];
-
-const normalizeRateLimitNumber = (value: unknown, fallback: number, min: number, max: number) => {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) {
-    return fallback;
-  }
-  return Math.min(Math.max(Math.trunc(parsed), min), max);
-};
-
-const normalizeAutoHideReportThreshold = (value: unknown) => normalizeRateLimitNumber(
-  value,
-  AUTO_HIDE_REPORT_THRESHOLD_DEFAULT,
-  1,
-  AUTO_HIDE_REPORT_THRESHOLD_MAX
-);
-
-const normalizeRateLimits = (input: unknown): RateLimitSettings => {
-  const source = input && typeof input === 'object' ? input as Partial<Record<RateLimitAction, Partial<RateLimitItem>>> : {};
-  return {
-    post: {
-      limit: normalizeRateLimitNumber(source?.post?.limit, RATE_LIMIT_DEFAULTS.post.limit, 1, RATE_LIMIT_MAX_COUNT),
-      windowMs: normalizeRateLimitNumber(source?.post?.windowMs, RATE_LIMIT_DEFAULTS.post.windowMs, 1000, RATE_LIMIT_MAX_WINDOW_SECONDS * 1000),
-    },
-    comment: {
-      limit: normalizeRateLimitNumber(source?.comment?.limit, RATE_LIMIT_DEFAULTS.comment.limit, 1, RATE_LIMIT_MAX_COUNT),
-      windowMs: normalizeRateLimitNumber(source?.comment?.windowMs, RATE_LIMIT_DEFAULTS.comment.windowMs, 1000, RATE_LIMIT_MAX_WINDOW_SECONDS * 1000),
-    },
-    report: {
-      limit: normalizeRateLimitNumber(source?.report?.limit, RATE_LIMIT_DEFAULTS.report.limit, 1, RATE_LIMIT_MAX_COUNT),
-      windowMs: normalizeRateLimitNumber(source?.report?.windowMs, RATE_LIMIT_DEFAULTS.report.windowMs, 1000, RATE_LIMIT_MAX_WINDOW_SECONDS * 1000),
-    },
-    feedback: {
-      limit: normalizeRateLimitNumber(source?.feedback?.limit, RATE_LIMIT_DEFAULTS.feedback.limit, 1, RATE_LIMIT_MAX_COUNT),
-      windowMs: normalizeRateLimitNumber(source?.feedback?.windowMs, RATE_LIMIT_DEFAULTS.feedback.windowMs, 1000, RATE_LIMIT_MAX_WINDOW_SECONDS * 1000),
-    },
-    wiki: {
-      limit: normalizeRateLimitNumber(source?.wiki?.limit, RATE_LIMIT_DEFAULTS.wiki.limit, 1, RATE_LIMIT_MAX_COUNT),
-      windowMs: normalizeRateLimitNumber(source?.wiki?.windowMs, RATE_LIMIT_DEFAULTS.wiki.windowMs, 1000, RATE_LIMIT_MAX_WINDOW_SECONDS * 1000),
-    },
-  };
-};
-
-const formatRateLimitWindow = (windowMs: number) => {
-  const seconds = Math.max(1, Math.round(windowMs / 1000));
-  if (seconds % 3600 === 0) {
-    return `${seconds / 3600} 小时`;
-  }
-  if (seconds % 60 === 0) {
-    return `${seconds / 60} 分钟`;
-  }
-  return `${seconds} 秒`;
-};
 
 const AdminDashboard: React.FC = () => {
   const { state, handleReport, showToast, getPendingReports, loadReports, loadStats, loadSettings, logoutAdmin } = useApp();
@@ -1902,12 +1841,8 @@ const AdminDashboard: React.FC = () => {
         showToast('暂无可导出词', 'warning');
         return;
       }
-      if (navigator?.clipboard?.writeText) {
-        await navigator.clipboard.writeText(content);
-        showToast('已复制到剪贴板', 'success');
-      } else {
-        showToast('浏览器不支持剪贴板', 'warning');
-      }
+      await copyTextToClipboard(content);
+      showToast('已复制到剪贴板', 'success');
     } catch (error) {
       const message = error instanceof Error ? error.message : '导出失败';
       showToast(message, 'error');
@@ -2534,491 +2469,93 @@ const AdminDashboard: React.FC = () => {
 
             {/* Publish Center */}
             {currentView === 'announcement' && (
-              <section className="space-y-6">
-                <form
-                  onSubmit={handleComposeSubmit}
-                  className="bg-white p-6 border-2 border-ink rounded-lg shadow-sketch-sm"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
-                    <div>
-                      <h3 className="font-display text-xl">后台投稿</h3>
-                      <p className="text-xs text-pencil font-sans">与前台投稿保持一致的 Markdown 发布方案</p>
-                    </div>
-                  </div>
-
-                  <MarkdownComposeEditor
-                    value={composeText}
-                    onChange={setComposeText}
-                    placeholder="在后台发布内容... 支持 Markdown、图片和表情包"
-                    maxLength={composeMaxLength}
-                    minHeight="280px"
-                    ariaLabel="后台投稿 Markdown 编辑器"
-                    showToast={showToast}
-                  />
-
-                  <div className="mt-4 flex flex-wrap items-center justify-between gap-4">
-                    <label className="flex items-center gap-2 text-sm font-sans text-pencil select-none">
-                      <input
-                        type="checkbox"
-                        className="w-4 h-4"
-                        checked={composeIncludeDeveloper}
-                        onChange={(e) => setComposeIncludeDeveloper(e.target.checked)}
-                      />
-                      <span>附带开发者信息（显示 admin 名片）</span>
-                    </label>
-                    <SketchButton
-                      type="submit"
-                      className="h-10 px-6 text-sm"
-                      disabled={composeSubmitting || !composeText.trim() || composeText.length > composeMaxLength}
-                    >
-                      {composeSubmitting ? '发布中...' : '发布'}
-                    </SketchButton>
-                  </div>
-                </form>
-
-                <form
-                  onSubmit={handleAnnouncementSubmit}
-                  className="bg-white p-6 border-2 border-ink rounded-lg shadow-sketch-sm"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
-                    <div>
-                      <h3 className="font-display text-xl">站点公告</h3>
-                      <p className="text-xs text-pencil font-sans">仅保留当前一条公告</p>
-                    </div>
-                    {announcementUpdatedAt && (
-                      <span className="text-xs text-pencil font-sans">更新时间：{formatAnnouncementTime(announcementUpdatedAt)}</span>
-                    )}
-                  </div>
-
-                  <MarkdownComposeEditor
-                    value={announcementText}
-                    onChange={setAnnouncementText}
-                    placeholder="发布公告内容... 支持 Markdown、图片和表情包"
-                    maxLength={5000}
-                    minHeight="240px"
-                    ariaLabel="站点公告 Markdown 编辑器"
-                    showToast={showToast}
-                  />
-
-                  <div className="mt-4 flex items-center justify-end gap-2">
-                    <SketchButton
-                      type="button"
-                      variant="secondary"
-                      className="h-10 px-4 text-sm"
-                      onClick={handleAnnouncementClear}
-                      disabled={announcementSubmitting || announcementLoading || !announcementText.trim()}
-                    >
-                      清空公告
-                    </SketchButton>
-                    <SketchButton
-                      type="submit"
-                      className="h-10 px-6 text-sm"
-                      disabled={announcementSubmitting || announcementLoading || !announcementText.trim() || announcementText.length > 5000}
-                    >
-                      {announcementSubmitting ? '发布中...' : '发布公告'}
-                    </SketchButton>
-                  </div>
-                </form>
-
-                <div className="bg-white p-6 border-2 border-ink rounded-lg shadow-sketch-sm space-y-6">
-                  <form onSubmit={handleUpdateAnnouncementSubmit}>
-                    <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
-                      <div>
-                        <h3 className="font-display text-xl">更新公告</h3>
-                        <p className="text-xs text-pencil font-sans">保留历史多条，仅记录更新时间与更新内容</p>
-                      </div>
-                    </div>
-
-                    <MarkdownComposeEditor
-                      value={updateAnnouncementText}
-                      onChange={setUpdateAnnouncementText}
-                      placeholder="发布更新公告内容... 支持 Markdown、图片和表情包"
-                      maxLength={5000}
-                      minHeight="240px"
-                      ariaLabel="更新公告 Markdown 编辑器"
-                      showToast={showToast}
-                    />
-
-                    <div className="mt-4 flex items-center justify-end">
-                      <SketchButton
-                        type="submit"
-                        className="h-10 px-6 text-sm"
-                        disabled={updateAnnouncementSubmitting || !updateAnnouncementText.trim() || updateAnnouncementText.length > 5000}
-                      >
-                        {updateAnnouncementSubmitting ? '发布中...' : '发布更新公告'}
-                      </SketchButton>
-                    </div>
-                  </form>
-
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <h4 className="font-display text-lg">历史更新</h4>
-                      <span className="text-xs text-pencil font-sans">{updateAnnouncements.length} 条</span>
-                    </div>
-
-                    {updateAnnouncementLoading ? (
-                      <div className="text-center py-10 bg-gray-50 border-2 border-dashed border-gray-200 rounded-lg text-pencil font-hand">
-                        正在加载更新公告...
-                      </div>
-                    ) : updateAnnouncements.length === 0 ? (
-                      <div className="text-center py-10 bg-gray-50 border-2 border-dashed border-gray-200 rounded-lg text-pencil font-hand">
-                        暂无更新公告
-                      </div>
-                    ) : (
-                      <div className="flex flex-col gap-4">
-                        {updateAnnouncements.map((item) => (
-                          <div key={item.id} className="rounded-lg border-2 border-ink/10 bg-gray-50 p-4">
-                            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-                              <span className="text-xs text-pencil font-sans">更新时间：{formatAnnouncementTime(item.updatedAt)}</span>
-                              <SketchButton
-                                type="button"
-                                variant="danger"
-                                className="h-9 px-3 text-xs"
-                                onClick={() => handleUpdateAnnouncementDelete(item.id)}
-                                disabled={updateAnnouncementSubmitting}
-                              >
-                                删除
-                              </SketchButton>
-                            </div>
-                            <MarkdownRenderer content={item.content} className="font-sans text-base text-ink" />
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </section>
+              <AdminPublishCenterView
+                composeText={composeText}
+                composeMaxLength={composeMaxLength}
+                composeSubmitting={composeSubmitting}
+                composeIncludeDeveloper={composeIncludeDeveloper}
+                announcementText={announcementText}
+                announcementUpdatedAt={announcementUpdatedAt}
+                announcementSubmitting={announcementSubmitting}
+                announcementLoading={announcementLoading}
+                updateAnnouncementText={updateAnnouncementText}
+                updateAnnouncementSubmitting={updateAnnouncementSubmitting}
+                updateAnnouncementLoading={updateAnnouncementLoading}
+                updateAnnouncements={updateAnnouncements}
+                showToast={showToast}
+                formatAnnouncementTime={formatAnnouncementTime}
+                onComposeTextChange={setComposeText}
+                onComposeIncludeDeveloperChange={setComposeIncludeDeveloper}
+                onComposeSubmit={handleComposeSubmit}
+                onAnnouncementTextChange={setAnnouncementText}
+                onAnnouncementSubmit={handleAnnouncementSubmit}
+                onAnnouncementClear={handleAnnouncementClear}
+                onUpdateAnnouncementTextChange={setUpdateAnnouncementText}
+                onUpdateAnnouncementSubmit={handleUpdateAnnouncementSubmit}
+                onUpdateAnnouncementDelete={handleUpdateAnnouncementDelete}
+              />
             )}
 
             {/* Settings View */}
             {currentView === 'settings' && (
-              <section className="space-y-6">
-                <form
-                  onSubmit={handleSettingsSubmit}
-                  className="bg-white p-6 border-2 border-ink rounded-lg shadow-sketch-sm"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
-                    <div>
-                      <h3 className="font-display text-xl">站点开关</h3>
-                      <p className="text-xs text-pencil font-sans">保存后立即生效，无需重启服务</p>
-                    </div>
-                  </div>
-                  <div className="space-y-4">
-                    <label className="flex items-center gap-3 text-sm font-sans">
-                      <input
-                        type="checkbox"
-                        className="w-4 h-4"
-                        checked={turnstileEnabled}
-                        onChange={(e) => setTurnstileEnabled(e.target.checked)}
-                        disabled={settingsLoading || settingsSubmitting}
-                      />
-                      <span>启用 Turnstile 验证</span>
-                    </label>
-                    <label className="flex items-center gap-3 text-sm font-sans">
-                      <input
-                        type="checkbox"
-                        className="w-4 h-4"
-                        checked={cnyThemeEnabled}
-                        onChange={(e) => setCnyThemeEnabled(e.target.checked)}
-                        disabled={settingsLoading || settingsSubmitting}
-                      />
-                      <span>启用春节皮肤（仅前台）</span>
-                    </label>
-                    <div className="space-y-2">
-                      <label className="text-sm font-sans font-bold text-ink block">默认帖子标签</label>
-                      <textarea
-                        value={defaultPostTagsInput}
-                        onChange={(e) => setDefaultPostTagsInput(e.target.value)}
-                        placeholder={`每行一个标签，或用逗号/分号分隔；每个标签最多${MAX_TAG_LENGTH}字`}
-                        rows={4}
-                        className="w-full bg-transparent border-2 border-gray-200 rounded-lg outline-none font-sans text-sm text-ink placeholder:text-pencil/40 px-3 py-2 focus:border-ink transition-colors resize-y"
-                        disabled={settingsLoading || settingsSubmitting}
-                      />
-                      <div className="text-xs text-pencil font-sans space-y-1">
-                        <p>投稿页会展示这些默认标签，用户仍可自行创建新标签。</p>
-                        <p>当前有效：{parsedDefaultPostTags.length}/{MAX_DEFAULT_POST_TAGS}，超长标签与重复标签会自动过滤。</p>
-                      </div>
-                    </div>
-                    <div className="space-y-3 rounded-lg border border-gray-200 bg-paper/60 p-3">
-                      <div className="space-y-1">
-                        <label className="text-sm font-sans font-bold text-ink block">举报自动隐藏阈值</label>
-                        <p className="text-xs text-pencil font-sans">
-                          同一帖子或评论在最近 24 小时内达到该数量的待处理举报后，会自动暂时隐藏。
-                        </p>
-                      </div>
-                      <div className="max-w-xs">
-                        <input
-                          type="number"
-                          min={1}
-                          max={AUTO_HIDE_REPORT_THRESHOLD_MAX}
-                          step={1}
-                          value={autoHideReportThreshold}
-                          onChange={(e) => setAutoHideReportThreshold(normalizeAutoHideReportThreshold(e.target.value))}
-                          className="w-full bg-white border-2 border-gray-200 rounded-lg outline-none font-sans text-sm text-ink px-3 py-2 focus:border-ink transition-colors"
-                          disabled={settingsLoading || settingsSubmitting}
-                        />
-                      </div>
-                      <p className="text-xs text-pencil font-sans">
-                        当前规则：24 小时内达到 {autoHideReportThreshold} 条待处理举报后自动隐藏。
-                      </p>
-                    </div>
-                    <div className="space-y-3 border-t border-gray-200 pt-4">
-                      <div>
-                        <label className="text-sm font-sans font-bold text-ink block">企业微信机器人提醒</label>
-                        <p className="text-xs text-pencil font-sans mt-1">
-                          新留言、自动隐藏待审核内容、瓜条待审和新谣言待审都会推送到企业微信群；推送失败不会影响提交或审核。
-                        </p>
-                      </div>
-                      <label className="flex items-center gap-3 text-sm font-sans">
-                        <input
-                          type="checkbox"
-                          className="w-4 h-4"
-                          checked={wecomWebhookEnabled}
-                          onChange={(e) => setWecomWebhookEnabled(e.target.checked)}
-                          disabled={settingsLoading || settingsSubmitting}
-                        />
-                        <span>启用企业微信机器人提醒</span>
-                      </label>
-                      <div className="rounded-lg border border-gray-200 bg-paper/60 p-3 space-y-3">
-                        <p className="text-xs text-pencil font-sans">
-                          当前状态：{wecomWebhookConfigured ? `已配置 ${wecomWebhookMaskedUrl}` : '未配置'}
-                        </p>
-                        <input
-                          type="url"
-                          value={wecomWebhookUrlInput}
-                          onChange={(e) => {
-                            setWecomWebhookUrlInput(e.target.value);
-                            if (e.target.value.trim()) {
-                              setWecomWebhookClearUrl(false);
-                            }
-                          }}
-                          placeholder={wecomWebhookConfigured ? '留空则保留当前 Webhook 地址' : 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...'}
-                          className="w-full bg-white border-2 border-gray-200 rounded-lg outline-none font-sans text-sm text-ink placeholder:text-pencil/40 px-3 py-2 focus:border-ink transition-colors"
-                          disabled={settingsLoading || settingsSubmitting}
-                        />
-                        <div className="flex flex-wrap items-center justify-between gap-3">
-                          <label className="flex items-center gap-2 text-xs font-sans text-pencil">
-                            <input
-                              type="checkbox"
-                              className="w-4 h-4"
-                              checked={wecomWebhookClearUrl}
-                              onChange={(e) => setWecomWebhookClearUrl(e.target.checked)}
-                              disabled={settingsLoading || settingsSubmitting || !wecomWebhookConfigured}
-                            />
-                            <span>清空已保存的 Webhook 地址</span>
-                          </label>
-                          <SketchButton
-                            type="button"
-                            variant="secondary"
-                            className="h-9 px-4 text-xs"
-                            disabled={settingsLoading || settingsSubmitting || wecomWebhookTesting || (!wecomWebhookConfigured && !wecomWebhookUrlInput.trim()) || (wecomWebhookClearUrl && !wecomWebhookUrlInput.trim())}
-                            onClick={handleWecomWebhookTest}
-                          >
-                            {wecomWebhookTesting ? '发送中...' : '发送测试消息'}
-                          </SketchButton>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="space-y-3">
-                      <label className="text-sm font-sans font-bold text-ink block">限流配置</label>
-                      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                        {RATE_LIMIT_FIELDS.map((item) => {
-                          const config = rateLimits[item.key];
-                          const windowSeconds = Math.max(1, Math.round(config.windowMs / 1000));
-                          return (
-                            <div
-                              key={item.key}
-                              className="rounded-lg border border-gray-200 bg-paper/60 p-3 space-y-3"
-                            >
-                              <div className="space-y-1">
-                                <p className="text-sm font-sans font-bold text-ink">{item.label}</p>
-                                <p className="text-xs text-pencil font-sans">{item.hint}</p>
-                              </div>
-                              <div className="grid grid-cols-2 gap-2">
-                                <label className="space-y-1">
-                                  <span className="text-xs text-pencil font-sans">次数</span>
-                                  <input
-                                    type="number"
-                                    min={1}
-                                    max={RATE_LIMIT_MAX_COUNT}
-                                    step={1}
-                                    value={config.limit}
-                                    onChange={(e) => updateRateLimitCount(item.key, e.target.value)}
-                                    className="w-full bg-white border-2 border-gray-200 rounded-lg outline-none font-sans text-sm text-ink px-3 py-2 focus:border-ink transition-colors"
-                                    disabled={settingsLoading || settingsSubmitting}
-                                  />
-                                </label>
-                                <label className="space-y-1">
-                                  <span className="text-xs text-pencil font-sans">窗口（秒）</span>
-                                  <input
-                                    type="number"
-                                    min={1}
-                                    max={RATE_LIMIT_MAX_WINDOW_SECONDS}
-                                    step={1}
-                                    value={windowSeconds}
-                                    onChange={(e) => updateRateLimitWindowSeconds(item.key, e.target.value)}
-                                    className="w-full bg-white border-2 border-gray-200 rounded-lg outline-none font-sans text-sm text-ink px-3 py-2 focus:border-ink transition-colors"
-                                    disabled={settingsLoading || settingsSubmitting}
-                                  />
-                                </label>
-                              </div>
-                              <p className="text-xs text-pencil font-sans">
-                                当前规则：{formatRateLimitWindow(config.windowMs)} 内最多 {config.limit} 次
-                              </p>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                    <div className="rounded-lg border border-dashed border-ink/40 bg-paper px-3 py-2 text-xs text-pencil font-sans space-y-1">
-                      <p>自动时段：农历腊月十六 00:00 至 正月十五 23:59（中国时区）</p>
-                      <p>当前处于春节时段：{cnyThemeAutoActive ? '是' : '否'}</p>
-                      <p>当前前台生效状态：{cnyThemeActive ? '是' : '否'}</p>
-                      <p>本次保存后预计生效：{cnyThemePreviewActive ? '是' : '否'}</p>
-                    </div>
-                  </div>
-                  <div className="flex justify-end mt-4">
-                    <SketchButton
-                      type="submit"
-                      className="h-10 px-6 text-sm"
-                      disabled={settingsSubmitting || settingsLoading}
-                    >
-                      {settingsSubmitting ? '保存中...' : '保存设置'}
-                    </SketchButton>
-                  </div>
-                </form>
-
-                <div className="bg-white p-6 border-2 border-ink rounded-lg shadow-sketch-sm">
-                  <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
-                    <div>
-                      <h3 className="font-display text-xl">违禁词库</h3>
-                      <p className="text-xs text-pencil font-sans">保存后立即生效，无需重启服务</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <SketchButton
-                        type="button"
-                        variant="secondary"
-                        className="h-9 px-4 text-sm"
-                        onClick={handleVocabularyImport}
-                        disabled={vocabularySubmitting || vocabularyLoading}
-                      >
-                        从TXT导入
-                      </SketchButton>
-                      <SketchButton
-                        type="button"
-                        variant="secondary"
-                        className="h-9 px-4 text-sm"
-                        onClick={handleVocabularyExport}
-                        disabled={vocabularySubmitting || vocabularyLoading}
-                      >
-                        导出到剪贴板
-                      </SketchButton>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-3 mb-4">
-                    <input
-                      value={vocabularySearch}
-                      onChange={(e) => {
-                        setVocabularySearch(e.target.value);
-                        setVocabularyPage(1);
-                      }}
-                      placeholder="搜索违禁词..."
-                      className="flex-1 min-w-[180px] bg-transparent border-2 border-gray-200 rounded-lg outline-none font-sans text-sm text-ink placeholder:text-pencil/40 px-3 py-2 focus:border-ink transition-colors"
-                      disabled={vocabularyLoading || vocabularySubmitting}
-                    />
-                    <form onSubmit={handleVocabularyAdd} className="flex items-center gap-2">
-                      <input
-                        value={vocabularyNewWord}
-                        onChange={(e) => setVocabularyNewWord(e.target.value)}
-                        placeholder="新增违禁词"
-                        className="min-w-[160px] bg-transparent border-2 border-gray-200 rounded-lg outline-none font-sans text-sm text-ink placeholder:text-pencil/40 px-3 py-2 focus:border-ink transition-colors"
-                        disabled={vocabularyLoading || vocabularySubmitting}
-                      />
-                      <SketchButton
-                        type="submit"
-                        className="h-9 px-4 text-sm"
-                        disabled={vocabularySubmitting || vocabularyLoading}
-                      >
-                        添加
-                      </SketchButton>
-                    </form>
-                  </div>
-
-                  <div className="flex items-center justify-between text-xs text-pencil font-sans mb-3">
-                    <span>共 {vocabularyTotal} 条</span>
-                    <span>第 {vocabularyPage} / {totalVocabularyPages} 页</span>
-                  </div>
-
-                  {vocabularyLoading ? (
-                    <div className="text-center py-10 bg-gray-50 border-2 border-dashed border-gray-200 rounded-lg text-pencil font-hand">
-                      正在加载违禁词...
-                    </div>
-                  ) : vocabularyItems.length === 0 ? (
-                    <div className="text-center py-10 bg-gray-50 border-2 border-dashed border-gray-200 rounded-lg text-pencil font-hand">
-                      暂无匹配的违禁词
-                    </div>
-                  ) : (
-                    <div className="flex flex-col gap-3">
-                      {vocabularyItems.map((item) => (
-                        <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 border-2 border-ink/10 rounded-lg px-4 py-3">
-                          <div className="flex items-center gap-3">
-                            <span className="font-sans text-ink text-sm font-semibold">{item.word}</span>
-                            <Badge color={item.enabled ? 'bg-highlight' : 'bg-gray-200'}>
-                              {item.enabled ? '启用' : '停用'}
-                            </Badge>
-                            <span className="text-xs text-pencil font-sans">更新：{formatAnnouncementTime(item.updatedAt)}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <SketchButton
-                              type="button"
-                              variant="secondary"
-                              className="h-8 px-3 text-xs"
-                              onClick={() => handleVocabularyToggle(item.id, !item.enabled)}
-                              disabled={vocabularySubmitting}
-                            >
-                              {item.enabled ? '停用' : '启用'}
-                            </SketchButton>
-                            <SketchButton
-                              type="button"
-                              variant="danger"
-                              className="h-8 px-3 text-xs"
-                              onClick={() => handleVocabularyDelete(item.id)}
-                              disabled={vocabularySubmitting}
-                            >
-                              删除
-                            </SketchButton>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  <div className="flex items-center justify-between mt-4 text-xs text-pencil font-sans">
-                    <SketchButton
-                      type="button"
-                      variant="secondary"
-                      className="h-8 px-3 text-xs"
-                      disabled={vocabularyPage <= 1 || vocabularyLoading}
-                      onClick={() => setVocabularyPage((prev) => Math.max(prev - 1, 1))}
-                    >
-                      上一页
-                    </SketchButton>
-                    <SketchButton
-                      type="button"
-                      variant="secondary"
-                      className="h-8 px-3 text-xs"
-                      disabled={vocabularyPage >= totalVocabularyPages || vocabularyLoading}
-                      onClick={() => setVocabularyPage((prev) => Math.min(prev + 1, totalVocabularyPages))}
-                    >
-                      下一页
-                    </SketchButton>
-                  </div>
-                </div>
-              </section>
+              <AdminSystemSettingsView
+                settingsLoading={settingsLoading}
+                settingsSubmitting={settingsSubmitting}
+                turnstileEnabled={turnstileEnabled}
+                cnyThemeEnabled={cnyThemeEnabled}
+                cnyThemeAutoActive={cnyThemeAutoActive}
+                cnyThemeActive={cnyThemeActive}
+                cnyThemePreviewActive={cnyThemePreviewActive}
+                defaultPostTagsInput={defaultPostTagsInput}
+                defaultPostTagsValidCount={parsedDefaultPostTags.length}
+                maxDefaultPostTags={MAX_DEFAULT_POST_TAGS}
+                maxTagLength={MAX_TAG_LENGTH}
+                autoHideReportThreshold={autoHideReportThreshold}
+                wecomWebhookEnabled={wecomWebhookEnabled}
+                wecomWebhookConfigured={wecomWebhookConfigured}
+                wecomWebhookMaskedUrl={wecomWebhookMaskedUrl}
+                wecomWebhookUrlInput={wecomWebhookUrlInput}
+                wecomWebhookClearUrl={wecomWebhookClearUrl}
+                wecomWebhookTesting={wecomWebhookTesting}
+                rateLimits={rateLimits}
+                vocabularyItems={vocabularyItems}
+                vocabularySearch={vocabularySearch}
+                vocabularyNewWord={vocabularyNewWord}
+                vocabularyTotal={vocabularyTotal}
+                vocabularyPage={vocabularyPage}
+                totalVocabularyPages={totalVocabularyPages}
+                vocabularyLoading={vocabularyLoading}
+                vocabularySubmitting={vocabularySubmitting}
+                formatUpdatedAt={formatAnnouncementTime}
+                onSubmit={handleSettingsSubmit}
+                onTurnstileEnabledChange={setTurnstileEnabled}
+                onCnyThemeEnabledChange={setCnyThemeEnabled}
+                onDefaultPostTagsChange={setDefaultPostTagsInput}
+                onAutoHideReportThresholdChange={(value) => setAutoHideReportThreshold(normalizeAutoHideReportThreshold(value))}
+                onWecomWebhookEnabledChange={setWecomWebhookEnabled}
+                onWecomWebhookUrlInputChange={(value) => {
+                  setWecomWebhookUrlInput(value);
+                  if (value.trim()) {
+                    setWecomWebhookClearUrl(false);
+                  }
+                }}
+                onWecomWebhookClearUrlChange={setWecomWebhookClearUrl}
+                onWecomWebhookTest={handleWecomWebhookTest}
+                onRateLimitCountChange={updateRateLimitCount}
+                onRateLimitWindowSecondsChange={updateRateLimitWindowSeconds}
+                onVocabularySearchChange={(value) => {
+                  setVocabularySearch(value);
+                  setVocabularyPage(1);
+                }}
+                onVocabularyNewWordChange={setVocabularyNewWord}
+                onVocabularyAdd={handleVocabularyAdd}
+                onVocabularyImport={handleVocabularyImport}
+                onVocabularyExport={handleVocabularyExport}
+                onVocabularyToggle={handleVocabularyToggle}
+                onVocabularyDelete={handleVocabularyDelete}
+                onVocabularyPageChange={setVocabularyPage}
+              />
             )}
-
-            {/* 瓜条审核视图 */}
             {currentView === 'wiki' && (
               <AdminWikiPanel showToast={showToast} onPendingCountChange={fetchWikiPendingCount} />
             )}
@@ -3048,7 +2585,6 @@ const AdminDashboard: React.FC = () => {
               />
             )}
 
-            {/* Chat View */}
             {/* Chat View */}
             {currentView === 'chat' && (
               <AdminChatPanel

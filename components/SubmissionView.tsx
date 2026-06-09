@@ -6,6 +6,7 @@ import { useApp } from '../store/AppContext';
 import MarkdownComposeEditor from './MarkdownComposeEditor';
 import { SketchCard, SketchButton, Tape } from './SketchUI';
 import Turnstile, { TurnstileHandle } from './Turnstile';
+import { buildPostPath } from './clipboard';
 
 const normalizeTag = (value: string) => value
   .trim()
@@ -158,7 +159,7 @@ const SubmissionView: React.FC = () => {
         timestamp: '刚刚',
         tags: selectedTags,
       }, turnstileToken);
-      const targetPath = `/post/${encodeURIComponent(newPost.id)}`;
+      const targetPath = buildPostPath(newPost.id);
       if (window.location.pathname + window.location.search !== targetPath) {
         window.history.pushState({}, '', targetPath);
         window.dispatchEvent(new PopStateEvent('popstate'));

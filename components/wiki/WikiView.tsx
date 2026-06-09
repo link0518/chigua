@@ -1,4 +1,4 @@
-﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { api } from '../../api';
 import { useApp } from '../../store/AppContext';
@@ -7,6 +7,7 @@ import WikiMarkdownComposer from '../WikiMarkdownComposer';
 import MarkdownRenderer from '../MarkdownRenderer';
 import Turnstile, { TurnstileHandle } from '../Turnstile';
 import { getWikiMarkdownExcerpt } from './wikiMarkdownPlainText';
+import { copyTextToClipboard } from '../clipboard';
 
 type WikiListResponse = {
   items?: WikiEntry[];
@@ -135,27 +136,6 @@ const getRevisionSummary = (revision: WikiRevision) => (
 const getWikiEntryUrl = (entry: WikiEntry) => (
   `${window.location.origin}/wiki/${encodeURIComponent(entry.slug)}`
 );
-
-const copyTextToClipboard = async (text: string) => {
-  if (navigator.clipboard && window.isSecureContext) {
-    await navigator.clipboard.writeText(text);
-    return;
-  }
-
-  const textarea = document.createElement('textarea');
-  textarea.value = text;
-  textarea.style.position = 'fixed';
-  textarea.style.left = '-9999px';
-  textarea.style.top = '0';
-  document.body.appendChild(textarea);
-  textarea.focus();
-  textarea.select();
-  const copied = document.execCommand('copy');
-  document.body.removeChild(textarea);
-  if (!copied) {
-    throw new Error('复制失败');
-  }
-};
 
 const sanitizeImageFileName = (value: string) => {
   const cleaned = value

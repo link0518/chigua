@@ -51,6 +51,7 @@ export default defineConfig(({ mode }) => {
     const apiPort = Number(env.PORT || 4395);
     const devPort = Number(env.VITE_PORT || 4396);
     return {
+      envPrefix: ['VITE_TURNSTILE_', 'VITE_WS_BASE_URL', 'VITE_PORT'],
       server: {
         port: devPort,
         host: '0.0.0.0',
@@ -69,8 +70,6 @@ export default defineConfig(({ mode }) => {
       },
       plugins: [react(), versionedFaviconPlugin(appVersion)],
       define: {
-        'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-        'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
         'import.meta.env.VITE_APP_VERSION': JSON.stringify(appVersion)
       },
       resolve: {

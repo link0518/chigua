@@ -4,6 +4,7 @@ import { api } from '../api';
 import type { Post } from '../types';
 import { useApp } from '../store/AppContext';
 import { SketchButton, Badge } from './SketchUI';
+import { buildPostPath } from './clipboard';
 
 const PAGE_SIZE = 20;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -159,7 +160,7 @@ const SearchView: React.FC = () => {
     : todayString;
 
   const openPost = (postId: string) => {
-    const targetPath = `/post/${encodeURIComponent(postId)}`;
+    const targetPath = buildPostPath(postId);
     if (window.location.pathname + window.location.search !== targetPath) {
       window.history.pushState({}, '', targetPath);
       window.dispatchEvent(new PopStateEvent('popstate'));
