@@ -42,6 +42,7 @@ import AdminModerationDrawer, {
   type AdminModerationQuickPreset,
   type AdminModerationSubmitPayload,
 } from '@/features/admin/components/AdminModerationDrawer';
+import AdminActionDrawer from '@/features/admin/components/AdminActionDrawer';
 
 type AdminView = 'overview' | 'reports' | 'processed' | 'posts' | 'hidden' | 'bans' | 'audit' | 'feedback' | 'announcement' | 'settings' | 'chat' | 'wiki' | 'rumors';
 type PostStatusFilter = 'all' | 'active' | 'hidden' | 'deleted';
@@ -100,6 +101,24 @@ const EMPTY_REPORT_CONFIRM_MODAL: ReportConfirmModalState = {
 };
 
 type ModerationDrawerState = AdminModerationDrawerRequest | null;
+type AdminMergedBanSearchItem = ReturnType<typeof buildMergedBanItems>[number] & {
+  searchText: string;
+};
+
+const SEARCH_DEBOUNCE_MS = 350;
+
+const useDebouncedValue = <T,>(value: T, delayMs = SEARCH_DEBOUNCE_MS) => {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedValue(value);
+    }, delayMs);
+    return () => window.clearTimeout(timer);
+  }, [delayMs, value]);
+
+  return debouncedValue;
+};
 
 const normalizeTag = (value: string) => String(value || '')
   .trim()
@@ -141,12 +160,77 @@ const parseDefaultPostTagsInput = (value: string) => {
 
 const formatDefaultPostTagsInput = (tags: unknown) => sanitizeTagArray(tags, MAX_DEFAULT_POST_TAGS).join('\n');
 
+const normalizeAdminSearchText = (values: Array<string | number | null | undefined>) => (
+  values
+    .filter((value) => value !== null && value !== undefined && String(value).trim())
+    .map((value) => String(value).toLowerCase())
+    .join('\n')
+);
+
+const buildReportSearchText = (report: Report) => normalizeAdminSearchText([
+  report.id,
+  report.contentSnippet,
+  report.reason,
+  report.postId,
+  report.targetId,
+  report.postContent,
+  report.commentContent,
+  report.targetContent,
+  ...getAdminIdentitySearchValues({
+    ip: report.targetIp,
+    sessionId: report.targetSessionId,
+    fingerprint: report.targetFingerprint,
+    identityKey: report.targetIdentityKey,
+    identityHashes: report.targetIdentityHashes,
+  }),
+  ...getAdminIdentitySearchValues({
+    ip: report.reporterIp,
+    fingerprint: report.reporterFingerprint,
+    identityKey: report.reporterIdentityKey,
+    identityHashes: report.reporterIdentityHashes,
+  }),
+]);
+
+const buildMergedBanItems = (
+  bannedIps: Array<{ ip: string; bannedAt: number; expiresAt?: number | null; permissions?: string[]; reason?: string | null }>,
+  bannedFingerprints: Array<{ type?: 'fingerprint' | 'identity'; fingerprint: string; identityKey?: string | null; identityHashes?: string[]; bannedAt: number; expiresAt?: number | null; permissions?: string[]; reason?: string | null }>
+) => [
+    ...bannedIps.map((item) => ({ ...item, type: 'ip' as const, value: item.ip })),
+    ...bannedFingerprints.map((item) => ({
+      ...item,
+      type: item.type || (item.identityKey ? 'identity' as const : 'fingerprint' as const),
+      value: item.identityKey || item.fingerprint,
+      identityHashes: Array.from(new Set([...(item.identityHashes || []), item.fingerprint].filter(Boolean))),
+    })),
+  ];
+
+const buildBanSearchText = (item: ReturnType<typeof buildMergedBanItems>[number]) => {
+  const identityFields = item.type === 'ip'
+    ? getAdminIdentitySearchValues({
+      ip: item.value,
+    })
+    : getAdminIdentitySearchValues({
+      identityKey: item.identityKey || null,
+      fingerprint: item.fingerprint || null,
+      identityHashes: item.identityHashes || [],
+    });
+  return normalizeAdminSearchText([
+    item.value,
+    item.reason || '',
+    (item.permissions || []).join(' '),
+    item.type,
+    ...identityFields,
+  ]);
+};
+
 const AdminDashboard: React.FC = () => {
   const { state, handleReport, showToast, getPendingReports, loadReports, loadStats, loadSettings, logoutAdmin } = useApp();
   const [currentView, setCurrentView] = useState<AdminView>('overview');
   const [searchQuery, setSearchQuery] = useState('');
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [searchInput, setSearchInput] = useState('');
   const [postSearch, setPostSearch] = useState('');
+  const [postSearchInput, setPostSearchInput] = useState('');
   const [postStatus, setPostStatus] = useState<PostStatusFilter>('active');
   const [postSort, setPostSort] = useState<PostSort>('time');
   const [postPage, setPostPage] = useState(1);
@@ -156,8 +240,10 @@ const AdminDashboard: React.FC = () => {
   const [hiddenType, setHiddenType] = useState<HiddenTypeFilter>('all');
   const [hiddenReview, setHiddenReview] = useState<HiddenReviewFilter>('pending');
   const [hiddenSearch, setHiddenSearch] = useState('');
+  const [hiddenSearchInput, setHiddenSearchInput] = useState('');
   const [hiddenPage, setHiddenPage] = useState(1);
   const [hiddenTotal, setHiddenTotal] = useState(0);
+  const [hiddenPendingCount, setHiddenPendingCount] = useState(0);
   const [hiddenItems, setHiddenItems] = useState<AdminHiddenItem[]>([]);
   const [hiddenLoading, setHiddenLoading] = useState(false);
   const [selectedPosts, setSelectedPosts] = useState<Set<string>>(new Set());
@@ -227,10 +313,12 @@ const AdminDashboard: React.FC = () => {
   const [bannedFingerprints, setBannedFingerprints] = useState<Array<{ type?: 'fingerprint' | 'identity'; fingerprint: string; identityKey?: string | null; identityHashes?: string[]; bannedAt: number; expiresAt?: number | null; permissions?: string[]; reason?: string | null }>>([]);
   const [banLoading, setBanLoading] = useState(false);
   const [banSearch, setBanSearch] = useState('');
+  const [banSearchInput, setBanSearchInput] = useState('');
   const [moderationDrawer, setModerationDrawer] = useState<ModerationDrawerState>(null);
   const [moderationSubmitting, setModerationSubmitting] = useState(false);
   const [auditLogs, setAuditLogs] = useState<AdminAuditLog[]>([]);
   const [auditSearch, setAuditSearch] = useState('');
+  const [auditSearchInput, setAuditSearchInput] = useState('');
   const [auditPage, setAuditPage] = useState(1);
   const [auditTotal, setAuditTotal] = useState(0);
   const [auditLoading, setAuditLoading] = useState(false);
@@ -238,6 +326,7 @@ const AdminDashboard: React.FC = () => {
   const [feedbackItems, setFeedbackItems] = useState<FeedbackMessage[]>([]);
   const [feedbackStatus, setFeedbackStatus] = useState<'all' | 'unread' | 'read'>('unread');
   const [feedbackSearch, setFeedbackSearch] = useState('');
+  const [feedbackSearchInput, setFeedbackSearchInput] = useState('');
   const [feedbackPage, setFeedbackPage] = useState(1);
   const [feedbackTotal, setFeedbackTotal] = useState(0);
   const [overviewPendingReports, setOverviewPendingReports] = useState<Report[]>([]);
@@ -280,6 +369,40 @@ const AdminDashboard: React.FC = () => {
   const composeMaxLength = 2000;
   const appVersion = import.meta.env.VITE_APP_VERSION || '0.0.0';
   const appVersionLabel = appVersion.startsWith('v') ? appVersion : `v${appVersion}`;
+  const debouncedSearchInput = useDebouncedValue(searchInput);
+  const debouncedPostSearchInput = useDebouncedValue(postSearchInput);
+  const debouncedHiddenSearchInput = useDebouncedValue(hiddenSearchInput);
+  const debouncedBanSearchInput = useDebouncedValue(banSearchInput);
+  const debouncedAuditSearchInput = useDebouncedValue(auditSearchInput);
+  const debouncedFeedbackSearchInput = useDebouncedValue(feedbackSearchInput);
+
+  useEffect(() => {
+    setSearchQuery(debouncedSearchInput);
+  }, [debouncedSearchInput]);
+
+  useEffect(() => {
+    setPostSearch(debouncedPostSearchInput);
+    setPostPage(1);
+  }, [debouncedPostSearchInput]);
+
+  useEffect(() => {
+    setHiddenSearch(debouncedHiddenSearchInput);
+    setHiddenPage(1);
+  }, [debouncedHiddenSearchInput]);
+
+  useEffect(() => {
+    setBanSearch(debouncedBanSearchInput);
+  }, [debouncedBanSearchInput]);
+
+  useEffect(() => {
+    setAuditSearch(debouncedAuditSearchInput);
+    setAuditPage(1);
+  }, [debouncedAuditSearchInput]);
+
+  useEffect(() => {
+    setFeedbackSearch(debouncedFeedbackSearchInput);
+    setFeedbackPage(1);
+  }, [debouncedFeedbackSearchInput]);
 
   useEffect(() => {
     loadStats().catch(() => { });
@@ -319,8 +442,16 @@ const AdminDashboard: React.FC = () => {
   const totalWeeklyVisits = useMemo(() => visitData.reduce((sum, item) => sum + item.value, 0), [visitData]);
   const totalVocabularyPages = Math.max(Math.ceil(vocabularyTotal / VOCABULARY_PAGE_SIZE), 1);
 
-  const pendingReports = getPendingReports();
-  const processedReports = state.reports.filter(r => r.status !== 'pending');
+  const pendingReports = useMemo(() => getPendingReports(), [getPendingReports, state.reports]);
+  const processedReports = useMemo(() => state.reports.filter(r => r.status !== 'pending'), [state.reports]);
+  const pendingReportSearchItems = useMemo(
+    () => pendingReports.map((report) => ({ report, searchText: buildReportSearchText(report) })),
+    [pendingReports]
+  );
+  const processedReportSearchItems = useMemo(
+    () => processedReports.map((report) => ({ report, searchText: buildReportSearchText(report) })),
+    [processedReports]
+  );
   const visiblePendingReports = reportsLoaded ? pendingReports : overviewPendingReports;
   const pendingReportCount = reportsLoaded ? pendingReports.length : overviewPendingCount;
   const cnyThemePreviewActive = cnyThemeEnabled && cnyThemeAutoActive;
@@ -354,67 +485,22 @@ const AdminDashboard: React.FC = () => {
     const reports = currentView === 'processed' ? processedReports : pendingReports;
     if (!searchQuery.trim()) return reports;
     const query = searchQuery.toLowerCase();
-    return reports.filter((r) => {
-      const values = [
-        r.id,
-        r.contentSnippet,
-        r.reason,
-        r.postId,
-        r.targetId,
-        r.postContent,
-        r.commentContent,
-        r.targetContent,
-        ...getAdminIdentitySearchValues({
-          ip: r.targetIp,
-          sessionId: r.targetSessionId,
-          fingerprint: r.targetFingerprint,
-          identityKey: r.targetIdentityKey,
-          identityHashes: r.targetIdentityHashes,
-        }),
-        ...getAdminIdentitySearchValues({
-          ip: r.reporterIp,
-          fingerprint: r.reporterFingerprint,
-          identityKey: r.reporterIdentityKey,
-          identityHashes: r.reporterIdentityHashes,
-        }),
-      ].filter(Boolean) as string[];
-      return values.some((value) => value.toLowerCase().includes(query));
-    });
-  }, [currentView, pendingReports, processedReports, searchQuery]);
+    const source = currentView === 'processed' ? processedReportSearchItems : pendingReportSearchItems;
+    return source.filter((item) => item.searchText.includes(query)).map((item) => item.report);
+  }, [currentView, pendingReportSearchItems, pendingReports, processedReportSearchItems, processedReports, searchQuery]);
+
+  const mergedBanSearchItems = useMemo<AdminMergedBanSearchItem[]>(() => (
+    buildMergedBanItems(bannedIps, bannedFingerprints)
+      .map((item) => ({ ...item, searchText: buildBanSearchText(item) }))
+  ), [bannedFingerprints, bannedIps]);
 
   const mergedBans = useMemo(() => {
-    const items = [
-      ...bannedIps.map((item) => ({ ...item, type: 'ip' as const, value: item.ip })),
-      ...bannedFingerprints.map((item) => ({
-        ...item,
-        type: item.type || (item.identityKey ? 'identity' as const : 'fingerprint' as const),
-        value: item.identityKey || item.fingerprint,
-        identityHashes: Array.from(new Set([...(item.identityHashes || []), item.fingerprint].filter(Boolean))),
-      })),
-    ];
     const query = banSearch.trim().toLowerCase();
     if (!query) {
-      return items;
+      return mergedBanSearchItems;
     }
-    return items.filter((item) => {
-      const identityFields = 'identityKey' in item
-        ? getAdminIdentitySearchValues({
-          identityKey: item.identityKey || null,
-          fingerprint: item.fingerprint || null,
-          identityHashes: item.identityHashes || [],
-          ip: item.type === 'ip' ? item.value : null,
-        })
-        : [];
-      const fields = [
-        item.value,
-        item.reason || '',
-        (item.permissions || []).join(' '),
-        item.type,
-        ...identityFields,
-      ];
-      return fields.some((field) => field.toLowerCase().includes(query));
-    });
-  }, [bannedFingerprints, bannedIps, banSearch]);
+    return mergedBanSearchItems.filter((item) => item.searchText.includes(query));
+  }, [banSearch, mergedBanSearchItems]);
 
   const fetchOverviewReports = useCallback(async () => {
     try {
@@ -473,6 +559,9 @@ const AdminDashboard: React.FC = () => {
       });
       setHiddenItems(data.items || []);
       setHiddenTotal(data.total || 0);
+      if (hiddenType === 'all' && hiddenReview === 'pending' && !hiddenSearch.trim()) {
+        setHiddenPendingCount(data.total || 0);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : '隐藏内容加载失败，请稍后重试';
       showToast(message, 'error');
@@ -480,6 +569,20 @@ const AdminDashboard: React.FC = () => {
       setHiddenLoading(false);
     }
   }, [hiddenPage, hiddenReview, hiddenSearch, hiddenType, showToast]);
+
+  const fetchHiddenPendingCount = useCallback(async () => {
+    try {
+      const data = await api.getAdminHiddenContent({
+        type: 'all',
+        review: 'pending',
+        page: 1,
+        limit: 1,
+      });
+      setHiddenPendingCount(Number(data?.total || 0));
+    } catch {
+      setHiddenPendingCount(0);
+    }
+  }, []);
 
   const fetchPostComments = useCallback(async (postId: string, search = '') => {
     setPostCommentsLoading(true);
@@ -727,9 +830,10 @@ const AdminDashboard: React.FC = () => {
 
   useEffect(() => {
     fetchFeedbackUnreadCount().catch(() => { });
+    fetchHiddenPendingCount().catch(() => { });
     fetchWikiPendingCount().catch(() => { });
     fetchRumorPendingCount().catch(() => { });
-  }, [currentView, fetchFeedbackUnreadCount, fetchRumorPendingCount, fetchWikiPendingCount]);
+  }, [currentView, fetchFeedbackUnreadCount, fetchHiddenPendingCount, fetchRumorPendingCount, fetchWikiPendingCount]);
 
   useEffect(() => {
     if (currentView !== 'announcement') {
@@ -1011,6 +1115,7 @@ const AdminDashboard: React.FC = () => {
       showToast(action === 'keep' ? `${targetLabel}将继续保持隐藏` : `${targetLabel}已恢复显示`, 'success');
       setHiddenActionModal({ isOpen: false, item: null, action: 'keep', reason: '' });
       await fetchHiddenItems();
+      await fetchHiddenPendingCount();
       await fetchAdminPosts();
       await loadReports();
       setReportsLoaded(true);
@@ -1123,29 +1228,35 @@ const AdminDashboard: React.FC = () => {
       return;
     }
     if (currentView === 'posts') {
+      setPostSearchInput(nextValue);
       setPostSearch(nextValue);
       setPostPage(1);
       return;
     }
     if (currentView === 'hidden') {
+      setHiddenSearchInput(nextValue);
       setHiddenSearch(nextValue);
       setHiddenPage(1);
       return;
     }
     if (currentView === 'audit') {
+      setAuditSearchInput(nextValue);
       setAuditSearch(nextValue);
       setAuditPage(1);
       return;
     }
     if (currentView === 'feedback') {
+      setFeedbackSearchInput(nextValue);
       setFeedbackSearch(nextValue);
       setFeedbackPage(1);
       return;
     }
     if (currentView === 'bans') {
+      setBanSearchInput(nextValue);
       setBanSearch(nextValue);
       return;
     }
+    setSearchInput(nextValue);
     setSearchQuery(nextValue);
   }, [currentView]);
 
@@ -1879,6 +1990,67 @@ const AdminDashboard: React.FC = () => {
     </button>
   );
 
+  const adminNavGroups: Array<{
+    title: string;
+    items: Array<{ view: AdminView; icon: React.ReactNode; label: string; badge?: number }>;
+  }> = [
+      {
+        title: '今日处理',
+        items: [
+          { view: 'overview', icon: <LayoutDashboard size={18} />, label: '待办工作台' },
+          { view: 'reports', icon: <Flag size={18} />, label: '待处理举报', badge: pendingReportCount },
+          { view: 'rumors', icon: <AlertTriangle size={18} />, label: '谣言审核', badge: rumorPendingCount },
+          { view: 'wiki', icon: <BookOpen size={18} />, label: '瓜条审核', badge: wikiPendingCount },
+          { view: 'feedback', icon: <MessageSquare size={18} />, label: '留言管理', badge: feedbackUnreadCount },
+        ],
+      },
+      {
+        title: '内容管理',
+        items: [
+          { view: 'posts', icon: <FileText size={18} />, label: '帖子管理' },
+          { view: 'hidden', icon: <EyeOff size={18} />, label: '隐藏内容', badge: hiddenPendingCount },
+          { view: 'announcement', icon: <Bell size={18} />, label: '发布中心' },
+        ],
+      },
+      {
+        title: '用户与安全',
+        items: [
+          { view: 'chat', icon: <MessageSquare size={18} />, label: '聊天室管理' },
+          { view: 'bans', icon: <Shield size={18} />, label: '封禁管理' },
+          { view: 'audit', icon: <ClipboardList size={18} />, label: '操作审计' },
+          { view: 'processed', icon: <Gavel size={18} />, label: '已处理举报' },
+        ],
+      },
+      {
+        title: '系统',
+        items: [
+          { view: 'settings', icon: <Settings size={18} />, label: '系统设置' },
+        ],
+      },
+    ];
+
+  const AdminNavGroups: React.FC<{ onSelect?: () => void }> = ({ onSelect }) => (
+    <nav className="flex flex-col gap-5 font-sans text-sm">
+      {adminNavGroups.map((group) => (
+        <div key={group.title} className="flex flex-col gap-2">
+          <p className="px-2 text-[11px] font-bold tracking-[0.22em] text-pencil">{group.title}</p>
+          <div className="flex flex-col gap-1.5 font-bold">
+            {group.items.map((item) => (
+              <NavItem
+                key={item.view}
+                view={item.view}
+                icon={item.icon}
+                label={item.label}
+                badge={item.badge}
+                onSelect={onSelect}
+              />
+            ))}
+          </div>
+        </div>
+      ))}
+    </nav>
+  );
+
   const totalPostPages = Math.max(Math.ceil(postTotal / POST_PAGE_SIZE), 1);
   const totalHiddenPages = Math.max(Math.ceil(hiddenTotal / HIDDEN_PAGE_SIZE), 1);
   const isReportView = currentView === 'reports' || currentView === 'processed';
@@ -1887,14 +2059,60 @@ const AdminDashboard: React.FC = () => {
   const isBanView = currentView === 'bans';
   const isAuditView = currentView === 'audit';
   const isFeedbackView = currentView === 'feedback';
+  const isSearchableView = isReportView || isPostView || isHiddenView || isBanView || isAuditView || isFeedbackView;
+  const currentSearchValue = isPostView
+    ? postSearchInput
+    : isHiddenView
+      ? hiddenSearchInput
+      : isBanView
+        ? banSearchInput
+        : isAuditView
+          ? auditSearchInput
+          : isFeedbackView
+            ? feedbackSearchInput
+            : searchInput;
+  const currentSearchPlaceholder = isPostView
+    ? '搜索帖子或评论内容/ID/IP/身份...'
+    : isHiddenView
+      ? '搜索隐藏帖子或评论/ID/IP/身份...'
+      : isBanView
+        ? '搜索封禁对象/理由/权限/IP/身份...'
+        : isAuditView
+          ? '搜索操作/目标/管理员...'
+          : isFeedbackView
+            ? '搜索内容或联系方式/IP/身份...'
+            : '搜索 ID/内容/IP/身份...';
+  const handleCurrentSearchChange = (value: string) => {
+    if (isPostView) {
+      setPostSearchInput(value);
+      return;
+    }
+    if (isHiddenView) {
+      setHiddenSearchInput(value);
+      return;
+    }
+    if (isBanView) {
+      setBanSearchInput(value);
+      return;
+    }
+    if (isAuditView) {
+      setAuditSearchInput(value);
+      return;
+    }
+    if (isFeedbackView) {
+      setFeedbackSearchInput(value);
+      return;
+    }
+    setSearchInput(value);
+  };
   const totalAuditPages = Math.max(Math.ceil(auditTotal / AUDIT_PAGE_SIZE), 1);
   const totalFeedbackPages = Math.max(Math.ceil(feedbackTotal / FEEDBACK_PAGE_SIZE), 1);
 
   return (
     <div className="admin-font flex min-h-screen-safe bg-paper overflow-hidden overflow-x-hidden">
       {/* Sidebar */}
-      <aside className="w-64 flex-shrink-0 flex flex-col border-r-2 border-ink bg-paper z-20 hidden md:flex">
-        <div className="p-6">
+      <aside className="w-72 flex-shrink-0 flex flex-col border-r-2 border-ink bg-paper z-20 hidden md:flex">
+        <div className="min-h-0 flex-1 overflow-y-auto p-5">
           <div className="flex items-center gap-3 mb-8">
             <div className="w-10 h-10 rounded-full bg-ink border-2 border-ink flex items-center justify-center text-white">
               <LayoutDashboard size={20} />
@@ -1905,23 +2123,9 @@ const AdminDashboard: React.FC = () => {
             </div>
           </div>
 
-          <nav className="flex flex-col gap-3 font-sans font-bold text-sm">
-            <NavItem view="overview" icon={<LayoutDashboard size={18} />} label="概览" />
-            <NavItem view="posts" icon={<FileText size={18} />} label="帖子管理" />
-            <NavItem view="hidden" icon={<EyeOff size={18} />} label="隐藏内容" />
-            <NavItem view="announcement" icon={<Bell size={18} />} label="发布中心" />
-            <NavItem view="settings" icon={<Settings size={18} />} label="系统设置" />
-            <NavItem view="wiki" icon={<BookOpen size={18} />} label="瓜条审核" badge={wikiPendingCount} />
-            <NavItem view="rumors" icon={<AlertTriangle size={18} />} label="谣言审核" badge={rumorPendingCount} />
-            <NavItem view="feedback" icon={<MessageSquare size={18} />} label="留言管理" badge={feedbackUnreadCount} />
-            <NavItem view="chat" icon={<MessageSquare size={18} />} label="聊天室管理" />
-            <NavItem view="reports" icon={<Flag size={18} />} label="待处理举报" badge={pendingReportCount} />
-            <NavItem view="processed" icon={<Gavel size={18} />} label="已处理" />
-            <NavItem view="bans" icon={<Shield size={18} />} label="封禁管理" />
-            <NavItem view="audit" icon={<ClipboardList size={18} />} label="操作审计" />
-          </nav>
+          <AdminNavGroups />
         </div>
-        <div className="mt-auto p-6 border-t-2 border-ink/10">
+        <div className="p-5 border-t-2 border-ink/10">
           <button
             onClick={() => {
               logoutAdmin().catch(() => { });
@@ -1963,35 +2167,24 @@ const AdminDashboard: React.FC = () => {
             </h2>
           </div>
           <div className="flex flex-wrap sm:flex-nowrap items-center gap-3 w-full sm:w-auto">
-            {(isReportView || isPostView || isHiddenView || isAuditView || isFeedbackView) && (
+            {isSearchableView && (
               <div className="relative w-full sm:w-64">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-pencil w-4 h-4" />
                 <input
                   type="text"
-                  value={isPostView ? postSearch : isHiddenView ? hiddenSearch : isAuditView ? auditSearch : isFeedbackView ? feedbackSearch : searchQuery}
-                  onChange={(e) => {
-                    if (isPostView) {
-                      setPostSearch(e.target.value);
-                      setPostPage(1);
-                    } else if (isHiddenView) {
-                      setHiddenSearch(e.target.value);
-                      setHiddenPage(1);
-                    } else if (isAuditView) {
-                      setAuditSearch(e.target.value);
-                      setAuditPage(1);
-                    } else if (isFeedbackView) {
-                      setFeedbackSearch(e.target.value);
-                      setFeedbackPage(1);
-                    } else {
-                      setSearchQuery(e.target.value);
-                    }
-                  }}
-                  placeholder={isPostView ? '搜索帖子或评论内容/ID/IP/身份...' : isHiddenView ? '搜索隐藏帖子或评论/ID/IP/身份...' : isAuditView ? '搜索操作/目标/管理员...' : isFeedbackView ? '搜索内容或联系方式/IP/身份...' : '搜索 ID/内容/IP/身份...'}
+                  value={currentSearchValue}
+                  onChange={(e) => handleCurrentSearchChange(e.target.value)}
+                  placeholder={currentSearchPlaceholder}
                   className="pl-9 pr-4 py-2 rounded-full border-2 border-ink bg-white text-sm focus:shadow-sketch-sm outline-none transition-all w-full font-sans"
                 />
               </div>
             )}
-            <button className="relative p-2 border-2 border-transparent hover:border-ink rounded-full hover:bg-highlight transition-all">
+            <button
+              type="button"
+              onClick={() => setCurrentView(pendingReportCount > 0 ? 'reports' : 'overview')}
+              className="relative p-2 border-2 border-transparent hover:border-ink rounded-full hover:bg-highlight transition-all"
+              aria-label="打开待办"
+            >
               <Bell size={20} />
               {pendingReportCount > 0 && (
                 <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border border-ink"></span>
@@ -2028,21 +2221,9 @@ const AdminDashboard: React.FC = () => {
                   <X size={16} />
                 </button>
               </div>
-              <nav className="min-h-0 flex-1 overflow-y-auto pr-1 pb-4 flex flex-col gap-3 font-sans font-bold text-sm">
-                <NavItem view="overview" icon={<LayoutDashboard size={18} />} label="概览" onSelect={() => setMobileNavOpen(false)} />
-                <NavItem view="posts" icon={<FileText size={18} />} label="帖子管理" onSelect={() => setMobileNavOpen(false)} />
-                <NavItem view="hidden" icon={<EyeOff size={18} />} label="隐藏内容" onSelect={() => setMobileNavOpen(false)} />
-                <NavItem view="announcement" icon={<Bell size={18} />} label="公告发布" onSelect={() => setMobileNavOpen(false)} />
-                <NavItem view="settings" icon={<Settings size={18} />} label="系统设置" onSelect={() => setMobileNavOpen(false)} />
-                <NavItem view="wiki" icon={<BookOpen size={18} />} label="瓜条审核" badge={wikiPendingCount} onSelect={() => setMobileNavOpen(false)} />
-                <NavItem view="rumors" icon={<AlertTriangle size={18} />} label="谣言审核" badge={rumorPendingCount} onSelect={() => setMobileNavOpen(false)} />
-                <NavItem view="feedback" icon={<MessageSquare size={18} />} label="留言管理" badge={feedbackUnreadCount} onSelect={() => setMobileNavOpen(false)} />
-                <NavItem view="chat" icon={<MessageSquare size={18} />} label="聊天室管理" onSelect={() => setMobileNavOpen(false)} />
-                <NavItem view="reports" icon={<Flag size={18} />} label="待处理举报" badge={pendingReportCount} onSelect={() => setMobileNavOpen(false)} />
-                <NavItem view="processed" icon={<Gavel size={18} />} label="已处理" onSelect={() => setMobileNavOpen(false)} />
-                <NavItem view="bans" icon={<Shield size={18} />} label="封禁管理" onSelect={() => setMobileNavOpen(false)} />
-                <NavItem view="audit" icon={<ClipboardList size={18} />} label="操作审计" onSelect={() => setMobileNavOpen(false)} />
-              </nav>
+              <div className="min-h-0 flex-1 overflow-y-auto pr-1 pb-4">
+                <AdminNavGroups onSelect={() => setMobileNavOpen(false)} />
+              </div>
               <div className="shrink-0 pt-6 border-t-2 border-ink/10">
                 <button
                   onClick={() => {
@@ -2067,6 +2248,9 @@ const AdminDashboard: React.FC = () => {
               <AdminOverviewView
                 todayReports={state.stats.todayReports}
                 pendingReportCount={pendingReportCount}
+                wikiPendingCount={wikiPendingCount}
+                rumorPendingCount={rumorPendingCount}
+                feedbackUnreadCount={feedbackUnreadCount}
                 bannedUsers={state.stats.bannedUsers}
                 totalPosts={state.stats.totalPosts}
                 totalVisits={state.stats.totalVisits}
@@ -2077,6 +2261,11 @@ const AdminDashboard: React.FC = () => {
                 visitData={visitData}
                 visiblePendingReports={visiblePendingReports}
                 onOpenReports={() => setCurrentView('reports')}
+                onOpenWiki={() => setCurrentView('wiki')}
+                onOpenRumors={() => setCurrentView('rumors')}
+                onOpenFeedback={() => setCurrentView('feedback')}
+                onOpenChat={() => setCurrentView('chat')}
+                onOpenBans={() => setCurrentView('bans')}
                 onReportAction={handleAction}
                 onReportDetail={(item) => setReportDetail({ isOpen: true, report: item })}
                 renderIdentity={renderIdentity}
@@ -2599,11 +2788,11 @@ const AdminDashboard: React.FC = () => {
               <AdminBansView
                 mergedBans={mergedBans}
                 banLoading={banLoading}
-                banSearch={banSearch}
+                banSearchInput={banSearchInput}
                 formatTimestamp={formatTimestamp}
                 formatBanPermissions={formatBanPermissions}
                 renderIdentity={renderIdentity}
-                onBanSearchChange={setBanSearch}
+                onBanSearchChange={setBanSearchInput}
                 onOpenManualBan={openManualBanDrawer}
                 onEditBan={openBanRecordDrawer}
               />
@@ -2643,101 +2832,31 @@ const AdminDashboard: React.FC = () => {
         </div>
       </main>
 
-      {/* Confirm Modal */}
-      <Modal
+      <AdminActionDrawer
         isOpen={confirmModal.isOpen}
+        title={getActionLabel(confirmModal.action, confirmModal.targetType, confirmModal.deleteComment, confirmModal.deleteChatMessage)}
+        actionLabel={`确认${confirmModal.action === 'delete' ? '删除' : confirmModal.action === 'mute' ? '禁言' : '忽略'}`}
+        actionVariant={confirmModal.action === 'ignore' ? 'secondary' : confirmModal.action === 'mute' ? 'primary' : 'danger'}
+        summary={confirmModal.content}
+        meta={`举报目标：${confirmModal.targetType} · ${confirmModal.targetId || '-'}`}
+        reason={confirmModal.reason}
+        onReasonChange={(value) => setConfirmModal((prev) => ({ ...prev, reason: value }))}
         onClose={() => setConfirmModal({ ...EMPTY_REPORT_CONFIRM_MODAL })}
-        title="确认操作"
-      >
-        <div className="flex flex-col gap-4">
-          <p className="font-hand text-lg text-ink">
-            确定要 <strong className="text-red-600">{getActionLabel(confirmModal.action, confirmModal.targetType, confirmModal.deleteComment, confirmModal.deleteChatMessage)}</strong> 吗？
-          </p>
-          <div className="p-3 bg-gray-50 border border-dashed border-ink rounded-lg">
-            <p className="text-sm text-pencil font-sans line-clamp-2">"{confirmModal.content}"</p>
-          </div>
-          <div>
-            <label className="text-xs text-pencil font-sans">处理理由（可选）</label>
-            <textarea
-              value={confirmModal.reason}
-              onChange={(e) => setConfirmModal((prev) => ({ ...prev, reason: e.target.value }))}
-              className="w-full mt-2 h-20 resize-none border-2 border-gray-200 rounded-lg p-2 text-sm font-sans focus:border-ink outline-none"
-              placeholder="填写理由便于审计追溯"
-            />
-          </div>
-          {confirmModal.action === 'ban' && (confirmModal.targetType === 'comment' || confirmModal.targetType === 'chat') && (
-            <label className="flex items-center gap-2 text-sm font-sans text-pencil">
-              <input
-                type="checkbox"
-                className="accent-black"
-                checked={confirmModal.targetType === 'comment' ? confirmModal.deleteComment : confirmModal.deleteChatMessage}
-                onChange={(e) => setConfirmModal((prev) => (
-                  prev.targetType === 'comment'
-                    ? { ...prev, deleteComment: e.target.checked }
-                    : { ...prev, deleteChatMessage: e.target.checked }
-                ))}
-              />
-              <span>{confirmModal.targetType === 'comment' ? '同时删除被举报评论' : '同时删除被举报发言'}</span>
-            </label>
-          )}
-          <div className="flex flex-col sm:flex-row gap-3 mt-2">
-            <SketchButton
-              variant="secondary"
-              className="flex-1"
-              onClick={() => setConfirmModal({ ...EMPTY_REPORT_CONFIRM_MODAL })}
-            >
-              取消
-            </SketchButton>
-            <SketchButton
-              variant={confirmModal.action === 'ignore' ? 'secondary' : confirmModal.action === 'mute' ? 'primary' : 'danger'}
-              className="flex-1"
-              onClick={confirmAction}
-            >
-              确认{confirmModal.action === 'ban' ? '封禁' : confirmModal.action === 'delete' ? '删除' : confirmModal.action === 'mute' ? '禁言' : '忽略'}
-            </SketchButton>
-          </div>
-        </div>
-      </Modal>
+        onConfirm={confirmAction}
+      />
 
-      <Modal
+      <AdminActionDrawer
         isOpen={postConfirmModal.isOpen}
+        title={getPostActionLabel(postConfirmModal.action)}
+        actionLabel={`确认${postConfirmModal.action === 'delete' ? '删除' : '恢复'}`}
+        actionVariant={postConfirmModal.action === 'delete' ? 'danger' : 'primary'}
+        summary={postConfirmModal.content}
+        meta={`帖子 ID：${postConfirmModal.postId || '-'}`}
+        reason={postConfirmModal.reason}
+        onReasonChange={(value) => setPostConfirmModal((prev) => ({ ...prev, reason: value }))}
         onClose={() => setPostConfirmModal({ isOpen: false, postId: '', action: 'delete', content: '', reason: '' })}
-        title="确认操作"
-      >
-        <div className="flex flex-col gap-4">
-          <p className="font-hand text-lg text-ink">
-            确定要 <strong className="text-red-600">{getPostActionLabel(postConfirmModal.action)}</strong> 吗？
-          </p>
-          <div className="p-3 bg-gray-50 border border-dashed border-ink rounded-lg">
-            <p className="text-sm text-pencil font-sans line-clamp-2">"{postConfirmModal.content}"</p>
-          </div>
-          <div>
-            <label className="text-xs text-pencil font-sans">处理理由（可选）</label>
-            <textarea
-              value={postConfirmModal.reason}
-              onChange={(e) => setPostConfirmModal((prev) => ({ ...prev, reason: e.target.value }))}
-              className="w-full mt-2 h-20 resize-none border-2 border-gray-200 rounded-lg p-2 text-sm font-sans focus:border-ink outline-none"
-              placeholder="填写理由便于审计追溯"
-            />
-          </div>
-          <div className="flex flex-col sm:flex-row gap-3 mt-2">
-            <SketchButton
-              variant="secondary"
-              className="flex-1"
-              onClick={() => setPostConfirmModal({ isOpen: false, postId: '', action: 'delete', content: '', reason: '' })}
-            >
-              取消
-            </SketchButton>
-            <SketchButton
-              variant={postConfirmModal.action === 'delete' ? 'danger' : 'secondary'}
-              className="flex-1"
-              onClick={confirmPostAction}
-            >
-              确认{postConfirmModal.action === 'delete' ? '删除' : '恢复'}
-            </SketchButton>
-          </div>
-        </div>
-      </Modal>
+        onConfirm={confirmPostAction}
+      />
 
       <Modal
         isOpen={postCommentsModal.isOpen}
@@ -2763,174 +2882,58 @@ const AdminDashboard: React.FC = () => {
         </div>
       </Modal>
 
-      <Modal
+      <AdminActionDrawer
         isOpen={hiddenActionModal.isOpen}
+        title={getHiddenActionLabel(hiddenActionModal.action)}
+        actionLabel={`确认${hiddenActionModal.action === 'keep' ? '保持隐藏' : '恢复'}`}
+        actionVariant={hiddenActionModal.action === 'restore' ? 'primary' : 'secondary'}
+        summary={hiddenActionModal.item?.content || '（无内容）'}
+        meta={hiddenActionModal.item ? `${hiddenActionModal.item.type === 'post' ? '帖子' : '评论'} #${hiddenActionModal.item.id}` : undefined}
+        reason={hiddenActionModal.reason}
+        reasonPlaceholder="填写理由便于审计追踪"
+        onReasonChange={(value) => setHiddenActionModal((prev) => ({ ...prev, reason: value }))}
         onClose={() => setHiddenActionModal({ isOpen: false, item: null, action: 'keep', reason: '' })}
-        title="隐藏内容处理"
-      >
-        <div className="flex flex-col gap-4">
-          <p className="font-hand text-lg text-ink">
-            确定要 <strong className="text-red-600">{getHiddenActionLabel(hiddenActionModal.action)}</strong> 吗？
-          </p>
-          {hiddenActionModal.item && (
-            <div className="p-3 bg-gray-50 border border-dashed border-ink rounded-lg">
-              <p className="text-xs text-pencil font-sans mb-2">
-                {hiddenActionModal.item.type === 'post' ? '帖子' : '评论'} #{hiddenActionModal.item.id}
-              </p>
-              <p className="text-sm text-pencil font-sans line-clamp-3">
-                "{hiddenActionModal.item.content || '（无内容）'}"
-              </p>
-            </div>
-          )}
-          <div>
-            <label className="text-xs text-pencil font-sans">处理理由（可选）</label>
-            <textarea
-              value={hiddenActionModal.reason}
-              onChange={(e) => setHiddenActionModal((prev) => ({ ...prev, reason: e.target.value }))}
-              className="w-full mt-2 h-20 resize-none border-2 border-gray-200 rounded-lg p-2 text-sm font-sans focus:border-ink outline-none"
-              placeholder="填写理由便于审计追踪"
-            />
-          </div>
-          <div className="flex flex-col sm:flex-row gap-3 mt-2">
-            <SketchButton
-              variant="secondary"
-              className="flex-1"
-              onClick={() => setHiddenActionModal({ isOpen: false, item: null, action: 'keep', reason: '' })}
-            >
-              取消
-            </SketchButton>
-            <SketchButton
-              variant={hiddenActionModal.action === 'restore' ? 'primary' : 'secondary'}
-              className={`flex-1 ${hiddenActionModal.action === 'restore' ? 'text-white' : ''}`}
-              onClick={confirmHiddenAction}
-            >
-              确认{hiddenActionModal.action === 'keep' ? '保持隐藏' : '恢复'}
-            </SketchButton>
-          </div>
-        </div>
-      </Modal>
+        onConfirm={confirmHiddenAction}
+      />
 
-      <Modal
+      <AdminActionDrawer
         isOpen={bulkPostModal.isOpen}
+        title={`批量${getBulkActionLabel(bulkPostModal.action)}`}
+        actionLabel="确认执行"
+        actionVariant={bulkPostModal.action === 'delete' ? 'danger' : 'secondary'}
+        summary={`本次将处理 ${selectedPosts.size} 条帖子。`}
+        reason={bulkPostModal.reason}
+        onReasonChange={(value) => setBulkPostModal((prev) => ({ ...prev, reason: value }))}
         onClose={() => setBulkPostModal({ isOpen: false, action: 'delete', reason: '' })}
-        title="批量操作确认"
-      >
-        <div className="flex flex-col gap-4">
-          <p className="font-hand text-lg text-ink">
-            确定要对 <strong className="text-red-600">{selectedPosts.size}</strong> 条帖子执行
-            <strong className="text-red-600"> {getBulkActionLabel(bulkPostModal.action)} </strong> 吗？
-          </p>
-          <div>
-            <label className="text-xs text-pencil font-sans">处理理由（可选）</label>
-            <textarea
-              value={bulkPostModal.reason}
-              onChange={(e) => setBulkPostModal((prev) => ({ ...prev, reason: e.target.value }))}
-              className="w-full mt-2 h-20 resize-none border-2 border-gray-200 rounded-lg p-2 text-sm font-sans focus:border-ink outline-none"
-              placeholder="填写理由便于审计追溯"
-            />
-          </div>
-          <div className="flex flex-col sm:flex-row gap-3 mt-2">
-            <SketchButton
-              variant="secondary"
-              className="flex-1"
-              onClick={() => setBulkPostModal({ isOpen: false, action: 'delete', reason: '' })}
-            >
-              取消
-            </SketchButton>
-            <SketchButton
-              variant={bulkPostModal.action === 'delete' ? 'danger' : 'secondary'}
-              className="flex-1"
-              onClick={confirmBulkPostAction}
-            >
-              确认执行
-            </SketchButton>
-          </div>
-        </div>
-      </Modal>
+        onConfirm={confirmBulkPostAction}
+      />
 
-      <Modal
+      <AdminActionDrawer
         isOpen={bulkReportModal.isOpen}
-        onClose={() => setBulkReportModal({ isOpen: false, action: 'resolve', reportIds: [], reason: '' })}
         title={bulkReportModal.action === 'ignore' ? '批量忽略举报' : '批量标记处理'}
-      >
-        <div className="flex flex-col gap-4">
-          <p className="font-hand text-lg text-ink">
-            确定要{bulkReportModal.action === 'ignore' ? '忽略' : '标记'} <strong className="text-red-600">{bulkReportModal.reportIds.length}</strong> 条举报吗？
-          </p>
-          {bulkReportModal.reportIds.length > REPORT_BATCH_CHUNK_SIZE && (
-            <p className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-3 py-2 text-xs text-pencil font-sans">
-              单批最多处理 {REPORT_BATCH_CHUNK_SIZE} 条，本次会自动分批提交。
-            </p>
-          )}
-          <div>
-            <label className="text-xs text-pencil font-sans">处理理由（可选）</label>
-            <textarea
-              value={bulkReportModal.reason}
-              onChange={(e) => setBulkReportModal((prev) => ({ ...prev, reason: e.target.value }))}
-              className="w-full mt-2 h-20 resize-none border-2 border-gray-200 rounded-lg p-2 text-sm font-sans focus:border-ink outline-none"
-              placeholder="填写理由便于审计追溯"
-            />
-          </div>
-          <div className="flex flex-col sm:flex-row gap-3 mt-2">
-            <SketchButton
-              variant="secondary"
-              className="flex-1"
-              disabled={bulkReportSubmitting}
-              onClick={() => setBulkReportModal({ isOpen: false, action: 'resolve', reportIds: [], reason: '' })}
-            >
-              取消
-            </SketchButton>
-            <SketchButton
-              variant="secondary"
-              className="flex-1"
-              disabled={bulkReportSubmitting}
-              onClick={confirmBulkReportAction}
-            >
-              {bulkReportSubmitting ? '处理中...' : bulkReportModal.action === 'ignore' ? '确认忽略' : '确认标记'}
-            </SketchButton>
-          </div>
-        </div>
-      </Modal>
+        actionLabel={bulkReportModal.action === 'ignore' ? '确认忽略' : '确认标记'}
+        actionVariant="secondary"
+        summary={`本次将${bulkReportModal.action === 'ignore' ? '忽略' : '标记'} ${bulkReportModal.reportIds.length} 条举报。`}
+        meta={bulkReportModal.reportIds.length > REPORT_BATCH_CHUNK_SIZE ? `单批最多处理 ${REPORT_BATCH_CHUNK_SIZE} 条，本次会自动分批提交。` : undefined}
+        reason={bulkReportModal.reason}
+        submitting={bulkReportSubmitting}
+        onReasonChange={(value) => setBulkReportModal((prev) => ({ ...prev, reason: value }))}
+        onClose={() => setBulkReportModal({ isOpen: false, action: 'resolve', reportIds: [], reason: '' })}
+        onConfirm={confirmBulkReportAction}
+      />
 
-      <Modal
+      <AdminActionDrawer
         isOpen={feedbackActionModal.isOpen}
+        title={feedbackActionModal.action === 'delete' ? '删除留言' : '封禁用户'}
+        actionLabel={`确认${feedbackActionModal.action === 'delete' ? '删除' : '封禁'}`}
+        actionVariant={feedbackActionModal.action === 'delete' ? 'danger' : 'secondary'}
+        summary={feedbackActionModal.content}
+        meta={`留言 ID：${feedbackActionModal.feedbackId || '-'}`}
+        reason={feedbackActionModal.reason}
+        onReasonChange={(value) => setFeedbackActionModal((prev) => ({ ...prev, reason: value }))}
         onClose={() => setFeedbackActionModal({ isOpen: false, feedbackId: '', action: 'delete', content: '', reason: '' })}
-        title="确认操作"
-      >
-        <div className="flex flex-col gap-4">
-          <p className="font-hand text-lg text-ink">
-            确定要 <strong className="text-red-600">{feedbackActionModal.action === 'delete' ? '删除留言' : '封禁用户'}</strong> 吗？
-          </p>
-          <div className="p-3 bg-gray-50 border border-dashed border-ink rounded-lg">
-            <p className="text-sm text-pencil font-sans line-clamp-2">"{feedbackActionModal.content}"</p>
-          </div>
-          <div>
-            <label className="text-xs text-pencil font-sans">处理理由（可选）</label>
-            <textarea
-              value={feedbackActionModal.reason}
-              onChange={(e) => setFeedbackActionModal((prev) => ({ ...prev, reason: e.target.value }))}
-              className="w-full mt-2 h-20 resize-none border-2 border-gray-200 rounded-lg p-2 text-sm font-sans focus:border-ink outline-none"
-              placeholder="填写理由便于审计追溯"
-            />
-          </div>
-          <div className="flex flex-col sm:flex-row gap-3 mt-2">
-            <SketchButton
-              variant="secondary"
-              className="flex-1"
-              onClick={() => setFeedbackActionModal({ isOpen: false, feedbackId: '', action: 'delete', content: '', reason: '' })}
-            >
-              取消
-            </SketchButton>
-            <SketchButton
-              variant={feedbackActionModal.action === 'delete' ? 'danger' : 'secondary'}
-              className="flex-1"
-              onClick={confirmFeedbackAction}
-            >
-              确认{feedbackActionModal.action === 'delete' ? '删除' : '封禁'}
-            </SketchButton>
-          </div>
-        </div>
-      </Modal>
+        onConfirm={confirmFeedbackAction}
+      />
 
       <Modal
         isOpen={editModal.isOpen}

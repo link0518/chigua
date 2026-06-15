@@ -5,7 +5,7 @@ import type { AdminMergedBanItem, AdminBanType, RenderIdentity } from '@/feature
 interface AdminBansViewProps {
   mergedBans: AdminMergedBanItem[];
   banLoading: boolean;
-  banSearch: string;
+  banSearchInput: string;
   formatTimestamp: (timestamp?: number) => string;
   formatBanPermissions: (permissions?: string[]) => string;
   renderIdentity: RenderIdentity;
@@ -17,7 +17,7 @@ interface AdminBansViewProps {
 const AdminBansView: React.FC<AdminBansViewProps> = ({
   mergedBans,
   banLoading,
-  banSearch,
+  banSearchInput,
   formatTimestamp,
   formatBanPermissions,
   renderIdentity,
@@ -42,7 +42,7 @@ const AdminBansView: React.FC<AdminBansViewProps> = ({
       </div>
       <div className="flex items-center gap-2">
         <input
-          value={banSearch}
+          value={banSearchInput}
           onChange={(e) => onBanSearchChange(e.target.value)}
           placeholder="搜索 IP / 身份 / 理由 / 权限..."
           className="w-full h-9 border-2 border-gray-200 rounded-lg px-3 text-xs font-sans focus:border-ink outline-none"
@@ -59,14 +59,14 @@ const AdminBansView: React.FC<AdminBansViewProps> = ({
         <SketchButton
           variant="secondary"
           className="h-8 px-3 text-xs"
-          onClick={() => onOpenManualBan({ type: 'identity', value: banSearch.trim() })}
+          onClick={() => onOpenManualBan({ type: 'identity', value: banSearchInput.trim() })}
         >
           按身份处理
         </SketchButton>
         <SketchButton
           variant="secondary"
           className="h-8 px-3 text-xs"
-          onClick={() => onOpenManualBan({ type: 'ip', value: banSearch.trim() })}
+          onClick={() => onOpenManualBan({ type: 'ip', value: banSearchInput.trim() })}
         >
           按 IP 处理
         </SketchButton>
