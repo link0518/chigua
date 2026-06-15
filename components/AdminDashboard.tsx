@@ -13,7 +13,6 @@ import {
   type AdminIdentityLike,
 } from './adminIdentity';
 import MarkdownRenderer from './MarkdownRenderer';
-import AdminChatPanel from './AdminChatPanel';
 import AdminWikiPanel from './AdminWikiPanel';
 import AdminRumorPanel from './AdminRumorPanel';
 import { copyTextToClipboard } from './clipboard';
@@ -44,7 +43,7 @@ import AdminModerationDrawer, {
 } from '@/features/admin/components/AdminModerationDrawer';
 import AdminActionDrawer from '@/features/admin/components/AdminActionDrawer';
 
-type AdminView = 'overview' | 'reports' | 'processed' | 'posts' | 'hidden' | 'bans' | 'audit' | 'feedback' | 'announcement' | 'settings' | 'chat' | 'wiki' | 'rumors';
+type AdminView = 'overview' | 'reports' | 'processed' | 'posts' | 'hidden' | 'bans' | 'audit' | 'feedback' | 'announcement' | 'settings' | 'wiki' | 'rumors';
 type PostStatusFilter = 'all' | 'active' | 'hidden' | 'deleted';
 type PostSort = 'time' | 'hot' | 'reports';
 type HiddenTypeFilter = 'all' | 'post' | 'comment';
@@ -2015,7 +2014,6 @@ const AdminDashboard: React.FC = () => {
       {
         title: '用户与安全',
         items: [
-          { view: 'chat', icon: <MessageSquare size={18} />, label: '聊天室管理' },
           { view: 'bans', icon: <Shield size={18} />, label: '封禁管理' },
           { view: 'audit', icon: <ClipboardList size={18} />, label: '操作审计' },
           { view: 'processed', icon: <Gavel size={18} />, label: '已处理举报' },
@@ -2159,7 +2157,6 @@ const AdminDashboard: React.FC = () => {
               {currentView === 'wiki' && <><BookOpen /> 瓜条审核</>}
               {currentView === 'rumors' && <><AlertTriangle /> 谣言审核</>}
               {currentView === 'feedback' && <><MessageSquare /> 留言管理</>}
-              {currentView === 'chat' && <><MessageSquare /> 聊天室管理</>}
               {currentView === 'reports' && <><Flag /> 待处理举报</>}
               {currentView === 'processed' && <><Gavel /> 已处理</>}
               {currentView === 'bans' && <><Shield /> 封禁管理</>}
@@ -2246,26 +2243,23 @@ const AdminDashboard: React.FC = () => {
             {/* Overview View */}
             {currentView === 'overview' && (
               <AdminOverviewView
-                todayReports={state.stats.todayReports}
                 pendingReportCount={pendingReportCount}
+                hiddenPendingCount={hiddenPendingCount}
                 wikiPendingCount={wikiPendingCount}
                 rumorPendingCount={rumorPendingCount}
                 feedbackUnreadCount={feedbackUnreadCount}
-                bannedUsers={state.stats.bannedUsers}
                 totalPosts={state.stats.totalPosts}
                 totalVisits={state.stats.totalVisits}
-                onlineCount={state.stats.onlineCount}
                 totalWeeklyVisits={totalWeeklyVisits}
                 appVersionLabel={appVersionLabel}
                 postVolumeData={postVolumeData}
                 visitData={visitData}
                 visiblePendingReports={visiblePendingReports}
                 onOpenReports={() => setCurrentView('reports')}
+                onOpenHidden={() => setCurrentView('hidden')}
                 onOpenWiki={() => setCurrentView('wiki')}
                 onOpenRumors={() => setCurrentView('rumors')}
                 onOpenFeedback={() => setCurrentView('feedback')}
-                onOpenChat={() => setCurrentView('chat')}
-                onOpenBans={() => setCurrentView('bans')}
                 onReportAction={handleAction}
                 onReportDetail={(item) => setReportDetail({ isOpen: true, report: item })}
                 renderIdentity={renderIdentity}
@@ -2771,15 +2765,6 @@ const AdminDashboard: React.FC = () => {
                 onFeedbackPageChange={setFeedbackPage}
                 onFeedbackRead={handleFeedbackRead}
                 onOpenFeedbackAction={openFeedbackActionModal}
-              />
-            )}
-
-            {/* Chat View */}
-            {currentView === 'chat' && (
-              <AdminChatPanel
-                showToast={showToast}
-                onPrepareBan={prepareManualBan}
-                onOpenModeration={openModerationDrawer}
               />
             )}
 

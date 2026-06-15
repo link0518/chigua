@@ -1,14 +1,10 @@
 import React from 'react';
 import {
   AlertTriangle,
-  Ban,
-  BarChart2,
   BookOpen,
-  CheckCircle,
+  EyeOff,
   Flag,
-  Gavel,
   MessageSquare,
-  Shield,
 } from 'lucide-react';
 import {
   BarChart,
@@ -21,31 +17,27 @@ import {
 } from 'recharts';
 import { roughBorderClassSm } from '@/components/SketchUI';
 import AdminReportCard from '@/features/admin/components/AdminReportCard';
-import AdminStatCard from '@/features/admin/components/AdminStatCard';
 import type { AdminChartDatum, RenderIdentity, ReportAction } from '@/features/admin/types';
 import type { Report } from '@/types';
 
 interface AdminOverviewViewProps {
-  todayReports: number;
   pendingReportCount: number;
+  hiddenPendingCount: number;
   wikiPendingCount: number;
   rumorPendingCount: number;
   feedbackUnreadCount: number;
-  bannedUsers: number;
   totalPosts: number;
   totalVisits: number;
-  onlineCount: number;
   totalWeeklyVisits: number;
   appVersionLabel: string;
   postVolumeData: AdminChartDatum[];
   visitData: AdminChartDatum[];
   visiblePendingReports: Report[];
   onOpenReports: () => void;
+  onOpenHidden: () => void;
   onOpenWiki: () => void;
   onOpenRumors: () => void;
   onOpenFeedback: () => void;
-  onOpenChat: () => void;
-  onOpenBans: () => void;
   onReportAction: (
     id: string,
     action: ReportAction,
@@ -58,195 +50,120 @@ interface AdminOverviewViewProps {
 }
 
 const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
-  todayReports,
   pendingReportCount,
+  hiddenPendingCount,
   wikiPendingCount,
   rumorPendingCount,
   feedbackUnreadCount,
-  bannedUsers,
   totalPosts,
   totalVisits,
-  onlineCount,
   totalWeeklyVisits,
   appVersionLabel,
   postVolumeData,
   visitData,
   visiblePendingReports,
   onOpenReports,
+  onOpenHidden,
   onOpenWiki,
   onOpenRumors,
   onOpenFeedback,
-  onOpenChat,
-  onOpenBans,
   onReportAction,
   onReportDetail,
   renderIdentity,
 }) => {
-  const totalTodoCount = pendingReportCount + wikiPendingCount + rumorPendingCount + feedbackUnreadCount;
+  const toDisplayCount = (value: unknown) => {
+    const numberValue = Number(value);
+    return Number.isFinite(numberValue) ? numberValue : 0;
+  };
+  const reportTodoCount = toDisplayCount(pendingReportCount);
+  const hiddenTodoCount = toDisplayCount(hiddenPendingCount);
+  const wikiTodoCount = toDisplayCount(wikiPendingCount);
+  const rumorTodoCount = toDisplayCount(rumorPendingCount);
+  const feedbackTodoCount = toDisplayCount(feedbackUnreadCount);
+  const totalTodoCount = reportTodoCount + hiddenTodoCount + wikiTodoCount + rumorTodoCount + feedbackTodoCount;
   const workItems = [
     {
-      title: '待处理举报',
-      count: pendingReportCount,
-      description: '举报审核、删除、忽略与封禁',
-      icon: <Flag size={26} />,
+      title: '举报',
+      count: reportTodoCount,
+      icon: <Flag size={18} />,
       color: 'bg-highlight',
-      actionLabel: '处理举报',
       onClick: onOpenReports,
     },
     {
-      title: '谣言审核',
-      count: rumorPendingCount,
-      description: '处理谣言举报与疑似标记',
-      icon: <AlertTriangle size={26} />,
+      title: '隐藏内容',
+      count: hiddenTodoCount,
+      icon: <EyeOff size={18} />,
+      color: 'bg-yellow-100',
+      onClick: onOpenHidden,
+    },
+    {
+      title: '谣言',
+      count: rumorTodoCount,
+      icon: <AlertTriangle size={18} />,
       color: 'bg-marker-orange',
-      actionLabel: '进入审核',
       onClick: onOpenRumors,
     },
     {
-      title: '瓜条审核',
-      count: wikiPendingCount,
-      description: '审核新瓜条与编辑提交',
-      icon: <BookOpen size={26} />,
+      title: '瓜条',
+      count: wikiTodoCount,
+      icon: <BookOpen size={18} />,
       color: 'bg-marker-green',
-      actionLabel: '查看提交',
       onClick: onOpenWiki,
     },
     {
-      title: '留言管理',
-      count: feedbackUnreadCount,
-      description: '查看未读留言与联系方式',
-      icon: <MessageSquare size={26} />,
+      title: '留言',
+      count: feedbackTodoCount,
+      icon: <MessageSquare size={18} />,
       color: 'bg-marker-blue',
-      actionLabel: '处理留言',
       onClick: onOpenFeedback,
-    },
-  ];
-
-  const quickEntries = [
-    {
-      title: '聊天室管理',
-      value: `${onlineCount}`,
-      description: '在线人数与最近消息',
-      icon: <MessageSquare size={20} />,
-      onClick: onOpenChat,
-    },
-    {
-      title: '封禁管理',
-      value: `${bannedUsers}`,
-      description: '查看和调整封禁记录',
-      icon: <Shield size={20} />,
-      onClick: onOpenBans,
     },
   ];
 
   return (
     <>
-      <section className={`relative overflow-hidden rounded-[28px] border-2 border-ink bg-[#fff7d9] p-5 shadow-sketch ${roughBorderClassSm}`}>
-        <div className="absolute right-[-48px] top-[-72px] h-48 w-48 rounded-full border-2 border-ink/10 bg-white/35" />
-        <div className="relative z-10 flex flex-col gap-5">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+      <section className={`border-2 border-ink bg-[#fff7d9] p-3 shadow-sketch ${roughBorderClassSm}`}>
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex items-center justify-between gap-3 lg:justify-start">
             <div>
-              <p className="font-sans text-xs font-bold tracking-[0.24em] text-pencil">TODAY DESK</p>
-              <h2 className="mt-2 font-display text-3xl text-ink">今日待办工作台</h2>
-              <p className="mt-1 font-sans text-sm text-pencil">
-                先处理审核与反馈，再进入内容、封禁和系统管理。
-              </p>
+              <p className="font-sans text-[11px] font-bold tracking-[0.22em] text-pencil">TODAY DESK</p>
+              <h2 className="font-display text-xl text-ink sm:text-2xl">今日待办</h2>
             </div>
-            <div className="rounded-2xl border-2 border-ink bg-white px-5 py-3 text-right shadow-sketch-sm">
-              <p className="font-sans text-xs text-pencil">待处理合计</p>
-              <p className="font-display text-4xl text-ink">{totalTodoCount}</p>
+            <div className="shrink-0 rounded-2xl border-2 border-ink bg-white px-3 py-2 text-center shadow-sketch-sm">
+              <p className="font-display text-2xl leading-none text-ink">{totalTodoCount}</p>
+              <p className="mt-1 font-sans text-[10px] font-bold text-pencil">待处理</p>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 xl:mx-0 xl:flex-1 xl:justify-end xl:overflow-visible xl:pb-0">
             {workItems.map((item) => (
               <button
                 key={item.title}
                 type="button"
                 onClick={item.onClick}
-                className="group min-h-[156px] rounded-2xl border-2 border-ink bg-white p-4 text-left shadow-sketch-sm transition-all hover:-translate-y-0.5 hover:bg-paper"
+                className="group flex min-w-[8.5rem] items-center gap-2 rounded-2xl border-2 border-ink bg-white px-3 py-2 text-left shadow-sketch-sm transition-all hover:-translate-y-0.5 hover:bg-paper xl:min-w-0"
               >
-                <div className="flex items-start justify-between gap-3">
-                  <span className={`flex h-12 w-12 items-center justify-center rounded-2xl border-2 border-ink ${item.color}`}>
-                    {item.icon}
-                  </span>
-                  <span className={`rounded-full border border-ink px-3 py-1 text-xs font-bold ${item.count > 0 ? 'bg-red-500 text-white' : 'bg-gray-100 text-pencil'}`}>
-                    {item.count > 0 ? `${item.count} 项` : '无待办'}
-                  </span>
-                </div>
-                <h3 className="mt-4 font-display text-xl text-ink">{item.title}</h3>
-                <p className="mt-1 min-h-[36px] font-sans text-sm text-pencil">{item.description}</p>
-                <p className="mt-3 font-sans text-xs font-bold text-ink group-hover:underline">{item.actionLabel} →</p>
-              </button>
-            ))}
-          </div>
-
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            {quickEntries.map((item) => (
-              <button
-                key={item.title}
-                type="button"
-                onClick={item.onClick}
-                className="flex items-center justify-between gap-4 rounded-2xl border-2 border-ink bg-white/80 px-4 py-3 text-left shadow-sketch-sm transition-all hover:-translate-y-0.5 hover:bg-white"
-              >
-                <span className="flex items-center gap-3">
-                  <span className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-ink bg-paper">
-                    {item.icon}
-                  </span>
-                  <span>
-                    <span className="block font-sans text-sm font-bold text-ink">{item.title}</span>
-                    <span className="block font-sans text-xs text-pencil">{item.description}</span>
+                <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 border-ink ${item.color}`}>
+                  {item.icon}
+                </span>
+                <span className="min-w-0">
+                  <span className="block truncate font-sans text-xs font-bold text-ink">{item.title}</span>
+                  <span className={`mt-0.5 inline-flex rounded-full border border-ink px-2 py-0.5 text-[11px] font-bold ${item.count > 0 ? 'bg-red-500 text-white' : 'bg-gray-100 text-pencil'}`}>
+                    {item.count > 0 ? item.count : '无'}
                   </span>
                 </span>
-                <span className="font-display text-2xl text-ink">{item.value}</span>
               </button>
             ))}
           </div>
-        </div>
-      </section>
 
-      <section className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
-        <AdminStatCard
-          title="今日举报"
-          value={todayReports.toString()}
-          trend={todayReports > 10 ? '+15%' : '-5%'}
-          trendUp={todayReports > 10}
-          icon={<Flag size={80} />}
-          color="bg-marker-orange"
-        />
-        <AdminStatCard
-          title="待处理"
-          value={pendingReportCount.toString()}
-          trend={pendingReportCount > 0 ? '需处理' : '已清空'}
-          trendUp={pendingReportCount > 0}
-          icon={<Gavel size={80} />}
-          color="bg-highlight"
-        />
-        <AdminStatCard
-          title="封禁用户"
-          value={bannedUsers.toString()}
-          trend="+1"
-          trendUp={false}
-          icon={<Ban size={80} />}
-          color="bg-marker-blue"
-        />
-        <AdminStatCard
-          title="总帖子数"
-          value={totalPosts.toString()}
-          trend="活跃"
-          trendUp
-          icon={<BarChart2 size={80} />}
-          color="bg-marker-green"
-        />
-        <AdminStatCard
-          title="版本号"
-          value={appVersionLabel}
-          trend="自动更新"
-          trendUp
-          icon={<CheckCircle size={80} />}
-          color="bg-white"
-          valueClassName="text-3xl md:text-4xl leading-tight break-all"
-        />
+          <div className="flex flex-wrap gap-2 border-t-2 border-dashed border-ink/20 pt-2 xl:border-l-2 xl:border-t-0 xl:pl-3 xl:pt-0">
+            <span className="rounded-full border border-ink bg-white px-3 py-1 text-xs font-bold text-ink shadow-sketch-sm">
+              总帖子 {toDisplayCount(totalPosts)}
+            </span>
+            <span className="rounded-full border border-ink bg-white px-3 py-1 text-xs font-bold text-pencil shadow-sketch-sm">
+              {appVersionLabel}
+            </span>
+          </div>
+        </div>
       </section>
 
       <section className="grid grid-cols-1 gap-8 lg:grid-cols-2">
@@ -275,8 +192,6 @@ const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
             <div>
               <h3 className="font-display text-lg">访问统计</h3>
               <p className="text-pencil text-xs font-sans">本周独立访客 · {totalWeeklyVisits}</p>
-              <p className="text-xs text-pencil font-sans mt-2">当前在线</p>
-              <p className="font-display text-2xl">{onlineCount}</p>
             </div>
             <div className="text-right">
               <p className="text-xs text-pencil font-sans">总访问量</p>
