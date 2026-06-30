@@ -28,6 +28,7 @@ interface AdminOverviewViewProps {
   feedbackUnreadCount: number;
   totalPosts: number;
   totalVisits: number;
+  onlineCount: number;
   totalWeeklyVisits: number;
   appVersionLabel: string;
   postVolumeData: AdminChartDatum[];
@@ -47,6 +48,12 @@ interface AdminOverviewViewProps {
   ) => void;
   onReportDetail: (report: Report) => void;
   renderIdentity: RenderIdentity;
+  canReadContentReview: boolean;
+  canReadPosts: boolean;
+  canReadWiki: boolean;
+  canReadFeedback: boolean;
+  canReadSettings: boolean;
+  canManageContentReview: boolean;
 }
 
 const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
@@ -57,6 +64,7 @@ const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
   feedbackUnreadCount,
   totalPosts,
   totalVisits,
+  onlineCount,
   totalWeeklyVisits,
   appVersionLabel,
   postVolumeData,
@@ -70,6 +78,12 @@ const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
   onReportAction,
   onReportDetail,
   renderIdentity,
+  canReadContentReview,
+  canReadPosts,
+  canReadWiki,
+  canReadFeedback,
+  canReadSettings,
+  canManageContentReview,
 }) => {
   const toDisplayCount = (value: unknown) => {
     const numberValue = Number(value);
@@ -87,6 +101,7 @@ const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
       count: reportTodoCount,
       icon: <Flag size={18} />,
       color: 'bg-highlight',
+      visible: canReadContentReview,
       onClick: onOpenReports,
     },
     {
@@ -94,6 +109,7 @@ const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
       count: hiddenTodoCount,
       icon: <EyeOff size={18} />,
       color: 'bg-yellow-100',
+      visible: canReadContentReview,
       onClick: onOpenHidden,
     },
     {
@@ -101,6 +117,7 @@ const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
       count: rumorTodoCount,
       icon: <AlertTriangle size={18} />,
       color: 'bg-marker-orange',
+      visible: canReadContentReview,
       onClick: onOpenRumors,
     },
     {
@@ -108,6 +125,7 @@ const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
       count: wikiTodoCount,
       icon: <BookOpen size={18} />,
       color: 'bg-marker-green',
+      visible: canReadWiki,
       onClick: onOpenWiki,
     },
     {
@@ -115,9 +133,10 @@ const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
       count: feedbackTodoCount,
       icon: <MessageSquare size={18} />,
       color: 'bg-marker-blue',
+      visible: canReadFeedback,
       onClick: onOpenFeedback,
     },
-  ];
+  ].filter((item) => item.visible);
 
   return (
     <>
@@ -156,9 +175,11 @@ const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
           </div>
 
           <div className="flex flex-wrap gap-2 border-t-2 border-dashed border-ink/20 pt-2 xl:border-l-2 xl:border-t-0 xl:pl-3 xl:pt-0">
-            <span className="rounded-full border border-ink bg-white px-3 py-1 text-xs font-bold text-ink shadow-sketch-sm">
-              总帖子 {toDisplayCount(totalPosts)}
-            </span>
+            {canReadPosts && (
+              <span className="rounded-full border border-ink bg-white px-3 py-1 text-xs font-bold text-ink shadow-sketch-sm">
+                总帖子 {toDisplayCount(totalPosts)}
+              </span>
+            )}
             <span className="rounded-full border border-ink bg-white px-3 py-1 text-xs font-bold text-pencil shadow-sketch-sm">
               {appVersionLabel}
             </span>
@@ -166,8 +187,10 @@ const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
         </div>
       </section>
 
-      <section className="grid grid-cols-1 gap-8 lg:grid-cols-2">
-        <div className={`bg-white p-6 border-2 border-ink shadow-sketch ${roughBorderClassSm}`}>
+      {(canReadPosts || canReadSettings) && (
+        <section className="grid grid-cols-1 gap-8 lg:grid-cols-2">
+          {canReadPosts && (
+            <div className={`bg-white p-6 border-2 border-ink shadow-sketch ${roughBorderClassSm}`}>
           <div className="flex justify-between items-start mb-6">
             <div>
               <h3 className="font-display text-lg">每日发帖量</h3>
@@ -185,9 +208,11 @@ const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
               </LineChart>
             </ResponsiveContainer>
           </div>
-        </div>
+            </div>
+          )}
 
-        <div className={`bg-white p-6 border-2 border-ink shadow-sketch ${roughBorderClassSm}`}>
+          {canReadSettings && (
+            <div className={`bg-white p-6 border-2 border-ink shadow-sketch ${roughBorderClassSm}`}>
           <div className="flex items-start justify-between gap-4">
             <div>
               <h3 className="font-display text-lg">访问统计</h3>
@@ -196,6 +221,9 @@ const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
             <div className="text-right">
               <p className="text-xs text-pencil font-sans">总访问量</p>
               <p className="font-display text-2xl">{totalVisits}</p>
+              <p className="mt-1 inline-flex rounded-full border border-ink bg-highlight px-2 py-0.5 text-[11px] font-bold text-ink shadow-sketch-sm">
+                当前在线 {toDisplayCount(onlineCount)}
+              </p>
             </div>
           </div>
           <div className="h-48 w-full">
@@ -208,10 +236,12 @@ const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
               </BarChart>
             </ResponsiveContainer>
           </div>
-        </div>
-      </section>
+            </div>
+          )}
+        </section>
+      )}
 
-      {pendingReportCount > 0 && (
+      {canReadContentReview && pendingReportCount > 0 && (
         <section>
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-xl font-display flex items-center gap-2">
@@ -234,6 +264,7 @@ const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
                 renderIdentity={renderIdentity}
                 showStatus={false}
                 selectable={false}
+                canManage={canManageContentReview}
               />
             ))}
           </div>

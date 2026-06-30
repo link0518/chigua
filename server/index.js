@@ -20,7 +20,6 @@ import { registerPublicPostsRoutes } from './routes/public/posts-routes.js';
 import { registerPublicCommentsRoutes } from './routes/public/comments-routes.js';
 import { registerPublicReportsRoutes } from './routes/public/reports-routes.js';
 import { registerPublicSystemRoutes } from './routes/public/system-routes.js';
-import { registerPublicChatRoutes } from './routes/public/chat-routes.js';
 import { registerPublicUploadRoutes } from './routes/public/upload-routes.js';
 import { registerPublicWikiRoutes } from './routes/public/wiki-routes.js';
 import { registerAdminAuthRoutes } from './routes/admin/auth-routes.js';
@@ -35,11 +34,18 @@ import { registerAdminBansRoutes } from './routes/admin/bans-routes.js';
 import { registerAdminAuditRoutes } from './routes/admin/audit-routes.js';
 import { registerAdminVocabularyRoutes } from './routes/admin/vocabulary-routes.js';
 import { registerAdminStatsRoutes } from './routes/admin/stats-routes.js';
-import { registerAdminChatRoutes } from './routes/admin/chat-routes.js';
-import { createChatRealtimeService } from './chat-realtime-service.js';
 import { registerAdminHiddenContentRoutes } from './routes/admin/hidden-content-routes.js';
+import { registerAdminUsersRoutes } from './routes/admin/admin-users-routes.js';
 import { createHiddenContentService } from './services/hidden-content-service.js';
 import { createWecomWebhookService } from './services/wecom-webhook-service.js';
+import {
+  ADMIN_PERMISSION_LEVEL_MANAGE,
+  ADMIN_PERMISSION_LEVEL_READ,
+  ADMIN_ROLE_SUPER,
+  buildAdminSessionPayload,
+  hasAdminPermission,
+  mapAdminUserRow,
+} from './admin-permissions.js';
 import {
   db,
   formatDateKey,
@@ -300,6 +306,8 @@ const getAdminFromRequest = (request) => {
         id: typeof admin.id === 'number' ? admin.id : null,
         username: String(admin.username || ''),
         role: String(admin.role || ''),
+        isSuperAdmin: Boolean(admin.isSuperAdmin),
+        permissions: admin.permissions || {},
       });
     });
   });
@@ -311,11 +319,16 @@ const ensureAdminUser = () => {
   }
   const username = adminUsername;
   const password = adminPassword;
-  const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
+  const existing = db.prepare('SELECT id, role, disabled FROM users WHERE username = ?').get(username);
   if (!existing) {
     const hash = bcrypt.hashSync(password, 10);
-    db.prepare('INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, ?, ?)')
-      .run(username, hash, 'admin', Date.now());
+    db.prepare('INSERT INTO users (username, password_hash, role, disabled, created_at, updated_at) VALUES (?, ?, ?, 0, ?, ?)')
+      .run(username, hash, ADMIN_ROLE_SUPER, Date.now(), Date.now());
+    return;
+  }
+  if (existing.role !== ADMIN_ROLE_SUPER || existing.disabled === 1) {
+    db.prepare('UPDATE users SET role = ?, disabled = 0, updated_at = ? WHERE id = ?')
+      .run(ADMIN_ROLE_SUPER, Date.now(), existing.id);
   }
 };
 
@@ -826,7 +839,7 @@ const enforceRateLimit = (req, res, action, fingerprint) => {
   return true;
 };
 
-const BAN_PERMISSIONS = ['post', 'comment', 'like', 'view', 'site', 'chat'];
+const BAN_PERMISSIONS = ['post', 'comment', 'like', 'view', 'site'];
 
 const parsePermissions = (value) => {
   if (!value) {
@@ -1061,6 +1074,53 @@ const requireAdmin = (req, res, next) => {
   return next();
 };
 
+const refreshAdminSession = (req) => {
+  const sessionAdmin = req.session?.admin;
+  if (!sessionAdmin?.id) {
+    return null;
+  }
+
+  const row = db
+    .prepare('SELECT id, username, role, permissions_json, disabled, created_at, updated_at FROM users WHERE id = ?')
+    .get(sessionAdmin.id);
+  const user = mapAdminUserRow(row);
+  if (!user || user.disabled) {
+    delete req.session.admin;
+    return null;
+  }
+
+  req.session.admin = {
+    ...sessionAdmin,
+    id: user.id,
+    username: user.username,
+    role: user.role,
+    isSuperAdmin: user.isSuperAdmin,
+    permissions: user.permissions,
+  };
+  return req.session.admin;
+};
+
+const requireSuperAdmin = (req, res, next) => {
+  const admin = refreshAdminSession(req);
+  if (!admin?.isSuperAdmin) {
+    return res.status(403).json({ error: '仅超级管理员可访问' });
+  }
+  return next();
+};
+
+const requireAdminPermission = (moduleKey, level = ADMIN_PERMISSION_LEVEL_READ) => (req, res, next) => {
+  const admin = refreshAdminSession(req);
+  if (!admin || !hasAdminPermission(admin, moduleKey, level)) {
+    return res.status(403).json({ error: '当前管理员无权访问该模块' });
+  }
+  return next();
+};
+
+const requireAdminModule = (moduleKey) => ({
+  read: requireAdminPermission(moduleKey, ADMIN_PERMISSION_LEVEL_READ),
+  manage: requireAdminPermission(moduleKey, ADMIN_PERMISSION_LEVEL_MANAGE),
+});
+
 const requireAdminCsrf = (req, res, next) => {
   const token = String(req.headers['x-csrf-token'] || '').trim();
   const sessionToken = String(req.session?.admin?.csrfToken || '').trim();
@@ -1220,26 +1280,7 @@ const buildCommentTree = (rows) => {
 };
 
 const hotScoreSql = '(views_count * 0.2 + likes_count * 3 + comments_count * 2)';
-const chatRealtime = createChatRealtimeService({
-  server: httpServer,
-  db,
-  hashFingerprint,
-  resolveSocketIdentity: identityService.resolveSocketIdentity,
-  getLookupHashesForIdentityHash: identityService.getLookupHashesForIdentityHash,
-  getStableLegacyFingerprintHashForIdentityHashes: identityService.getStableLegacyFingerprintHashForIdentityHashes,
-  resolveStoredIdentityHash,
-  getClientIp,
-  containsSensitiveWord,
-  isBannedFor,
-  upsertBan,
-  BAN_PERMISSIONS,
-  logAdminAction,
-  getAdminFromRequest,
-  getRuntimeConfig: () => ({
-    imgbedBaseUrl: IMGBED_BASE_URL,
-  }),
-  adminNickname: '闰土',
-});
+
 
 registerPublicSystemRoutes(app, {
   db,
@@ -1256,18 +1297,7 @@ registerPublicSystemRoutes(app, {
   crypto,
   wecomWebhookService,
 });
-registerPublicChatRoutes(app, {
-  db,
-  requireFingerprint,
-  getIdentityLookupHashes,
-  checkBanFor,
-  enforceRateLimit,
-  getClientIp,
-  incrementDailyStat,
-  formatDateKey,
-  crypto,
-  chatRealtime,
-});
+
 
 registerPublicUploadRoutes(app, {
   parseImageBody: express.raw({ type: ['image/png', 'image/jpeg', 'image/gif', 'image/webp'], limit: '5mb' }),
@@ -1288,7 +1318,6 @@ registerPublicSiteRoutes(app, {
   mergePermissions,
   buildSettingsResponse,
   getAnnouncement,
-  chatRealtime,
 });
 
 app.get('/api/update-announcements', (req, res) => {
@@ -1376,16 +1405,25 @@ registerPublicReportsRoutes(app, {
   wecomWebhookService,
 });
 
+const contentReviewAdmin = requireAdminModule('content_review');
+const postsAdmin = requireAdminModule('posts');
+const wikiAdmin = requireAdminModule('wiki');
+const feedbackAdmin = requireAdminModule('feedback');
+const userSafetyAdmin = requireAdminModule('user_safety');
+const publishAdmin = requireAdminModule('publish');
+const settingsAdmin = requireAdminModule('settings');
+
 registerAdminReportsRoutes(app, {
   db,
   requireAdmin,
   requireAdminCsrf,
+  requireAdminRead: contentReviewAdmin.read,
+  requireAdminManage: contentReviewAdmin.manage,
   formatRelativeTime,
   logAdminAction,
   resolveBanOptions,
   upsertBan,
   BAN_PERMISSIONS,
-  chatRealtime,
   resolveStoredIdentityHash,
 });
 
@@ -1393,6 +1431,8 @@ registerAdminRumorsRoutes(app, {
   db,
   requireAdmin,
   requireAdminCsrf,
+  requireAdminRead: contentReviewAdmin.read,
+  requireAdminManage: contentReviewAdmin.manage,
   logAdminAction,
   resolveStoredIdentityHash,
   wecomWebhookService,
@@ -1403,6 +1443,9 @@ registerAdminPostsRoutes(app, {
   db,
   requireAdmin,
   requireAdminCsrf,
+  requireAdminRead: postsAdmin.read,
+  requireAdminManage: postsAdmin.manage,
+  requireAdminCreate: publishAdmin.manage,
   containsSensitiveWord,
   getClientIp,
   checkBanFor,
@@ -1425,6 +1468,8 @@ registerAdminWikiRoutes(app, {
   db,
   requireAdmin,
   requireAdminCsrf,
+  requireAdminRead: wikiAdmin.read,
+  requireAdminManage: wikiAdmin.manage,
   logAdminAction,
   crypto,
 });
@@ -1433,6 +1478,8 @@ registerAdminFeedbackRoutes(app, {
   db,
   requireAdmin,
   requireAdminCsrf,
+  requireAdminRead: feedbackAdmin.read,
+  requireAdminManage: feedbackAdmin.manage,
   logAdminAction,
   resolveBanOptions,
   upsertBan,
@@ -1444,6 +1491,8 @@ registerAdminBansRoutes(app, {
   db,
   requireAdmin,
   requireAdminCsrf,
+  requireAdminRead: userSafetyAdmin.read,
+  requireAdminManage: userSafetyAdmin.manage,
   pruneExpiredBans,
   normalizePermissions,
   resolveBanOptions,
@@ -1452,16 +1501,13 @@ registerAdminBansRoutes(app, {
   logAdminAction,
   resolveStoredIdentityHash,
 });
-registerAdminChatRoutes(app, {
-  db,
-  requireAdmin,
-  requireAdminCsrf,
-  chatRealtime,
-});
+
 registerAdminHiddenContentRoutes(app, {
   db,
   requireAdmin,
   requireAdminCsrf,
+  requireAdminRead: contentReviewAdmin.read,
+  requireAdminManage: contentReviewAdmin.manage,
   formatRelativeTime,
   resolveStoredIdentityHash,
   hiddenContentService,
@@ -1469,6 +1515,7 @@ registerAdminHiddenContentRoutes(app, {
 registerAdminAuditRoutes(app, {
   db,
   requireAdmin,
+  requireSuperAdmin,
   AUDIT_RETENTION_MS,
 });
 registerAdminAuthRoutes(app, {
@@ -1480,15 +1527,26 @@ registerAdminAuthRoutes(app, {
   crypto,
 });
 
+registerAdminUsersRoutes(app, {
+  db,
+  requireAdmin,
+  requireAdminCsrf,
+  requireSuperAdmin,
+  bcrypt,
+  logAdminAction,
+});
+
 registerAdminAnnouncementRoutes(app, {
   requireAdmin,
   requireAdminCsrf,
+  requireAdminRead: publishAdmin.read,
+  requireAdminManage: publishAdmin.manage,
   db,
   getAnnouncement,
   logAdminAction,
 });
 
-app.get('/api/admin/update-announcements', requireAdmin, (req, res) => {
+app.get('/api/admin/update-announcements', requireAdmin, publishAdmin.read, (req, res) => {
   return res.json({
     items: getUpdateAnnouncements().map((row) => ({
       id: row.id,
@@ -1498,7 +1556,7 @@ app.get('/api/admin/update-announcements', requireAdmin, (req, res) => {
   });
 });
 
-app.post('/api/admin/update-announcements', requireAdmin, requireAdminCsrf, (req, res) => {
+app.post('/api/admin/update-announcements', requireAdmin, requireAdminCsrf, publishAdmin.manage, (req, res) => {
   const content = String(req.body?.content || '').trim();
   if (!content) {
     return res.status(400).json({ error: '更新公告内容不能为空' });
@@ -1534,7 +1592,7 @@ app.post('/api/admin/update-announcements', requireAdmin, requireAdminCsrf, (req
   });
 });
 
-app.post('/api/admin/update-announcements/:id/delete', requireAdmin, requireAdminCsrf, (req, res) => {
+app.post('/api/admin/update-announcements/:id/delete', requireAdmin, requireAdminCsrf, publishAdmin.manage, (req, res) => {
   const id = String(req.params.id || '').trim();
   if (!id) {
     return res.status(400).json({ error: '更新公告不存在' });
@@ -1562,6 +1620,8 @@ app.post('/api/admin/update-announcements/:id/delete', requireAdmin, requireAdmi
 registerAdminSettingsRoutes(app, {
   requireAdmin,
   requireAdminCsrf,
+  requireAdminRead: settingsAdmin.read,
+  requireAdminManage: settingsAdmin.manage,
   buildSettingsResponse,
   setTurnstileEnabled,
   setCnyThemeEnabled,
@@ -1584,6 +1644,8 @@ registerAdminVocabularyRoutes(app, {
   db,
   requireAdmin,
   requireAdminCsrf,
+  requireAdminRead: settingsAdmin.read,
+  requireAdminManage: settingsAdmin.manage,
   normalizeText,
   reloadVocabulary,
   importVocabularyFromFiles,
@@ -1593,6 +1655,8 @@ registerAdminVocabularyRoutes(app, {
 registerAdminStatsRoutes(app, {
   db,
   requireAdmin,
+  refreshAdminSession,
+  hasAdminPermission,
   formatDateKey,
   startOfWeek,
   getOnlineCount,
@@ -1618,7 +1682,3 @@ app.use((err, req, res, next) => {
 httpServer.listen(PORT, () => {
   console.log(`API server running on ${PORT}`);
 });
-
-
-
-

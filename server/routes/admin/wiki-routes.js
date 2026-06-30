@@ -13,6 +13,8 @@ export const registerAdminWikiRoutes = (app, deps) => {
     db,
     requireAdmin,
     requireAdminCsrf,
+    requireAdminRead = (_req, _res, next) => next(),
+    requireAdminManage = (_req, _res, next) => next(),
     logAdminAction,
     crypto,
   } = deps;
@@ -222,7 +224,7 @@ export const registerAdminWikiRoutes = (app, deps) => {
     return { entryId, slug };
   });
 
-  app.get('/api/admin/wiki/revisions', requireAdmin, (req, res) => {
+  app.get('/api/admin/wiki/revisions', requireAdmin, requireAdminRead, (req, res) => {
     const status = String(req.query.status || 'pending').trim();
     const actionType = String(req.query.actionType || 'all').trim();
     const q = String(req.query.q || '').trim();
@@ -279,7 +281,7 @@ export const registerAdminWikiRoutes = (app, deps) => {
     return res.json({ items: rows.map((row) => mapWikiRevisionRow(row)), total, page, limit });
   });
 
-  app.get('/api/admin/wiki/entries', requireAdmin, (req, res) => {
+  app.get('/api/admin/wiki/entries', requireAdmin, requireAdminRead, (req, res) => {
     const status = String(req.query.status || 'active').trim();
     const q = String(req.query.q || '').trim();
     const page = parsePositiveInt(req.query.page, 1);
@@ -317,7 +319,7 @@ export const registerAdminWikiRoutes = (app, deps) => {
     return res.json({ items: rows.map(mapWikiEntryRow), total, page, limit });
   });
 
-  app.post('/api/admin/wiki/entries', requireAdmin, requireAdminCsrf, (req, res) => {
+  app.post('/api/admin/wiki/entries', requireAdmin, requireAdminCsrf, requireAdminManage, (req, res) => {
     const data = sanitizeAdminPayload(req.body || {}, res);
     if (!data) {
       return;
@@ -351,7 +353,7 @@ export const registerAdminWikiRoutes = (app, deps) => {
     }
   });
 
-  app.post('/api/admin/wiki/revisions/:id/action', requireAdmin, requireAdminCsrf, (req, res) => {
+  app.post('/api/admin/wiki/revisions/:id/action', requireAdmin, requireAdminCsrf, requireAdminManage, (req, res) => {
     const id = String(req.params.id || '').trim();
     const action = String(req.body?.action || '').trim();
     const reason = String(req.body?.reason || '').trim();
@@ -408,7 +410,7 @@ export const registerAdminWikiRoutes = (app, deps) => {
     }
   });
 
-  app.post('/api/admin/wiki/entries/:id/edit', requireAdmin, requireAdminCsrf, (req, res) => {
+  app.post('/api/admin/wiki/entries/:id/edit', requireAdmin, requireAdminCsrf, requireAdminManage, (req, res) => {
     const entryId = String(req.params.id || '').trim();
     const entry = db.prepare('SELECT * FROM wiki_entries WHERE id = ?').get(entryId);
     if (!entry) {
@@ -490,7 +492,7 @@ export const registerAdminWikiRoutes = (app, deps) => {
     return res.json({ entry: updated });
   });
 
-  app.post('/api/admin/wiki/entries/:id/action', requireAdmin, requireAdminCsrf, (req, res) => {
+  app.post('/api/admin/wiki/entries/:id/action', requireAdmin, requireAdminCsrf, requireAdminManage, (req, res) => {
     const entryId = String(req.params.id || '').trim();
     const action = String(req.body?.action || '').trim();
     const reason = String(req.body?.reason || '').trim();

@@ -10,6 +10,7 @@ const REPORT_PAGE_SIZE = 10;
 interface AdminReportsViewProps {
   showProcessed: boolean;
   reportsLoading: boolean;
+  canManage: boolean;
   searchQuery: string;
   filteredReports: Report[];
   selectedReports: Set<string>;
@@ -30,6 +31,7 @@ interface AdminReportsViewProps {
 const AdminReportsView: React.FC<AdminReportsViewProps> = ({
   showProcessed,
   reportsLoading,
+  canManage,
   searchQuery,
   filteredReports,
   selectedReports,
@@ -70,7 +72,7 @@ const AdminReportsView: React.FC<AdminReportsViewProps> = ({
           </span>
         </h2>
       </div>
-      {!showProcessed && (
+      {!showProcessed && canManage && (
         <div className="flex flex-wrap items-center justify-between gap-3 text-xs font-sans mb-4">
           <label className="flex items-center gap-2 text-pencil">
             <input
@@ -138,9 +140,10 @@ const AdminReportsView: React.FC<AdminReportsViewProps> = ({
               onDetail={onReportDetail}
               renderIdentity={renderIdentity}
               showStatus={showProcessed}
-              selectable={!showProcessed}
+              selectable={!showProcessed && canManage}
               selected={selectedReports.has(report.id)}
               onSelect={() => onToggleReportSelection(report.id)}
+              canManage={canManage}
             />
           ))}
         </div>

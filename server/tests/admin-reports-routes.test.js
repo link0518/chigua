@@ -38,14 +38,6 @@ const createDb = () => {
       ip TEXT,
       fingerprint TEXT
     );
-
-    CREATE TABLE chat_messages (
-      id INTEGER PRIMARY KEY,
-      text_content TEXT,
-      ip_snapshot TEXT,
-      session_id TEXT,
-      fingerprint_hash TEXT
-    );
   `);
   return db;
 };
@@ -115,12 +107,6 @@ const createHarness = () => {
     resolveBanOptions: () => ({}),
     upsertBan: () => {},
     BAN_PERMISSIONS: {},
-    chatRealtime: {
-      deleteMessageByAdmin: () => ({ ok: true }),
-      banByAdmin: () => {},
-      muteByAdmin: () => {},
-    },
-    resolveStoredIdentityHash: () => null,
   });
 
   return { db, routes: app.routes };

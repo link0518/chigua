@@ -19,6 +19,7 @@ interface AdminPublishCenterViewProps {
   updateAnnouncementSubmitting: boolean;
   updateAnnouncementLoading: boolean;
   updateAnnouncements: UpdateAnnouncementItem[];
+  canManage: boolean;
   showToast: (message: string, type?: ToastType) => void;
   formatAnnouncementTime: (value: number | null) => string;
   onComposeTextChange: (value: string) => void;
@@ -45,6 +46,7 @@ const AdminPublishCenterView: React.FC<AdminPublishCenterViewProps> = ({
   updateAnnouncementSubmitting,
   updateAnnouncementLoading,
   updateAnnouncements,
+  canManage,
   showToast,
   formatAnnouncementTime,
   onComposeTextChange,
@@ -59,7 +61,13 @@ const AdminPublishCenterView: React.FC<AdminPublishCenterViewProps> = ({
 }) => (
   <section className="space-y-6">
     <form
-      onSubmit={onComposeSubmit}
+      onSubmit={(event) => {
+        if (!canManage) {
+          event.preventDefault();
+          return;
+        }
+        onComposeSubmit(event);
+      }}
       className="bg-white p-6 border-2 border-ink rounded-lg shadow-sketch-sm"
     >
       <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
@@ -76,6 +84,7 @@ const AdminPublishCenterView: React.FC<AdminPublishCenterViewProps> = ({
         maxLength={composeMaxLength}
         minHeight="280px"
         ariaLabel="后台投稿 Markdown 编辑器"
+        readOnly={!canManage}
         showToast={showToast}
       />
 
@@ -86,13 +95,14 @@ const AdminPublishCenterView: React.FC<AdminPublishCenterViewProps> = ({
             className="w-4 h-4"
             checked={composeIncludeDeveloper}
             onChange={(event) => onComposeIncludeDeveloperChange(event.target.checked)}
+            disabled={!canManage || composeSubmitting}
           />
           <span>附带开发者信息（显示 admin 名片）</span>
         </label>
         <SketchButton
           type="submit"
           className="h-10 px-6 text-sm"
-          disabled={composeSubmitting || !composeText.trim() || composeText.length > composeMaxLength}
+          disabled={!canManage || composeSubmitting || !composeText.trim() || composeText.length > composeMaxLength}
         >
           {composeSubmitting ? '发布中...' : '发布'}
         </SketchButton>
@@ -100,7 +110,13 @@ const AdminPublishCenterView: React.FC<AdminPublishCenterViewProps> = ({
     </form>
 
     <form
-      onSubmit={onAnnouncementSubmit}
+      onSubmit={(event) => {
+        if (!canManage) {
+          event.preventDefault();
+          return;
+        }
+        onAnnouncementSubmit(event);
+      }}
       className="bg-white p-6 border-2 border-ink rounded-lg shadow-sketch-sm"
     >
       <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
@@ -122,6 +138,7 @@ const AdminPublishCenterView: React.FC<AdminPublishCenterViewProps> = ({
         maxLength={5000}
         minHeight="240px"
         ariaLabel="站点公告 Markdown 编辑器"
+        readOnly={!canManage}
         showToast={showToast}
       />
 
@@ -131,14 +148,14 @@ const AdminPublishCenterView: React.FC<AdminPublishCenterViewProps> = ({
           variant="secondary"
           className="h-10 px-4 text-sm"
           onClick={onAnnouncementClear}
-          disabled={announcementSubmitting || announcementLoading || !announcementText.trim()}
+          disabled={!canManage || announcementSubmitting || announcementLoading || !announcementText.trim()}
         >
           清空公告
         </SketchButton>
         <SketchButton
           type="submit"
           className="h-10 px-6 text-sm"
-          disabled={announcementSubmitting || announcementLoading || !announcementText.trim() || announcementText.length > 5000}
+          disabled={!canManage || announcementSubmitting || announcementLoading || !announcementText.trim() || announcementText.length > 5000}
         >
           {announcementSubmitting ? '发布中...' : '发布公告'}
         </SketchButton>
@@ -146,7 +163,13 @@ const AdminPublishCenterView: React.FC<AdminPublishCenterViewProps> = ({
     </form>
 
     <div className="bg-white p-6 border-2 border-ink rounded-lg shadow-sketch-sm space-y-6">
-      <form onSubmit={onUpdateAnnouncementSubmit}>
+      <form onSubmit={(event) => {
+        if (!canManage) {
+          event.preventDefault();
+          return;
+        }
+        onUpdateAnnouncementSubmit(event);
+      }}>
         <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
           <div>
             <h3 className="font-display text-xl">更新公告</h3>
@@ -161,6 +184,7 @@ const AdminPublishCenterView: React.FC<AdminPublishCenterViewProps> = ({
           maxLength={5000}
           minHeight="240px"
           ariaLabel="更新公告 Markdown 编辑器"
+          readOnly={!canManage}
           showToast={showToast}
         />
 
@@ -168,7 +192,7 @@ const AdminPublishCenterView: React.FC<AdminPublishCenterViewProps> = ({
           <SketchButton
             type="submit"
             className="h-10 px-6 text-sm"
-            disabled={updateAnnouncementSubmitting || !updateAnnouncementText.trim() || updateAnnouncementText.length > 5000}
+            disabled={!canManage || updateAnnouncementSubmitting || !updateAnnouncementText.trim() || updateAnnouncementText.length > 5000}
           >
             {updateAnnouncementSubmitting ? '发布中...' : '发布更新公告'}
           </SketchButton>
@@ -197,15 +221,17 @@ const AdminPublishCenterView: React.FC<AdminPublishCenterViewProps> = ({
                   <span className="text-xs text-pencil font-sans">
                     更新时间：{formatAnnouncementTime(item.updatedAt)}
                   </span>
-                  <SketchButton
-                    type="button"
-                    variant="danger"
-                    className="h-9 px-3 text-xs"
-                    onClick={() => onUpdateAnnouncementDelete(item.id)}
-                    disabled={updateAnnouncementSubmitting}
-                  >
-                    删除
-                  </SketchButton>
+                  {canManage && (
+                    <SketchButton
+                      type="button"
+                      variant="danger"
+                      className="h-9 px-3 text-xs"
+                      onClick={() => onUpdateAnnouncementDelete(item.id)}
+                      disabled={updateAnnouncementSubmitting}
+                    >
+                      删除
+                    </SketchButton>
+                  )}
                 </div>
                 <MarkdownRenderer content={item.content} className="font-sans text-base text-ink" />
               </div>

@@ -22,6 +22,7 @@ interface WikiMarkdownComposerProps {
   toolbarLabel?: string;
   emptyPreviewText?: string;
   renderClassName?: string;
+  readOnly?: boolean;
   theme?: WikiMarkdownComposerTheme;
 }
 
@@ -112,6 +113,7 @@ const WikiMarkdownComposer: React.FC<WikiMarkdownComposerProps> = ({
   toolbarLabel = '支持 Markdown',
   emptyPreviewText = '预览区为空，请先输入内容。',
   renderClassName = 'font-sans text-sm text-ink',
+  readOnly = false,
   theme = 'wiki',
 }) => {
   const [showPreview, setShowPreview] = useState(false);
@@ -130,14 +132,14 @@ const WikiMarkdownComposer: React.FC<WikiMarkdownComposerProps> = ({
   }, [onChange]);
 
   const handleRunCommand = useCallback((command: MarkdownEditorCommand) => {
-    if (showPreview) {
+    if (readOnly || showPreview) {
       return;
     }
     editorRef.current?.runCommand(command);
-  }, [showPreview]);
+  }, [readOnly, showPreview]);
 
   const handleEditorContainerMouseDown = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
-    if (showPreview || event.button !== 0) {
+    if (readOnly || showPreview || event.button !== 0) {
       return;
     }
     const target = event.target instanceof Element ? event.target : null;
@@ -152,7 +154,7 @@ const WikiMarkdownComposer: React.FC<WikiMarkdownComposerProps> = ({
     }
     event.preventDefault();
     editorRef.current?.focus();
-  }, [showPreview]);
+  }, [readOnly, showPreview]);
 
   useEffect(() => {
     if (!showPreview || value.trim()) {
@@ -205,7 +207,7 @@ const WikiMarkdownComposer: React.FC<WikiMarkdownComposerProps> = ({
             type="button"
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => handleRunCommand(tool.key)}
-            disabled={showPreview}
+            disabled={readOnly || showPreview}
             aria-label={tool.title}
             title={tool.title}
             className={themeConfig.toolButtonClassName}
@@ -238,6 +240,7 @@ const WikiMarkdownComposer: React.FC<WikiMarkdownComposerProps> = ({
               minHeight={minHeight}
               autoFocus={autoFocus}
               ariaLabel={ariaLabel}
+              readOnly={readOnly}
               themeOptions={themeConfig.editorThemeOptions}
             />
           </div>

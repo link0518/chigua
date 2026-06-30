@@ -179,11 +179,11 @@ test('图片上传路由按上传用途检查对应封禁权限', async () => {
     const res = await app.run('/api/uploads/image', {
       headers: { 'content-type': 'image/png' },
       body: Buffer.from([1, 2, 3]),
-      query: { usage: 'chat' },
+      query: { usage: 'comment' },
     });
 
     assert.equal(res.statusCode, 200);
-    assert.deepEqual(checkedPermissions, ['chat']);
+    assert.deepEqual(checkedPermissions, ['comment']);
   } finally {
     globalThis.fetch = originalFetch;
   }

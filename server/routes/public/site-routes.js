@@ -6,7 +6,6 @@ export const registerPublicSiteRoutes = (app, deps) => {
     mergePermissions,
     buildSettingsResponse,
     getAnnouncement,
-    chatRealtime,
   } = deps;
 
   app.get('/api/access', (req, res) => {
@@ -29,11 +28,7 @@ export const registerPublicSiteRoutes = (app, deps) => {
   });
 
   app.get('/api/settings', (req, res) => {
-    const chatEnabled = chatRealtime?.getChatConfig?.().chatEnabled;
-    return res.json({
-      ...buildSettingsResponse(),
-      chatEnabled: typeof chatEnabled === 'boolean' ? chatEnabled : true,
-    });
+    return res.json(buildSettingsResponse());
   });
 
   app.get('/api/announcement', (req, res) => {

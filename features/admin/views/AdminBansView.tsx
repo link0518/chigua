@@ -6,6 +6,7 @@ interface AdminBansViewProps {
   mergedBans: AdminMergedBanItem[];
   banLoading: boolean;
   banSearchInput: string;
+  canManage: boolean;
   formatTimestamp: (timestamp?: number) => string;
   formatBanPermissions: (permissions?: string[]) => string;
   renderIdentity: RenderIdentity;
@@ -18,6 +19,7 @@ const AdminBansView: React.FC<AdminBansViewProps> = ({
   mergedBans,
   banLoading,
   banSearchInput,
+  canManage,
   formatTimestamp,
   formatBanPermissions,
   renderIdentity,
@@ -31,13 +33,15 @@ const AdminBansView: React.FC<AdminBansViewProps> = ({
         <span>共 {mergedBans.length} 条</span>
         <div className="flex items-center gap-2">
           <span>{banLoading ? '加载中...' : '已更新'}</span>
-          <SketchButton
-            variant="secondary"
-            className="h-8 px-3 text-xs"
-            onClick={() => onOpenManualBan()}
-          >
-            新建封禁
-          </SketchButton>
+          {canManage && (
+            <SketchButton
+              variant="secondary"
+              className="h-8 px-3 text-xs"
+              onClick={() => onOpenManualBan()}
+            >
+              新建封禁
+            </SketchButton>
+          )}
         </div>
       </div>
       <div className="flex items-center gap-2">
@@ -50,28 +54,30 @@ const AdminBansView: React.FC<AdminBansViewProps> = ({
       </div>
     </div>
 
-    <div className="bg-white border-2 border-ink rounded-lg p-4 shadow-sketch-sm mb-4 flex flex-col gap-3">
-      <p className="text-sm font-bold text-ink font-sans">统一处置入口</p>
-      <p className="text-xs text-pencil font-sans leading-6">
-        手动封禁、更新权限、调整时长、解除封禁都在同一个处置抽屉里完成。
-      </p>
-      <div className="flex flex-wrap gap-2">
-        <SketchButton
-          variant="secondary"
-          className="h-8 px-3 text-xs"
-          onClick={() => onOpenManualBan({ type: 'identity', value: banSearchInput.trim() })}
-        >
-          按身份处理
-        </SketchButton>
-        <SketchButton
-          variant="secondary"
-          className="h-8 px-3 text-xs"
-          onClick={() => onOpenManualBan({ type: 'ip', value: banSearchInput.trim() })}
-        >
-          按 IP 处理
-        </SketchButton>
+    {canManage && (
+      <div className="bg-white border-2 border-ink rounded-lg p-4 shadow-sketch-sm mb-4 flex flex-col gap-3">
+        <p className="text-sm font-bold text-ink font-sans">统一处置入口</p>
+        <p className="text-xs text-pencil font-sans leading-6">
+          手动封禁、更新权限、调整时长、解除封禁都在同一个处置抽屉里完成。
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <SketchButton
+            variant="secondary"
+            className="h-8 px-3 text-xs"
+            onClick={() => onOpenManualBan({ type: 'identity', value: banSearchInput.trim() })}
+          >
+            按身份处理
+          </SketchButton>
+          <SketchButton
+            variant="secondary"
+            className="h-8 px-3 text-xs"
+            onClick={() => onOpenManualBan({ type: 'ip', value: banSearchInput.trim() })}
+          >
+            按 IP 处理
+          </SketchButton>
+        </div>
       </div>
-    </div>
+    )}
 
     {banLoading ? (
       <div className="text-center py-16 bg-white border-2 border-ink rounded-lg">
@@ -117,7 +123,7 @@ const AdminBansView: React.FC<AdminBansViewProps> = ({
                   {item.reason && <p>理由：{item.reason}</p>}
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              {canManage && <div className="flex items-center gap-2">
                 <SketchButton
                   variant="secondary"
                   className="h-8 px-3 text-xs"
@@ -125,7 +131,7 @@ const AdminBansView: React.FC<AdminBansViewProps> = ({
                 >
                   处理
                 </SketchButton>
-              </div>
+              </div>}
             </div>
           </div>
         ))}

@@ -2,6 +2,8 @@ export const registerAdminSettingsRoutes = (app, deps) => {
   const {
     requireAdmin,
     requireAdminCsrf,
+    requireAdminRead = (_req, _res, next) => next(),
+    requireAdminManage = (_req, _res, next) => next(),
     buildSettingsResponse,
     setTurnstileEnabled,
     setCnyThemeEnabled,
@@ -27,11 +29,11 @@ export const registerAdminSettingsRoutes = (app, deps) => {
     wecomWebhook: getWecomWebhookPublicConfig(),
   });
 
-  app.get('/api/admin/settings', requireAdmin, (req, res) => {
+  app.get('/api/admin/settings', requireAdmin, requireAdminRead, (req, res) => {
     return res.json(buildAdminSettingsResponse());
   });
 
-  app.post('/api/admin/settings', requireAdmin, requireAdminCsrf, (req, res) => {
+  app.post('/api/admin/settings', requireAdmin, requireAdminCsrf, requireAdminManage, (req, res) => {
     const rawTurnstileEnabled = req.body?.turnstileEnabled;
     const rawCnyThemeEnabled = req.body?.cnyThemeEnabled;
     const hasDefaultPostTags = Object.prototype.hasOwnProperty.call(req.body || {}, 'defaultPostTags');
@@ -129,7 +131,7 @@ export const registerAdminSettingsRoutes = (app, deps) => {
     return res.json(buildAdminSettingsResponse());
   });
 
-  app.post('/api/admin/settings/wecom-webhook/test', requireAdmin, requireAdminCsrf, async (req, res) => {
+  app.post('/api/admin/settings/wecom-webhook/test', requireAdmin, requireAdminCsrf, requireAdminManage, async (req, res) => {
     const rawUrl = typeof req.body?.url === 'string'
       ? req.body.url
       : typeof req.body?.wecomWebhook?.url === 'string'

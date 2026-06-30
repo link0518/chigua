@@ -27,6 +27,7 @@ interface MarkdownEditorProps {
   minHeight?: string;
   autoFocus?: boolean;
   ariaLabel?: string;
+  readOnly?: boolean;
   onPasteImage?: (file: File) => void;
   themeOptions?: MarkdownEditorThemeOptions;
 }
@@ -309,6 +310,7 @@ const MarkdownEditor = React.forwardRef<MarkdownEditorHandle, MarkdownEditorProp
   minHeight = '300px',
   autoFocus = false,
   ariaLabel = 'Markdown 编辑器',
+  readOnly = false,
   onPasteImage,
   themeOptions,
 }, ref) => {
@@ -390,6 +392,8 @@ const MarkdownEditor = React.forwardRef<MarkdownEditorHandle, MarkdownEditorProp
       theme="none"
       basicSetup={basicSetup}
       extensions={extensions}
+      editable={!readOnly}
+      readOnly={readOnly}
       autoFocus={autoFocus}
       minHeight={minHeight}
       height="100%"

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { AlertTriangle, Flag } from 'lucide-react';
 
 import Modal from './Modal';
@@ -11,8 +11,7 @@ interface ReportModalProps {
   onClose: () => void;
   postId?: string;
   commentId?: string;
-  chatMessageId?: number;
-  targetType?: 'post' | 'comment' | 'chat';
+  targetType?: 'post' | 'comment';
   contentPreview?: string;
 }
 
@@ -38,33 +37,21 @@ const DEFAULT_REASONS: ReportReasonOption[] = [
   },
 ];
 
-const CHAT_REASONS: ReportReasonOption[] = [
-  { id: 'privacy', label: '隐私风险', desc: '泄露他人隐私信息' },
-  { id: 'harassment', label: '骚扰辱骂', desc: '人身攻击、恶意骚扰或辱骂' },
-  { id: 'spam', label: '垃圾广告', desc: '营销推广、引流或重复刷屏' },
-  { id: 'misinformation', label: '虚假信息', desc: '明显失实或误导性内容' },
-  { id: 'other', label: '其他', desc: '其他不适宜内容' },
-];
-
 const ReportModal: React.FC<ReportModalProps> = ({
   isOpen,
   onClose,
   postId,
   commentId,
-  chatMessageId,
   targetType = 'post',
   contentPreview,
 }) => {
-  const { reportPost, reportComment, reportChatMessage, showToast } = useApp();
+  const { reportPost, reportComment, showToast } = useApp();
   const [selectedReason, setSelectedReason] = useState<string>('');
   const [otherReason, setOtherReason] = useState('');
   const [evidence, setEvidence] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const reasons = useMemo(
-    () => (targetType === 'chat' ? CHAT_REASONS : DEFAULT_REASONS),
-    [targetType]
-  );
+  const reasons = DEFAULT_REASONS;
 
   const selectedReasonItem = reasons.find((item) => item.id === selectedReason);
   const requiresEvidence = Boolean(selectedReasonItem?.requireEvidence);
@@ -117,11 +104,6 @@ const ReportModal: React.FC<ReportModalProps> = ({
           throw new Error('评论不存在');
         }
         result = await reportComment(commentId, payload);
-      } else if (targetType === 'chat') {
-        if (!chatMessageId || chatMessageId <= 0) {
-          throw new Error('消息不存在');
-        }
-        await reportChatMessage(chatMessageId, payload.reason);
       } else {
         if (!postId) {
           throw new Error('帖子不存在');

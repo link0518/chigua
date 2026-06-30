@@ -9,6 +9,8 @@ export const registerAdminHiddenContentRoutes = (app, deps) => {
     db,
     requireAdmin,
     requireAdminCsrf,
+    requireAdminRead = (_req, _res, next) => next(),
+    requireAdminManage = (_req, _res, next) => next(),
     formatRelativeTime,
     resolveStoredIdentityHash,
     hiddenContentService,
@@ -24,7 +26,7 @@ export const registerAdminHiddenContentRoutes = (app, deps) => {
   const normalizeType = (value) => (value === 'comment' ? 'comment' : value === 'post' ? 'post' : 'all');
   const normalizeReview = (value) => (value === 'kept' ? 'kept' : value === 'pending' ? 'pending' : 'all');
 
-  app.get('/api/admin/hidden-content', requireAdmin, (req, res) => {
+  app.get('/api/admin/hidden-content', requireAdmin, requireAdminRead, (req, res) => {
     const type = normalizeType(String(req.query.type || 'all').trim());
     const review = normalizeReview(String(req.query.review || 'pending').trim());
     const search = String(req.query.search || '').trim();
@@ -155,7 +157,7 @@ export const registerAdminHiddenContentRoutes = (app, deps) => {
     });
   });
 
-  app.post('/api/admin/hidden-content/:type/:id/action', requireAdmin, requireAdminCsrf, (req, res) => {
+  app.post('/api/admin/hidden-content/:type/:id/action', requireAdmin, requireAdminCsrf, requireAdminManage, (req, res) => {
     const targetType = normalizeType(String(req.params.type || '').trim());
     const targetId = String(req.params.id || '').trim();
     const action = String(req.body?.action || '').trim();

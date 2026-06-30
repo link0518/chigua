@@ -7,6 +7,8 @@ export const registerAdminRumorsRoutes = (app, deps) => {
     db,
     requireAdmin,
     requireAdminCsrf,
+    requireAdminRead = (_req, _res, next) => next(),
+    requireAdminManage = (_req, _res, next) => next(),
     logAdminAction,
     resolveStoredIdentityHash,
     createNotification,
@@ -319,7 +321,7 @@ export const registerAdminRumorsRoutes = (app, deps) => {
     };
   };
 
-  app.get('/api/admin/rumors', requireAdmin, (req, res) => {
+  app.get('/api/admin/rumors', requireAdmin, requireAdminRead, (req, res) => {
     const status = normalizeViewStatus(req.query.status);
     const targetType = normalizeTargetType(req.query.targetType);
     const search = String(req.query.q || req.query.search || '').trim();
@@ -337,7 +339,7 @@ export const registerAdminRumorsRoutes = (app, deps) => {
     });
   });
 
-  app.post('/api/admin/rumors/:targetType/:targetId/action', requireAdmin, requireAdminCsrf, (req, res) => {
+  app.post('/api/admin/rumors/:targetType/:targetId/action', requireAdmin, requireAdminCsrf, requireAdminManage, (req, res) => {
     const targetType = normalizeTargetType(req.params.targetType);
     const targetId = String(req.params.targetId || '').trim();
     const action = String(req.body?.action || '').trim().toLowerCase();
@@ -361,7 +363,7 @@ export const registerAdminRumorsRoutes = (app, deps) => {
     return res.json(result);
   });
 
-  app.post('/api/admin/rumors/batch', requireAdmin, requireAdminCsrf, (req, res) => {
+  app.post('/api/admin/rumors/batch', requireAdmin, requireAdminCsrf, requireAdminManage, (req, res) => {
     const action = String(req.body?.action || '').trim().toLowerCase();
     const reason = String(req.body?.reason || '').trim();
     const scope = String(req.body?.scope || 'selected').trim().toLowerCase();

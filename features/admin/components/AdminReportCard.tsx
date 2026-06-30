@@ -1,5 +1,5 @@
 import React from 'react';
-import { Ban, CheckCircle, EyeOff, MessageSquare, Trash2, XCircle } from 'lucide-react';
+import { Ban, CheckCircle, EyeOff, Trash2, XCircle } from 'lucide-react';
 import { SketchButton } from '@/components/SketchUI';
 import type { Report } from '@/types';
 import type { RenderIdentity, ReportAction } from '@/features/admin/types';
@@ -19,6 +19,7 @@ interface AdminReportCardProps {
   selectable?: boolean;
   selected?: boolean;
   onSelect?: () => void;
+  canManage?: boolean;
 }
 
 const getRiskBg = (level: string) => {
@@ -41,6 +42,7 @@ const AdminReportCard: React.FC<AdminReportCardProps> = ({
   selectable = true,
   selected = false,
   onSelect,
+  canManage = true,
 }) => (
   <div className="bg-white p-5 rounded-lg border-2 border-ink shadow-sketch-sm hover:shadow-sketch transition-all group">
     <div className="flex flex-col md:flex-row gap-6 justify-between items-start">
@@ -62,11 +64,6 @@ const AdminReportCard: React.FC<AdminReportCardProps> = ({
           {report.targetType === 'comment' && (
             <span className="text-xs flex items-center gap-1 border border-ink px-2 py-0.5 rounded font-bold font-sans bg-blue-50 text-blue-700">
               评论举报
-            </span>
-          )}
-          {report.targetType === 'chat' && (
-            <span className="text-xs flex items-center gap-1 border border-ink px-2 py-0.5 rounded font-bold font-sans bg-cyan-50 text-cyan-700">
-              聊天室发言举报
             </span>
           )}
           {showStatus && (
@@ -104,7 +101,7 @@ const AdminReportCard: React.FC<AdminReportCardProps> = ({
         </div>
       </div>
 
-      {!showStatus && (
+      {!showStatus && canManage && (
         <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 min-w-fit mt-2 md:mt-0 font-sans">
           <SketchButton
             variant="secondary"
@@ -120,15 +117,6 @@ const AdminReportCard: React.FC<AdminReportCardProps> = ({
           >
             <Trash2 size={14} /> 删除
           </SketchButton>
-          {report.targetType === 'chat' && (
-            <SketchButton
-              variant="secondary"
-              className="h-10 px-3 text-xs flex items-center gap-1"
-              onClick={() => onAction(report.id, 'mute', report.contentSnippet, report.targetType, report.targetId)}
-            >
-              <MessageSquare size={14} /> 禁言
-            </SketchButton>
-          )}
           <SketchButton
             variant="primary"
             className="h-10 px-3 text-xs flex items-center gap-1 text-white"

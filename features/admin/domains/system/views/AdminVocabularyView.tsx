@@ -17,6 +17,7 @@ type AdminVocabularyViewProps = {
   totalPages: number;
   loading: boolean;
   submitting: boolean;
+  canManage: boolean;
   formatUpdatedAt: (value: number) => string;
   onSearchChange: (value: string) => void;
   onNewWordChange: (value: string) => void;
@@ -37,6 +38,7 @@ const AdminVocabularyView: React.FC<AdminVocabularyViewProps> = ({
   totalPages,
   loading,
   submitting,
+  canManage,
   formatUpdatedAt,
   onSearchChange,
   onNewWordChange,
@@ -54,15 +56,17 @@ const AdminVocabularyView: React.FC<AdminVocabularyViewProps> = ({
         <p className="text-xs text-pencil font-sans">保存后立即生效，无需重启服务</p>
       </div>
       <div className="flex items-center gap-2">
-        <SketchButton
-          type="button"
-          variant="secondary"
-          className="h-9 px-4 text-sm"
-          onClick={onImport}
-          disabled={submitting || loading}
-        >
-          从TXT导入
-        </SketchButton>
+        {canManage && (
+          <SketchButton
+            type="button"
+            variant="secondary"
+            className="h-9 px-4 text-sm"
+            onClick={onImport}
+            disabled={submitting || loading}
+          >
+            从TXT导入
+          </SketchButton>
+        )}
         <SketchButton
           type="button"
           variant="secondary"
@@ -83,7 +87,7 @@ const AdminVocabularyView: React.FC<AdminVocabularyViewProps> = ({
         className="flex-1 min-w-[180px] bg-transparent border-2 border-gray-200 rounded-lg outline-none font-sans text-sm text-ink placeholder:text-pencil/40 px-3 py-2 focus:border-ink transition-colors"
         disabled={loading || submitting}
       />
-      <form onSubmit={onAdd} className="flex items-center gap-2">
+      {canManage && <form onSubmit={onAdd} className="flex items-center gap-2">
         <input
           value={newWord}
           onChange={(e) => onNewWordChange(e.target.value)}
@@ -98,7 +102,7 @@ const AdminVocabularyView: React.FC<AdminVocabularyViewProps> = ({
         >
           添加
         </SketchButton>
-      </form>
+      </form>}
     </div>
 
     <div className="flex items-center justify-between text-xs text-pencil font-sans mb-3">
@@ -125,7 +129,7 @@ const AdminVocabularyView: React.FC<AdminVocabularyViewProps> = ({
               </Badge>
               <span className="text-xs text-pencil font-sans">更新：{formatUpdatedAt(item.updatedAt)}</span>
             </div>
-            <div className="flex items-center gap-2">
+            {canManage && <div className="flex items-center gap-2">
               <SketchButton
                 type="button"
                 variant="secondary"
@@ -144,7 +148,7 @@ const AdminVocabularyView: React.FC<AdminVocabularyViewProps> = ({
               >
                 删除
               </SketchButton>
-            </div>
+            </div>}
           </div>
         ))}
       </div>

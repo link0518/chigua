@@ -44,7 +44,6 @@ const App: React.FC = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [announcementOpen, setAnnouncementOpen] = useState(false);
   const [userSettingsOpen, setUserSettingsOpen] = useState(false);
-  const [settingsChecked, setSettingsChecked] = useState(false);
   const [announcementContent, setAnnouncementContent] = useState('');
   const [announcementUpdatedAt, setAnnouncementUpdatedAt] = useState<number | null>(null);
   const [announcementUnread, setAnnouncementUnread] = useState(false);
@@ -55,10 +54,8 @@ const App: React.FC = () => {
   const [notificationsUnread, setNotificationsUnread] = useState(0);
   const notificationRef = useRef<HTMLDivElement | null>(null);
   const [backgroundTasksReady, setBackgroundTasksReady] = useState(false);
-  const chatEnabled = settingsChecked ? state.settings.chatEnabled : false;
-  const isChatView = currentView === ViewType.CHAT;
   const isWikiView = currentView === ViewType.WIKI;
-  const showSiteChrome = currentView !== ViewType.ADMIN && !isChatView && !isWikiView;
+  const showSiteChrome = currentView !== ViewType.ADMIN && !isWikiView;
   const isCnyTheme = currentView !== ViewType.ADMIN && !isWikiView && state.settings.cnyThemeActive;
   const showDesktopSettingsEntry = currentView !== ViewType.ADMIN && !isWikiView;
   const showDesktopWikiEntry = currentView !== ViewType.ADMIN && !isWikiView;
@@ -148,11 +145,7 @@ const App: React.FC = () => {
 
 
   useEffect(() => {
-    loadSettings()
-      .catch(() => { })
-      .finally(() => {
-        setSettingsChecked(true);
-      });
+    loadSettings().catch(() => { });
   }, [loadSettings]);
 
   useEffect(() => {
@@ -183,22 +176,6 @@ const App: React.FC = () => {
       document.body.classList.remove('theme-wiki');
     };
   }, [isCnyTheme, isWikiView]);
-
-  useEffect(() => {
-    if (!settingsChecked) {
-      return;
-    }
-    if (chatEnabled) {
-      return;
-    }
-    if (currentView !== ViewType.CHAT) {
-      return;
-    }
-    setCurrentView(ViewType.HOME);
-    if (window.location.pathname !== '/') {
-      window.history.replaceState({}, '', '/');
-    }
-  }, [chatEnabled, currentView, settingsChecked]);
 
   useEffect(() => {
     let active = true;
@@ -341,9 +318,6 @@ const App: React.FC = () => {
   }, []);
 
   const navigate = useCallback((view: ViewType) => {
-    if (view === ViewType.CHAT && !chatEnabled) {
-      return;
-    }
     const targetPath = getPathForView(view);
     const shouldRefreshHome = view === ViewType.HOME && currentView === ViewType.HOME;
     setCurrentView(view);
@@ -355,7 +329,7 @@ const App: React.FC = () => {
     if (shouldRefreshHome) {
       window.dispatchEvent(new CustomEvent('home:refresh'));
     }
-  }, [chatEnabled, currentView]);
+  }, [currentView]);
 
   useEffect(() => {
     if (!backgroundTasksReady) {
@@ -637,17 +611,6 @@ const App: React.FC = () => {
               </button>
             </div>
           </div>
-          {chatEnabled && (
-            <button
-              onClick={() => navigate(ViewType.CHAT)}
-              className={`hidden sm:flex absolute right-4 md:right-6 top-1/2 -translate-y-1/2 items-center justify-center rounded-full px-3 py-2 sm:px-4 sm:py-2.5 border-2 transition-all shadow-sketch active:shadow-sketch-active active:translate-x-[2px] active:translate-y-[2px] z-20 ${isCnyTheme ? 'border-cny-gold bg-cny-paper text-cny-dark-red hover:bg-cny-gold/20' : 'border-ink bg-white hover:bg-highlight'}`}
-            >
-              <span className="flex items-center gap-2 font-sans text-sm sm:text-base font-semibold whitespace-nowrap">
-                <MessageCircle className="w-4 h-4 shrink-0" />
-                <span className="leading-none">{'\u804a\u5929\u5ba4'}</span>
-              </span>
-            </button>
-          )}
           {/* Mobile Nav Dropdown */}
           {mobileMenuOpen && (
             <div className={`sm:hidden absolute top-full left-0 w-full border-b-2 shadow-xl p-4 flex flex-col gap-3 animate-in slide-in-from-top-2 z-50 ${isCnyTheme ? 'bg-cny-paper border-cny-dark-red' : 'bg-paper border-ink'}`}>
@@ -691,15 +654,6 @@ const App: React.FC = () => {
                   setMobileMenuOpen(false);
                 }}
               />
-              {chatEnabled && (
-                <MobileNavItem
-                  label="聊天室"
-                  onClick={() => {
-                    navigate(ViewType.CHAT);
-                    setMobileMenuOpen(false);
-                  }}
-                />
-              )}
               <MobileNavItem
                 label="公告"
                 dot={announcementUnread}
@@ -741,7 +695,6 @@ const App: React.FC = () => {
         >
           <AppViewRenderer
             currentView={currentView}
-            chatEnabled={chatEnabled}
             onNavigateHome={() => navigate(ViewType.HOME)}
           />
         </React.Suspense>

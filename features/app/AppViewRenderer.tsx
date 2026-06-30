@@ -7,18 +7,15 @@ const FeedView = React.lazy(() => import('@/components/FeedView'));
 const SearchView = React.lazy(() => import('@/components/SearchView'));
 const AdminGate = React.lazy(() => import('@/components/AdminGate'));
 const FavoritesView = React.lazy(() => import('@/components/FavoritesView'));
-const ChatRoomView = React.lazy(() => import('@/components/ChatRoomView'));
 const WikiView = React.lazy(() => import('@/components/wiki/WikiView'));
 
 interface AppViewRendererProps {
   currentView: ViewType;
-  chatEnabled: boolean;
   onNavigateHome: () => void;
 }
 
 const AppViewRenderer: React.FC<AppViewRendererProps> = ({
   currentView,
-  chatEnabled,
   onNavigateHome,
 }) => {
   switch (currentView) {
@@ -32,11 +29,6 @@ const AppViewRenderer: React.FC<AppViewRendererProps> = ({
       return <SearchView />;
     case ViewType.FAVORITES:
       return <FavoritesView />;
-    case ViewType.CHAT:
-      if (!chatEnabled) {
-        return <HomeView />;
-      }
-      return <ChatRoomView onExitToFeed={onNavigateHome} />;
     case ViewType.WIKI:
       return <WikiView />;
     case ViewType.ADMIN:

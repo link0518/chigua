@@ -1,3 +1,8 @@
+import {
+  buildAdminSessionPayload,
+  mapAdminUserRow,
+} from '../../admin-permissions.js';
+
 export const registerAdminAuthRoutes = (app, deps) => {
   const {
     adminEnabled,
@@ -13,11 +18,25 @@ export const registerAdminAuthRoutes = (app, deps) => {
       return res.json({ loggedIn: false, disabled: true });
     }
     if (req.session?.admin) {
-      return res.json({
-        loggedIn: true,
-        username: req.session.admin.username,
+      const row = db
+        .prepare('SELECT id, username, role, permissions_json, disabled, created_at, updated_at FROM users WHERE id = ?')
+        .get(req.session.admin.id);
+      const user = mapAdminUserRow(row);
+      if (!user || user.disabled) {
+        delete req.session.admin;
+        return res.json({ loggedIn: false, disabled: Boolean(user?.disabled) });
+      }
+      req.session.admin = {
+        ...req.session.admin,
+        id: user.id,
+        username: user.username,
+        role: user.role,
+        isSuperAdmin: user.isSuperAdmin,
+        permissions: user.permissions,
+      };
+      return res.json(buildAdminSessionPayload(user, {
         csrfToken: req.session.admin.csrfToken || null,
-      });
+      }));
     }
     return res.json({ loggedIn: false, disabled: false });
   });
@@ -33,14 +52,27 @@ export const registerAdminAuthRoutes = (app, deps) => {
       return res.status(400).json({ error: '\u8bf7\u8f93\u5165\u8d26\u53f7\u548c\u5bc6\u7801' });
     }
 
-    const user = db.prepare('SELECT id, username, password_hash FROM users WHERE username = ?').get(username);
+    const user = db
+      .prepare('SELECT id, username, password_hash, role, permissions_json, disabled, created_at, updated_at FROM users WHERE username = ?')
+      .get(username);
     if (!user || !bcrypt.compareSync(password, user.password_hash)) {
       return res.status(401).json({ error: '\u8d26\u53f7\u6216\u5bc6\u7801\u9519\u8bef' });
     }
+    if (user.disabled === 1) {
+      return res.status(403).json({ error: '账号已被禁用' });
+    }
 
     const csrfToken = crypto.randomBytes(32).toString('hex');
-    req.session.admin = { id: user.id, username: user.username, role: 'admin', csrfToken };
-    return res.json({ loggedIn: true, username: user.username, csrfToken });
+    const sessionUser = mapAdminUserRow(user);
+    req.session.admin = {
+      id: sessionUser.id,
+      username: sessionUser.username,
+      role: sessionUser.role,
+      isSuperAdmin: sessionUser.isSuperAdmin,
+      permissions: sessionUser.permissions,
+      csrfToken,
+    };
+    return res.json(buildAdminSessionPayload(sessionUser, { csrfToken }));
   });
 
   app.post('/api/admin/logout', requireAdmin, requireAdminCsrf, (req, res) => {

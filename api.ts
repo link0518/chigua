@@ -48,10 +48,6 @@ const shouldAttachFingerprint = (path: string, options: RequestInit) => {
     return true;
   }
 
-  if (cleanPath.startsWith('/chat')) {
-    return true;
-  }
-
   if (cleanPath.startsWith('/admin')) {
     return true;
   }
@@ -160,12 +156,6 @@ export const api = {
   }),
   getNotifications: (params = {}) => apiFetch(`/notifications${toQuery(params)}`),
   readNotifications: () => apiFetch('/notifications/read', { method: 'POST' }),
-  getChatOnline: () => apiFetch('/chat/online'),
-  getChatHistory: (params = {}) => apiFetch(`/chat/history${toQuery(params)}`),
-  reportChatMessage: (messageId, reason) => apiFetch(`/chat/messages/${messageId}/report`, {
-    method: 'POST',
-    body: JSON.stringify({ reason }),
-  }),
   getStreak7Status: () => apiFetch('/easter-eggs/streak7'),
   markStreak7Seen: () => apiFetch('/easter-eggs/streak7/seen', { method: 'POST' }),
   createFeedback: (content, email, wechat = '', qq = '', turnstileToken) => apiFetch('/feedback', {
@@ -255,42 +245,6 @@ export const api = {
     method: 'POST',
     body: JSON.stringify({ action, type, value, reason, ...options }),
   }),
-  getAdminChatOnline: () => apiFetch('/admin/chat/online'),
-  getAdminChatConfig: () => apiFetch('/admin/chat/config'),
-  updateAdminChatConfig: (config = {}) => apiFetch('/admin/chat/config', {
-    method: 'POST',
-    body: JSON.stringify(config || {}),
-  }),
-  getAdminChatMessages: (params = {}) => apiFetch(`/admin/chat/messages${toQuery(params)}`),
-  getAdminChatMutes: () => apiFetch('/admin/chat/mutes'),
-  deleteAdminChatMessage: (messageId, reason = '') => apiFetch(`/admin/chat/messages/${messageId}/delete`, {
-    method: 'POST',
-    body: JSON.stringify({ reason }),
-  }),
-  muteAdminChatUser: (identityValue, options = {}) => apiFetch(`/admin/chat/users/${encodeURIComponent(identityValue)}/mute`, {
-    method: 'POST',
-    body: JSON.stringify(options || {}),
-  }),
-  muteAdminChatSession: (sessionId, options = {}) => apiFetch(`/admin/chat/sessions/${encodeURIComponent(sessionId)}/mute`, {
-    method: 'POST',
-    body: JSON.stringify(options || {}),
-  }),
-  unmuteAdminChatUser: (identityValue, reason = '') => apiFetch(`/admin/chat/users/${encodeURIComponent(identityValue)}/unmute`, {
-    method: 'POST',
-    body: JSON.stringify({ reason }),
-  }),
-  kickAdminChatUser: (identityValue, reason = '') => apiFetch(`/admin/chat/users/${encodeURIComponent(identityValue)}/kick`, {
-    method: 'POST',
-    body: JSON.stringify({ reason }),
-  }),
-  banAdminChatUser: (identityValue, options = {}) => apiFetch(`/admin/chat/users/${encodeURIComponent(identityValue)}/ban`, {
-    method: 'POST',
-    body: JSON.stringify(options || {}),
-  }),
-  unbanAdminChatUser: (identityValue, reason = '', options = {}) => apiFetch(`/admin/chat/users/${encodeURIComponent(identityValue)}/unban`, {
-    method: 'POST',
-    body: JSON.stringify({ reason, ...(options || {}) }),
-  }),
   sendHeartbeat: () => apiFetch('/online/heartbeat', { method: 'POST' }),
   getAccessStatus: () => apiFetch('/access'),
   getPublicSettings: () => apiFetch('/settings'),
@@ -346,6 +300,24 @@ export const api = {
     method: 'POST',
   }),
   exportAdminVocabulary: () => apiFetch('/admin/vocabulary/export'),
+  getAdminUsers: () => apiFetch('/admin/admin-users'),
+  getAdminPermissionDefinitions: () => apiFetch('/admin/admin-users/permission-definitions'),
+  createAdminUser: (payload = {}) => apiFetch('/admin/admin-users', {
+    method: 'POST',
+    body: JSON.stringify(payload || {}),
+  }),
+  updateAdminUserPermissions: (id, permissions = {}) => apiFetch(`/admin/admin-users/${encodeURIComponent(String(id || ''))}/permissions`, {
+    method: 'POST',
+    body: JSON.stringify({ permissions }),
+  }),
+  updateAdminUserStatus: (id, disabled) => apiFetch(`/admin/admin-users/${encodeURIComponent(String(id || ''))}/status`, {
+    method: 'POST',
+    body: JSON.stringify({ disabled }),
+  }),
+  resetAdminUserPassword: (id, password) => apiFetch(`/admin/admin-users/${encodeURIComponent(String(id || ''))}/password`, {
+    method: 'POST',
+    body: JSON.stringify({ password }),
+  }),
   getAdminSession: () => apiFetch('/admin/session'),
   adminLogin: (username, password) => apiFetch('/admin/login', {
     method: 'POST',
@@ -363,7 +335,7 @@ export const api = {
       uploadNameType?: 'default' | 'index' | 'origin' | 'short';
       returnFormat?: 'default' | 'full';
       uploadFolder?: string;
-      usage?: 'post' | 'comment' | 'chat';
+      usage?: 'post' | 'comment';
     } = {}
   ): Promise<{ src: string; url: string }> => {
     return apiFetch(`/uploads/image${toQuery({

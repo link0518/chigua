@@ -11,6 +11,9 @@ export const registerAdminPostsRoutes = (app, deps) => {
     db,
     requireAdmin,
     requireAdminCsrf,
+    requireAdminRead = (_req, _res, next) => next(),
+    requireAdminManage = (_req, _res, next) => next(),
+    requireAdminCreate = requireAdminManage,
     getClientIp,
     checkBanFor,
     crypto,
@@ -127,7 +130,7 @@ export const registerAdminPostsRoutes = (app, deps) => {
     return result;
   };
 
-app.post('/api/admin/posts', requireAdmin, requireAdminCsrf, (req, res) => {
+app.post('/api/admin/posts', requireAdmin, requireAdminCsrf, requireAdminCreate, (req, res) => {
   const content = String(req.body?.content || '').trim();
   const tags = sanitizeTags(req.body?.tags);
   const reason = String(req.body?.reason || '').trim();
@@ -196,7 +199,7 @@ app.post('/api/admin/posts', requireAdmin, requireAdminCsrf, (req, res) => {
   return res.status(201).json({ post: mapPostRow(row, false) });
 });
 
-app.post('/api/admin/posts/:id/edit', requireAdmin, requireAdminCsrf, (req, res) => {
+app.post('/api/admin/posts/:id/edit', requireAdmin, requireAdminCsrf, requireAdminManage, (req, res) => {
   const postId = String(req.params.id || '').trim();
   const content = String(req.body?.content || '').trim();
   const reason = String(req.body?.reason || '').trim();
@@ -265,7 +268,7 @@ app.post('/api/admin/posts/:id/edit', requireAdmin, requireAdminCsrf, (req, res)
   return res.json({ id: postId, content });
 });
 
-app.post('/api/admin/posts/batch', requireAdmin, requireAdminCsrf, (req, res) => {
+app.post('/api/admin/posts/batch', requireAdmin, requireAdminCsrf, requireAdminManage, (req, res) => {
   const action = String(req.body?.action || '').trim();
   const reason = String(req.body?.reason || '').trim();
   const postIds = Array.isArray(req.body?.postIds) ? req.body.postIds : [];
@@ -293,7 +296,7 @@ app.post('/api/admin/posts/batch', requireAdmin, requireAdminCsrf, (req, res) =>
     })
   );
 });
-app.get('/api/admin/posts', requireAdmin, (req, res) => {
+  app.get('/api/admin/posts', requireAdmin, requireAdminRead, (req, res) => {
   const status = String(req.query.status || 'active').trim();
   const sort = String(req.query.sort || 'time').trim();
   const search = String(req.query.search || '').trim();
@@ -437,7 +440,7 @@ app.get('/api/admin/posts', requireAdmin, (req, res) => {
 });
 
 
-app.post('/api/admin/posts/:id/action', requireAdmin, requireAdminCsrf, (req, res) => {
+  app.post('/api/admin/posts/:id/action', requireAdmin, requireAdminCsrf, requireAdminManage, (req, res) => {
   const postId = String(req.params.id || '').trim();
   const action = String(req.body?.action || '').trim();
   const reason = String(req.body?.reason || '').trim();
@@ -476,7 +479,7 @@ app.post('/api/admin/posts/:id/action', requireAdmin, requireAdminCsrf, (req, re
   return res.json({ id: postId, deleted: action === 'delete' });
 });
 
-app.get('/api/admin/posts/:id/comments', requireAdmin, (req, res) => {
+  app.get('/api/admin/posts/:id/comments', requireAdmin, requireAdminRead, (req, res) => {
   const postId = String(req.params.id || '').trim();
   const page = Math.max(Number(req.query.page || 1), 1);
   const limit = Math.min(Math.max(Number(req.query.limit || 50), 1), 200);
@@ -544,7 +547,7 @@ app.get('/api/admin/posts/:id/comments', requireAdmin, (req, res) => {
   });
 });
 
-app.post('/api/admin/comments/:id/action', requireAdmin, requireAdminCsrf, (req, res) => {
+  app.post('/api/admin/comments/:id/action', requireAdmin, requireAdminCsrf, requireAdminManage, (req, res) => {
   const commentId = String(req.params.id || '').trim();
   const action = String(req.body?.action || '').trim();
   const reason = String(req.body?.reason || '').trim();

@@ -1,6 +1,14 @@
 ﻿import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import { api } from '../api';
-import { Comment, Post, Report, ReportSubmissionPayload, ReportSubmissionResult } from '../types';
+import {
+  AdminPermissionDefinitions,
+  AdminPermissions,
+  Comment,
+  Post,
+  Report,
+  ReportSubmissionPayload,
+  ReportSubmissionResult,
+} from '../types';
 import {
   normalizeHiddenPostKeyword,
   normalizeHiddenPostKeywordList,
@@ -31,14 +39,18 @@ interface Stats {
 
 interface AdminSession {
   loggedIn: boolean;
+  id?: number;
   username?: string;
+  role?: 'admin' | 'super_admin';
+  isSuperAdmin?: boolean;
+  permissions?: AdminPermissions;
+  permissionDefinitions?: AdminPermissionDefinitions | null;
   checked: boolean;
   csrfToken?: string | null;
   disabled?: boolean;
 }
 
 interface AppSettings {
-  chatEnabled: boolean;
   turnstileEnabled: boolean;
   cnyThemeEnabled: boolean;
   cnyThemeAutoActive: boolean;
@@ -62,12 +74,11 @@ interface AppState {
   settings: AppSettings;
 }
 
-type AdminReportAction = 'ignore' | 'delete' | 'mute' | 'ban';
+type AdminReportAction = 'ignore' | 'delete' | 'ban';
 type HandleReportOptions = {
   permissions?: string[];
   expiresAt?: number | null;
   deleteComment?: boolean;
-  deleteChatMessage?: boolean;
 };
 type HandleReportTargetContext = {
   targetId?: string | null;
@@ -84,7 +95,6 @@ interface AppContextType {
   deletePost: (postId: string) => void;
   reportPost: (postId: string, payload: ReportSubmissionPayload) => Promise<ReportSubmissionResult>;
   reportComment: (commentId: string, payload: ReportSubmissionPayload) => Promise<ReportSubmissionResult>;
-  reportChatMessage: (messageId: number, reason: string) => Promise<void>;
   handleReport: (
     reportId: string,
     action: AdminReportAction,
@@ -144,7 +154,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     hiddenPostKeywords: readHiddenPostKeywords(),
     adminSession: { loggedIn: false, checked: false, disabled: false, csrfToken: null },
     settings: {
-      chatEnabled: true,
       turnstileEnabled: true,
       cnyThemeEnabled: false,
       cnyThemeAutoActive: false,
@@ -319,9 +328,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setState((prev) => ({
       ...prev,
       settings: {
-        chatEnabled: typeof data?.chatEnabled === 'boolean'
-          ? data.chatEnabled
-          : prev.settings.chatEnabled,
         turnstileEnabled: typeof data?.turnstileEnabled === 'boolean'
           ? data.turnstileEnabled
           : prev.settings.turnstileEnabled,
@@ -348,7 +354,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ...prev,
       adminSession: {
         loggedIn: Boolean(data.loggedIn),
+        id: data.id,
         username: data.username,
+        role: data.role,
+        isSuperAdmin: Boolean(data.isSuperAdmin),
+        permissions: data.permissions || {},
+        permissionDefinitions: data.permissionDefinitions || null,
         checked: true,
         csrfToken: data?.csrfToken || null,
         disabled: Boolean(data?.disabled),
@@ -363,7 +374,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ...prev,
       adminSession: {
         loggedIn: Boolean(data.loggedIn),
+        id: data.id,
         username: data.username,
+        role: data.role,
+        isSuperAdmin: Boolean(data.isSuperAdmin),
+        permissions: data.permissions || {},
+        permissionDefinitions: data.permissionDefinitions || null,
         checked: true,
         csrfToken: data?.csrfToken || null,
         disabled: false,
@@ -559,9 +575,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return data;
   }, []);
 
-  const reportChatMessage = useCallback(async (messageId: number, reason: string) => {
-    await api.reportChatMessage(messageId, reason);
-  }, []);
 
   const handleReport = useCallback(async (
     reportId: string,
@@ -623,7 +636,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       deletePost,
       reportPost,
       reportComment,
-      reportChatMessage,
       handleReport,
       showToast,
       removeToast,
@@ -658,7 +670,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       deletePost,
       reportPost,
       reportComment,
-      reportChatMessage,
       handleReport,
       showToast,
       removeToast,
@@ -695,4 +706,3 @@ export const useApp = (): AppContextType => {
   }
   return context;
 };
-

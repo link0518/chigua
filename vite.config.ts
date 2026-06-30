@@ -51,7 +51,7 @@ export default defineConfig(({ mode }) => {
     const apiPort = Number(env.PORT || 4395);
     const devPort = Number(env.VITE_PORT || 4396);
     return {
-      envPrefix: ['VITE_TURNSTILE_', 'VITE_WS_BASE_URL', 'VITE_PORT'],
+      envPrefix: ['VITE_TURNSTILE_', 'VITE_PORT'],
       server: {
         port: devPort,
         host: '0.0.0.0',
@@ -59,11 +59,6 @@ export default defineConfig(({ mode }) => {
         proxy: {
           '^/api/': {
             target: `http://localhost:${apiPort}`,
-            changeOrigin: true,
-          },
-          '^/ws/': {
-            target: `ws://localhost:${apiPort}`,
-            ws: true,
             changeOrigin: true,
           },
         },

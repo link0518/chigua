@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Flag, Gavel, BarChart2, Bell, Search, Trash2, Ban, Eye, EyeOff, LayoutDashboard, LogOut, CheckCircle, XCircle, FileText, Pencil, RotateCcw, Shield, ClipboardList, MessageSquare, Menu, X, Settings, BookOpen, AlertTriangle } from 'lucide-react';
+import { Flag, Gavel, BarChart2, Bell, Search, Trash2, Ban, Eye, EyeOff, LayoutDashboard, LogOut, CheckCircle, XCircle, FileText, Pencil, RotateCcw, Shield, ClipboardList, MessageSquare, Menu, X, Settings, BookOpen, AlertTriangle, UserCog } from 'lucide-react';
 import { SketchButton, Badge } from './SketchUI';
-import { AdminAuditLog, AdminComment, AdminHiddenItem, AdminPost, FeedbackMessage, Report, UpdateAnnouncementItem } from '../types';
+import { AdminAuditLog, AdminComment, AdminHiddenItem, AdminPermissionDefinitions, AdminPermissions, AdminUserAccount, AdminPost, FeedbackMessage, Report, UpdateAnnouncementItem } from '../types';
 import { useApp } from '../store/AppContext';
 import Modal from './Modal';
 import { api } from '../api';
@@ -23,6 +23,8 @@ import AdminAuditView from '@/features/admin/views/AdminAuditView';
 import AdminReportsView from '@/features/admin/views/AdminReportsView';
 import AdminPublishCenterView from '@/features/admin/views/AdminPublishCenterView';
 import AdminSystemSettingsView from '@/features/admin/views/AdminSystemSettingsView';
+import AdminUsersView from '@/features/admin/views/AdminUsersView';
+import { hasPermission } from '@/features/admin/permissions';
 import type { ReportAction } from '@/features/admin/types';
 import {
   AUTO_HIDE_REPORT_THRESHOLD_DEFAULT,
@@ -43,7 +45,7 @@ import AdminModerationDrawer, {
 } from '@/features/admin/components/AdminModerationDrawer';
 import AdminActionDrawer from '@/features/admin/components/AdminActionDrawer';
 
-type AdminView = 'overview' | 'reports' | 'processed' | 'posts' | 'hidden' | 'bans' | 'audit' | 'feedback' | 'announcement' | 'settings' | 'wiki' | 'rumors';
+type AdminView = 'overview' | 'reports' | 'processed' | 'posts' | 'hidden' | 'bans' | 'audit' | 'feedback' | 'announcement' | 'settings' | 'wiki' | 'rumors' | 'adminUsers';
 type PostStatusFilter = 'all' | 'active' | 'hidden' | 'deleted';
 type PostSort = 'time' | 'hot' | 'reports';
 type HiddenTypeFilter = 'all' | 'post' | 'comment';
@@ -58,7 +60,6 @@ type ReportConfirmModalState = {
   reason: string;
   targetType: Report['targetType'];
   deleteComment: boolean;
-  deleteChatMessage: boolean;
 };
 
 const WEEK_DAYS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
@@ -75,13 +76,11 @@ const BAN_PERMISSION_LABELS: Record<string, string> = {
   like: '点赞',
   view: '查看',
   site: '禁止进入网站',
-  chat: '聊天室',
 };
 
 const DEFAULT_BAN_PERMISSIONS = Object.keys(BAN_PERMISSION_LABELS);
 const DEFAULT_BAN_PRESETS: AdminModerationQuickPreset[] = [
-  { id: 'chat-7d', label: '聊天室 7 天', description: '只限制聊天室', permissions: ['chat'], duration: '7d' },
-  { id: 'post-comment-7d', label: '发帖+评论 7 天', description: '保留站点查看与聊天室', permissions: ['post', 'comment'], duration: '7d' },
+  { id: 'post-comment-7d', label: '发帖+评论 7 天', description: '保留站点查看权限', permissions: ['post', 'comment'], duration: '7d' },
   { id: 'site-7d', label: '全站 7 天', description: '使用全部权限集', permissions: DEFAULT_BAN_PERMISSIONS, duration: '7d' },
   { id: 'site-forever', label: '永久封禁', description: '全站长期生效', permissions: DEFAULT_BAN_PERMISSIONS, duration: 'forever' },
 ];
@@ -96,7 +95,6 @@ const EMPTY_REPORT_CONFIRM_MODAL: ReportConfirmModalState = {
   reason: '',
   targetType: 'post',
   deleteComment: false,
-  deleteChatMessage: false,
 };
 
 type ModerationDrawerState = AdminModerationDrawerRequest | null;
@@ -336,6 +334,10 @@ const AdminDashboard: React.FC = () => {
   const [wikiPendingCount, setWikiPendingCount] = useState(0);
   const [rumorPendingCount, setRumorPendingCount] = useState(0);
   const [feedbackLoading, setFeedbackLoading] = useState(false);
+  const [adminUsers, setAdminUsers] = useState<AdminUserAccount[]>([]);
+  const [adminUsersLoading, setAdminUsersLoading] = useState(false);
+  const [adminUsersSubmitting, setAdminUsersSubmitting] = useState(false);
+  const [adminPermissionDefinitions, setAdminPermissionDefinitions] = useState<AdminPermissionDefinitions | null>(state.adminSession.permissionDefinitions || null);
   const [feedbackActionModal, setFeedbackActionModal] = useState<{
     isOpen: boolean;
     feedbackId: string;
@@ -403,9 +405,30 @@ const AdminDashboard: React.FC = () => {
     setFeedbackPage(1);
   }, [debouncedFeedbackSearchInput]);
 
+  const adminSession = state.adminSession;
+  const isSuperAdmin = Boolean(adminSession.isSuperAdmin);
+  const canReadContentReview = hasPermission(adminSession, 'content_review', 'read');
+  const canManageContentReview = hasPermission(adminSession, 'content_review', 'manage');
+  const canReadPosts = hasPermission(adminSession, 'posts', 'read');
+  const canManagePosts = hasPermission(adminSession, 'posts', 'manage');
+  const canReadWiki = hasPermission(adminSession, 'wiki', 'read');
+  const canManageWiki = hasPermission(adminSession, 'wiki', 'manage');
+  const canReadFeedback = hasPermission(adminSession, 'feedback', 'read');
+  const canManageFeedback = hasPermission(adminSession, 'feedback', 'manage');
+  const canReadUserSafety = hasPermission(adminSession, 'user_safety', 'read');
+  const canManageUserSafety = hasPermission(adminSession, 'user_safety', 'manage');
+  const canReadPublish = hasPermission(adminSession, 'publish', 'read');
+  const canManagePublish = hasPermission(adminSession, 'publish', 'manage');
+  const canReadSettings = hasPermission(adminSession, 'settings', 'read');
+  const canManageSettings = hasPermission(adminSession, 'settings', 'manage');
+  const canReadStats = canReadContentReview || canReadPosts || canReadUserSafety || canReadSettings;
+
   useEffect(() => {
+    if (!canReadStats) {
+      return;
+    }
     loadStats().catch(() => { });
-  }, [loadStats]);
+  }, [canReadStats, loadStats]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -420,11 +443,14 @@ const AdminDashboard: React.FC = () => {
   }, [composeIncludeDeveloper]);
 
   useEffect(() => {
+    if (!canReadStats) {
+      return;
+    }
     const timer = setInterval(() => {
       loadStats().catch(() => { });
     }, 60000);
     return () => clearInterval(timer);
-  }, [loadStats]);
+  }, [canReadStats, loadStats]);
 
   // Generate chart data from state
   const visitData = useMemo(() =>
@@ -441,6 +467,7 @@ const AdminDashboard: React.FC = () => {
   const totalWeeklyVisits = useMemo(() => visitData.reduce((sum, item) => sum + item.value, 0), [visitData]);
   const totalVocabularyPages = Math.max(Math.ceil(vocabularyTotal / VOCABULARY_PAGE_SIZE), 1);
 
+
   const pendingReports = useMemo(() => getPendingReports(), [getPendingReports, state.reports]);
   const processedReports = useMemo(() => state.reports.filter(r => r.status !== 'pending'), [state.reports]);
   const pendingReportSearchItems = useMemo(
@@ -451,8 +478,12 @@ const AdminDashboard: React.FC = () => {
     () => processedReports.map((report) => ({ report, searchText: buildReportSearchText(report) })),
     [processedReports]
   );
-  const visiblePendingReports = reportsLoaded ? pendingReports : overviewPendingReports;
-  const pendingReportCount = reportsLoaded ? pendingReports.length : overviewPendingCount;
+  const visiblePendingReports = canReadContentReview
+    ? (reportsLoaded ? pendingReports : overviewPendingReports)
+    : [];
+  const pendingReportCount = canReadContentReview
+    ? (reportsLoaded ? pendingReports.length : overviewPendingCount)
+    : 0;
   const cnyThemePreviewActive = cnyThemeEnabled && cnyThemeAutoActive;
   const parsedDefaultPostTags = useMemo(
     () => parseDefaultPostTagsInput(defaultPostTagsInput),
@@ -502,6 +533,11 @@ const AdminDashboard: React.FC = () => {
   }, [banSearch, mergedBanSearchItems]);
 
   const fetchOverviewReports = useCallback(async () => {
+    if (!canReadContentReview) {
+      setOverviewPendingReports([]);
+      setOverviewPendingCount(0);
+      return;
+    }
     try {
       const data = await api.getReports({ status: 'pending', limit: 2 });
       setOverviewPendingReports(Array.isArray(data?.items) ? data.items : []);
@@ -510,9 +546,13 @@ const AdminDashboard: React.FC = () => {
       const message = error instanceof Error ? error.message : '举报概览加载失败，请稍后重试';
       showToast(message, 'error');
     }
-  }, [showToast]);
+  }, [canReadContentReview, showToast]);
 
   const fetchAllReports = useCallback(async () => {
+    if (!canReadContentReview) {
+      setReportsLoaded(true);
+      return;
+    }
     setReportsLoading(true);
     try {
       await loadReports();
@@ -523,10 +563,15 @@ const AdminDashboard: React.FC = () => {
     } finally {
       setReportsLoading(false);
     }
-  }, [loadReports, showToast]);
+  }, [canReadContentReview, loadReports, showToast]);
 
 
   const fetchAdminPosts = useCallback(async () => {
+    if (!canReadPosts) {
+      setPostItems([]);
+      setPostTotal(0);
+      return;
+    }
     setPostLoading(true);
     try {
       const data = await api.getAdminPosts({
@@ -544,9 +589,15 @@ const AdminDashboard: React.FC = () => {
     } finally {
       setPostLoading(false);
     }
-  }, [postPage, postSearch, postSort, postStatus, showToast]);
+  }, [canReadPosts, postPage, postSearch, postSort, postStatus, showToast]);
 
   const fetchHiddenItems = useCallback(async () => {
+    if (!canReadContentReview) {
+      setHiddenItems([]);
+      setHiddenTotal(0);
+      setHiddenPendingCount(0);
+      return;
+    }
     setHiddenLoading(true);
     try {
       const data = await api.getAdminHiddenContent({
@@ -567,9 +618,13 @@ const AdminDashboard: React.FC = () => {
     } finally {
       setHiddenLoading(false);
     }
-  }, [hiddenPage, hiddenReview, hiddenSearch, hiddenType, showToast]);
+  }, [canReadContentReview, hiddenPage, hiddenReview, hiddenSearch, hiddenType, showToast]);
 
   const fetchHiddenPendingCount = useCallback(async () => {
+    if (!canReadContentReview) {
+      setHiddenPendingCount(0);
+      return;
+    }
     try {
       const data = await api.getAdminHiddenContent({
         type: 'all',
@@ -581,7 +636,7 @@ const AdminDashboard: React.FC = () => {
     } catch {
       setHiddenPendingCount(0);
     }
-  }, []);
+  }, [canReadContentReview]);
 
   const fetchPostComments = useCallback(async (postId: string, search = '') => {
     setPostCommentsLoading(true);
@@ -597,6 +652,11 @@ const AdminDashboard: React.FC = () => {
   }, [showToast]);
 
   const fetchBans = useCallback(async () => {
+    if (!canReadUserSafety) {
+      setBannedIps([]);
+      setBannedFingerprints([]);
+      return;
+    }
     setBanLoading(true);
     try {
       const data = await api.getAdminBans();
@@ -608,9 +668,14 @@ const AdminDashboard: React.FC = () => {
     } finally {
       setBanLoading(false);
     }
-  }, [showToast]);
+  }, [canReadUserSafety, showToast]);
 
   const fetchAuditLogs = useCallback(async () => {
+    if (!isSuperAdmin) {
+      setAuditLogs([]);
+      setAuditTotal(0);
+      return;
+    }
     setAuditLoading(true);
     try {
       const data = await api.getAdminAuditLogs({
@@ -626,9 +691,15 @@ const AdminDashboard: React.FC = () => {
     } finally {
       setAuditLoading(false);
     }
-  }, [auditPage, auditSearch, showToast]);
+  }, [auditPage, auditSearch, isSuperAdmin, showToast]);
 
   const fetchFeedback = useCallback(async () => {
+    if (!canReadFeedback) {
+      setFeedbackItems([]);
+      setFeedbackTotal(0);
+      setFeedbackUnreadCount(0);
+      return;
+    }
     setFeedbackLoading(true);
     try {
       const data = await api.getAdminFeedback({
@@ -648,9 +719,13 @@ const AdminDashboard: React.FC = () => {
     } finally {
       setFeedbackLoading(false);
     }
-  }, [feedbackPage, feedbackSearch, feedbackStatus, showToast]);
+  }, [canReadFeedback, feedbackPage, feedbackSearch, feedbackStatus, showToast]);
 
   const fetchFeedbackUnreadCount = useCallback(async () => {
+    if (!canReadFeedback) {
+      setFeedbackUnreadCount(0);
+      return;
+    }
     try {
       const data = await api.getAdminFeedback({
         status: 'unread',
@@ -661,9 +736,13 @@ const AdminDashboard: React.FC = () => {
     } catch {
       setFeedbackUnreadCount(0);
     }
-  }, []);
+  }, [canReadFeedback]);
 
   const fetchWikiPendingCount = useCallback(async () => {
+    if (!canReadWiki) {
+      setWikiPendingCount(0);
+      return;
+    }
     try {
       const data = await api.getAdminWikiRevisions({
         status: 'pending',
@@ -674,9 +753,13 @@ const AdminDashboard: React.FC = () => {
     } catch {
       setWikiPendingCount(0);
     }
-  }, []);
+  }, [canReadWiki]);
 
   const fetchRumorPendingCount = useCallback(async () => {
+    if (!canReadContentReview) {
+      setRumorPendingCount(0);
+      return;
+    }
     try {
       const data = await api.getAdminRumors({
         status: 'pending',
@@ -687,9 +770,14 @@ const AdminDashboard: React.FC = () => {
     } catch {
       setRumorPendingCount(0);
     }
-  }, []);
+  }, [canReadContentReview]);
 
   const fetchAnnouncement = useCallback(async () => {
+    if (!canReadPublish) {
+      setAnnouncementText('');
+      setAnnouncementUpdatedAt(null);
+      return;
+    }
     setAnnouncementLoading(true);
     try {
       const data = await api.getAdminAnnouncement();
@@ -701,9 +789,13 @@ const AdminDashboard: React.FC = () => {
     } finally {
       setAnnouncementLoading(false);
     }
-  }, [showToast]);
+  }, [canReadPublish, showToast]);
 
   const fetchUpdateAnnouncements = useCallback(async () => {
+    if (!canReadPublish) {
+      setUpdateAnnouncements([]);
+      return;
+    }
     setUpdateAnnouncementLoading(true);
     try {
       const data = await api.getAdminUpdateAnnouncements();
@@ -714,9 +806,12 @@ const AdminDashboard: React.FC = () => {
     } finally {
       setUpdateAnnouncementLoading(false);
     }
-  }, [showToast]);
+  }, [canReadPublish, showToast]);
 
   const fetchSettings = useCallback(async () => {
+    if (!canReadSettings) {
+      return;
+    }
     setSettingsLoading(true);
     try {
       const data = await api.getAdminSettings();
@@ -738,9 +833,14 @@ const AdminDashboard: React.FC = () => {
     } finally {
       setSettingsLoading(false);
     }
-  }, [showToast]);
+  }, [canReadSettings, showToast]);
 
   const fetchVocabulary = useCallback(async (options?: { page?: number; search?: string }) => {
+    if (!canReadSettings) {
+      setVocabularyItems([]);
+      setVocabularyTotal(0);
+      return;
+    }
     setVocabularyLoading(true);
     try {
       const pageValue = options?.page ?? vocabularyPage;
@@ -758,7 +858,24 @@ const AdminDashboard: React.FC = () => {
     } finally {
       setVocabularyLoading(false);
     }
-  }, [showToast, vocabularyPage, vocabularySearch]);
+  }, [canReadSettings, showToast, vocabularyPage, vocabularySearch]);
+
+  const fetchAdminUsers = useCallback(async () => {
+    if (!isSuperAdmin) {
+      return;
+    }
+    setAdminUsersLoading(true);
+    try {
+      const data = await api.getAdminUsers();
+      setAdminUsers(Array.isArray(data?.items) ? data.items : []);
+      setAdminPermissionDefinitions(data?.permissionDefinitions || adminSession.permissionDefinitions || null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '管理员账号加载失败';
+      showToast(message, 'error');
+    } finally {
+      setAdminUsersLoading(false);
+    }
+  }, [adminSession.permissionDefinitions, isSuperAdmin, showToast]);
 
   useEffect(() => {
     if (currentView !== 'overview') {
@@ -864,6 +981,13 @@ const AdminDashboard: React.FC = () => {
   }, [currentView, fetchVocabulary, vocabularyPage, vocabularySearch]);
 
   useEffect(() => {
+    if (currentView !== 'adminUsers') {
+      return;
+    }
+    fetchAdminUsers().catch(() => { });
+  }, [currentView, fetchAdminUsers]);
+
+  useEffect(() => {
     setSelectedPosts(new Set());
   }, [postItems]);
 
@@ -877,6 +1001,10 @@ const AdminDashboard: React.FC = () => {
     targetType: Report['targetType'],
     targetId: string
   ) => {
+    if (!canManageContentReview) {
+      showToast('当前账号只有查看权限，不能处理举报', 'warning');
+      return;
+    }
     const report = state.reports.find((item) => item.id === reportId) || overviewPendingReports.find((item) => item.id === reportId);
     const identity = report ? {
       ip: report.targetIp,
@@ -895,21 +1023,17 @@ const AdminDashboard: React.FC = () => {
       quickPresets: DEFAULT_BAN_PRESETS,
       extraOptions: [
         ...(targetType === 'comment' ? [{ key: 'deleteComment', label: '同时删除被举报评论' }] : []),
-        ...(targetType === 'chat' ? [{ key: 'deleteChatMessage', label: '同时删除被举报发言' }] : []),
       ],
       submitLabel: '确认封禁',
       onSubmit: async (payload) => {
         await handleReport(reportId, 'ban', payload.reason.trim(), {
           ...buildBanOptionsFromPayload(payload),
           ...(targetType === 'comment' ? { deleteComment: Boolean(payload.extras.deleteComment) } : {}),
-          ...(targetType === 'chat' ? { deleteChatMessage: Boolean(payload.extras.deleteChatMessage) } : {}),
         }, { targetId, targetType });
         setReportsLoaded(true);
         const successMessage = targetType === 'comment'
           ? (payload.extras.deleteComment ? '已封禁用户并删除被举报评论' : '已封禁用户，保留被举报评论')
-          : targetType === 'chat'
-            ? (payload.extras.deleteChatMessage ? '已封禁用户并删除被举报发言' : '已封禁用户，保留被举报发言')
-            : '已封禁用户并删除内容';
+          : '已封禁用户';
         showToast(successMessage, 'success');
       },
     });
@@ -922,6 +1046,10 @@ const AdminDashboard: React.FC = () => {
     targetType: Report['targetType'],
     targetId: string
   ) => {
+    if (!canManageContentReview) {
+      showToast('当前账号只有查看权限，不能处理举报', 'warning');
+      return;
+    }
     if (action === 'ban') {
       openReportBanDrawer(reportId, content, targetType, targetId);
       return;
@@ -935,11 +1063,14 @@ const AdminDashboard: React.FC = () => {
       reason: '',
       targetType,
       deleteComment: false,
-      deleteChatMessage: false,
-    });
+        });
   };
 
   const confirmAction = async () => {
+    if (!canManageContentReview) {
+      showToast('当前账号只有查看权限，不能处理举报', 'warning');
+      return;
+    }
     const { reportId, targetId, action, reason, targetType } = confirmModal;
     try {
       await handleReport(reportId, action, reason, undefined, { targetId, targetType });
@@ -947,7 +1078,6 @@ const AdminDashboard: React.FC = () => {
       const messages = {
         ignore: '已忽略该举报',
         delete: '已删除该内容',
-        mute: '已禁言用户',
         ban: '已封禁用户',
       };
       showToast(messages[action], action === 'ignore' ? 'info' : 'success');
@@ -961,32 +1091,34 @@ const AdminDashboard: React.FC = () => {
   const getActionLabel = (
     action: ReportAction,
     targetType: Report['targetType'],
-    deleteComment = false,
-    deleteChatMessage = false
+    deleteComment = false
   ) => {
     switch (action) {
       case 'ignore':
         return '忽略该举报';
       case 'delete':
         return '删除该内容';
-      case 'mute':
-        return '禁言用户';
       case 'ban':
         if (targetType === 'comment') {
           return deleteComment ? '封禁用户并删除被举报评论' : '封禁用户（保留被举报评论）';
-        }
-        if (targetType === 'chat') {
-          return deleteChatMessage ? '封禁用户并删除被举报发言' : '封禁用户（保留被举报发言）';
         }
         return '封禁用户并删除内容';
     }
   };
 
   const handlePostAction = (postId: string, action: 'delete' | 'restore', content: string) => {
+    if (!canManagePosts) {
+      showToast('当前账号只有查看权限，不能处理帖子', 'warning');
+      return;
+    }
     setPostConfirmModal({ isOpen: true, postId, action, content, reason: '' });
   };
 
   const openPostBanDrawer = (post: AdminPost) => {
+    if (!canManagePosts) {
+      showToast('当前账号只有查看权限，不能封禁帖子作者', 'warning');
+      return;
+    }
     openModerationDrawer({
       title: '帖子作者封禁',
       description: '按帖子作者执行封禁，沿用现有帖子批量封禁接口。',
@@ -1012,6 +1144,10 @@ const AdminDashboard: React.FC = () => {
   };
 
   const openCommentModerationDrawer = (comment: AdminComment) => {
+    if (!canManagePosts) {
+      showToast('当前账号只有查看权限，不能封禁评论作者', 'warning');
+      return;
+    }
     openModerationDrawer({
       title: '评论作者封禁',
       description: '会沿用评论处置接口，并保留评论封禁的既有语义。',
@@ -1063,6 +1199,10 @@ const AdminDashboard: React.FC = () => {
   };
 
   const confirmPostAction = async () => {
+    if (!canManagePosts) {
+      showToast('当前账号只有查看权限，不能处理帖子', 'warning');
+      return;
+    }
     const { postId, action, reason } = postConfirmModal;
     try {
       await api.handleAdminPost(postId, action, reason);
@@ -1077,6 +1217,10 @@ const AdminDashboard: React.FC = () => {
   };
 
   const handleAdminCommentAction = async (commentId: string) => {
+    if (!canManagePosts) {
+      showToast('当前账号只有查看权限，不能处理评论', 'warning');
+      return;
+    }
     if (!postCommentsModal.postId) {
       return;
     }
@@ -1093,6 +1237,10 @@ const AdminDashboard: React.FC = () => {
   };
 
   const openHiddenActionModal = (item: AdminHiddenItem, action: HiddenAction) => {
+    if (!canManageContentReview) {
+      showToast('当前账号只有查看权限，不能处理隐藏内容', 'warning');
+      return;
+    }
     setHiddenActionModal({
       isOpen: true,
       item,
@@ -1104,6 +1252,10 @@ const AdminDashboard: React.FC = () => {
   const getHiddenActionLabel = (action: HiddenAction) => (action === 'keep' ? '保持隐藏' : '恢复内容');
 
   const confirmHiddenAction = async () => {
+    if (!canManageContentReview) {
+      showToast('当前账号只有查看权限，不能处理隐藏内容', 'warning');
+      return;
+    }
     const { item, action, reason } = hiddenActionModal;
     if (!item) {
       return;
@@ -1328,7 +1480,7 @@ const AdminDashboard: React.FC = () => {
       textClassName={options.textClassName}
       actions={{
         onSearch: options.enableSearchActions === false ? undefined : handleIdentitySearch,
-        onBan: options.enableBanActions === false ? undefined : handleIdentityBanPrepare,
+        onBan: options.enableBanActions === false || !canManageUserSafety ? undefined : handleIdentityBanPrepare,
       }}
     />
   );
@@ -1379,7 +1531,7 @@ const AdminDashboard: React.FC = () => {
           <SketchButton
             variant="danger"
             className="h-8 px-3 text-xs"
-            disabled={item.deleted}
+            disabled={item.deleted || !canManagePosts}
             onClick={() => handleAdminCommentAction(item.id)}
           >
             删除
@@ -1387,6 +1539,7 @@ const AdminDashboard: React.FC = () => {
           <SketchButton
             variant="secondary"
             className="h-8 px-3 text-xs"
+            disabled={!canManagePosts}
             onClick={() => openCommentModerationDrawer(item)}
           >
             封禁
@@ -1480,6 +1633,10 @@ const AdminDashboard: React.FC = () => {
   };
 
   const openBulkPostModal = (action: 'delete' | 'restore' | 'ban' | 'unban') => {
+    if (!canManagePosts) {
+      showToast('当前账号只有查看权限，不能处理帖子', 'warning');
+      return;
+    }
     if (selectedPosts.size === 0) {
       showToast('请先选择帖子', 'warning');
       return;
@@ -1528,6 +1685,10 @@ const AdminDashboard: React.FC = () => {
   };
 
   const openBulkReportModal = (action: 'resolve' | 'ignore' = 'resolve', reportIds?: string[]) => {
+    if (!canManageContentReview) {
+      showToast('当前账号只有查看权限，不能处理举报', 'warning');
+      return;
+    }
     const ids = reportIds ?? Array.from(selectedReports);
     if (ids.length === 0) {
       showToast(action === 'ignore' ? '暂无可忽略举报' : '请先选择举报', 'warning');
@@ -1562,6 +1723,10 @@ const AdminDashboard: React.FC = () => {
   };
 
   const openEditModal = (post: AdminPost) => {
+    if (!canManagePosts) {
+      showToast('当前账号只有查看权限，不能编辑帖子', 'warning');
+      return;
+    }
     setEditModal({ isOpen: true, postId: post.id, content: post.content, preview: false, reason: '' });
   };
 
@@ -1605,6 +1770,10 @@ const AdminDashboard: React.FC = () => {
   };
 
   const openBanRecordDrawer = (item: { type: 'ip' | 'fingerprint' | 'identity'; value: string; reason?: string | null; permissions?: string[]; expiresAt?: number | null; identityKey?: string | null; identityHashes?: string[]; fingerprint?: string | null; }) => {
+    if (!canManageUserSafety) {
+      showToast('当前账号只有查看权限，不能处理封禁', 'warning');
+      return;
+    }
     const { defaultDuration, defaultCustomUntil } = resolveDurationDefaults(item.expiresAt);
     openModerationDrawer({
       title: '封禁详情',
@@ -1647,6 +1816,10 @@ const AdminDashboard: React.FC = () => {
   };
 
   const openFeedbackActionModal = (message: FeedbackMessage, action: 'delete' | 'ban') => {
+    if (!canManageFeedback) {
+      showToast('当前账号只有查看权限，不能处理留言', 'warning');
+      return;
+    }
     if (action === 'ban') {
       openModerationDrawer({
         title: '留言用户封禁',
@@ -1693,6 +1866,10 @@ const AdminDashboard: React.FC = () => {
 
   const handleComposeSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (!canManagePublish) {
+      showToast('当前账号只有查看权限，不能发布内容', 'warning');
+      return;
+    }
     const trimmed = composeText.trim();
     if (!trimmed) {
       showToast('内容不能为空哦！', 'warning');
@@ -1718,6 +1895,10 @@ const AdminDashboard: React.FC = () => {
 
   const handleAnnouncementSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (!canManagePublish) {
+      showToast('当前账号只有查看权限，不能发布公告', 'warning');
+      return;
+    }
     const trimmed = announcementText.trim();
     if (!trimmed) {
       showToast('公告内容不能为空', 'warning');
@@ -1742,6 +1923,10 @@ const AdminDashboard: React.FC = () => {
 
   const handleUpdateAnnouncementSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (!canManagePublish) {
+      showToast('当前账号只有查看权限，不能发布更新公告', 'warning');
+      return;
+    }
     const trimmed = updateAnnouncementText.trim();
     if (!trimmed) {
       showToast('更新公告内容不能为空', 'warning');
@@ -1766,6 +1951,10 @@ const AdminDashboard: React.FC = () => {
   };
 
   const handleAnnouncementClear = async () => {
+    if (!canManagePublish) {
+      showToast('当前账号只有查看权限，不能清空公告', 'warning');
+      return;
+    }
     setAnnouncementSubmitting(true);
     try {
       await api.clearAdminAnnouncement();
@@ -1781,6 +1970,10 @@ const AdminDashboard: React.FC = () => {
   };
 
   const handleUpdateAnnouncementDelete = async (id: string) => {
+    if (!canManagePublish) {
+      showToast('当前账号只有查看权限，不能删除更新公告', 'warning');
+      return;
+    }
     setUpdateAnnouncementSubmitting(true);
     try {
       await api.deleteAdminUpdateAnnouncement(id);
@@ -1796,6 +1989,10 @@ const AdminDashboard: React.FC = () => {
 
   const handleSettingsSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (!canManageSettings) {
+      showToast('当前账号只有查看权限，不能保存系统设置', 'warning');
+      return;
+    }
     const rawDefaultTags = defaultPostTagsInput.trim();
     const defaultPostTags = parseDefaultPostTagsInput(defaultPostTagsInput);
     const normalizedRateLimits = normalizeRateLimits(rateLimits);
@@ -1858,6 +2055,10 @@ const AdminDashboard: React.FC = () => {
   };
 
   const handleWecomWebhookTest = async () => {
+    if (!canManageSettings) {
+      showToast('当前账号只有查看权限，不能发送测试消息', 'warning');
+      return;
+    }
     const trimmedWecomWebhookUrl = wecomWebhookUrlInput.trim();
     if (!trimmedWecomWebhookUrl && !wecomWebhookConfigured) {
       showToast('请先填写企业微信机器人 Webhook 地址', 'warning');
@@ -1877,6 +2078,10 @@ const AdminDashboard: React.FC = () => {
 
   const handleVocabularyAdd = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (!canManageSettings) {
+      showToast('当前账号只有查看权限，不能添加违禁词', 'warning');
+      return;
+    }
     const word = vocabularyNewWord.trim();
     if (!word) {
       showToast('请输入违禁词', 'warning');
@@ -1898,6 +2103,10 @@ const AdminDashboard: React.FC = () => {
   };
 
   const handleVocabularyToggle = async (id: number, enabled: boolean) => {
+    if (!canManageSettings) {
+      showToast('当前账号只有查看权限，不能更新违禁词', 'warning');
+      return;
+    }
     setVocabularySubmitting(true);
     try {
       await api.toggleAdminVocabulary(id, enabled);
@@ -1912,6 +2121,10 @@ const AdminDashboard: React.FC = () => {
   };
 
   const handleVocabularyDelete = async (id: number) => {
+    if (!canManageSettings) {
+      showToast('当前账号只有查看权限，不能删除违禁词', 'warning');
+      return;
+    }
     if (!window.confirm('确认删除该词？')) {
       return;
     }
@@ -1929,6 +2142,10 @@ const AdminDashboard: React.FC = () => {
   };
 
   const handleVocabularyImport = async () => {
+    if (!canManageSettings) {
+      showToast('当前账号只有查看权限，不能导入违禁词', 'warning');
+      return;
+    }
     setVocabularySubmitting(true);
     try {
       const data = await api.importAdminVocabulary();
@@ -1961,6 +2178,70 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
+
+  const handleAdminUserCreate = async (payload: { username: string; password: string; permissions: AdminPermissions }) => {
+    setAdminUsersSubmitting(true);
+    try {
+      await api.createAdminUser(payload);
+      await fetchAdminUsers();
+      showToast('管理员账号已创建', 'success');
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '管理员账号创建失败';
+      showToast(message, 'error');
+      return false;
+    } finally {
+      setAdminUsersSubmitting(false);
+    }
+  };
+
+  const handleAdminUserPermissionsChange = async (id: number, permissions: AdminPermissions) => {
+    setAdminUsersSubmitting(true);
+    try {
+      await api.updateAdminUserPermissions(id, permissions);
+      await fetchAdminUsers();
+      showToast('管理员权限已更新', 'success');
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '管理员权限更新失败';
+      showToast(message, 'error');
+      return false;
+    } finally {
+      setAdminUsersSubmitting(false);
+    }
+  };
+
+  const handleAdminUserStatusChange = async (id: number, disabled: boolean) => {
+    setAdminUsersSubmitting(true);
+    try {
+      await api.updateAdminUserStatus(id, disabled);
+      await fetchAdminUsers();
+      showToast(disabled ? '管理员账号已禁用' : '管理员账号已启用', 'success');
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '管理员状态更新失败';
+      showToast(message, 'error');
+      return false;
+    } finally {
+      setAdminUsersSubmitting(false);
+    }
+  };
+
+  const handleAdminUserPasswordReset = async (id: number, password: string) => {
+    setAdminUsersSubmitting(true);
+    try {
+      await api.resetAdminUserPassword(id, password);
+      showToast('管理员密码已重置', 'success');
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '管理员密码重置失败';
+      showToast(message, 'error');
+      return false;
+    } finally {
+      setAdminUsersSubmitting(false);
+    }
+  };
+
   const formatAnnouncementTime = (value: number | null) => {
     if (!value) {
       return '';
@@ -1989,43 +2270,48 @@ const AdminDashboard: React.FC = () => {
     </button>
   );
 
-  const adminNavGroups: Array<{
+  type AdminNavGroup = {
     title: string;
-    items: Array<{ view: AdminView; icon: React.ReactNode; label: string; badge?: number }>;
-  }> = [
+    items: Array<{ view: AdminView; icon: React.ReactNode; label: string; badge?: number; visible?: boolean }>;
+  };
+
+  const adminNavGroups: AdminNavGroup[] = ([
       {
         title: '今日处理',
         items: [
-          { view: 'overview', icon: <LayoutDashboard size={18} />, label: '待办工作台' },
-          { view: 'reports', icon: <Flag size={18} />, label: '待处理举报', badge: pendingReportCount },
-          { view: 'rumors', icon: <AlertTriangle size={18} />, label: '谣言审核', badge: rumorPendingCount },
-          { view: 'wiki', icon: <BookOpen size={18} />, label: '瓜条审核', badge: wikiPendingCount },
-          { view: 'feedback', icon: <MessageSquare size={18} />, label: '留言管理', badge: feedbackUnreadCount },
+          { view: 'overview', icon: <LayoutDashboard size={18} />, label: '待办工作台', visible: true },
+          { view: 'reports', icon: <Flag size={18} />, label: '待处理举报', badge: pendingReportCount, visible: canReadContentReview },
+          { view: 'rumors', icon: <AlertTriangle size={18} />, label: '谣言审核', badge: rumorPendingCount, visible: canReadContentReview },
+          { view: 'wiki', icon: <BookOpen size={18} />, label: '瓜条审核', badge: wikiPendingCount, visible: canReadWiki },
+          { view: 'feedback', icon: <MessageSquare size={18} />, label: '留言管理', badge: feedbackUnreadCount, visible: canReadFeedback },
         ],
       },
       {
         title: '内容管理',
         items: [
-          { view: 'posts', icon: <FileText size={18} />, label: '帖子管理' },
-          { view: 'hidden', icon: <EyeOff size={18} />, label: '隐藏内容', badge: hiddenPendingCount },
-          { view: 'announcement', icon: <Bell size={18} />, label: '发布中心' },
+          { view: 'posts', icon: <FileText size={18} />, label: '帖子管理', visible: canReadPosts },
+          { view: 'hidden', icon: <EyeOff size={18} />, label: '隐藏内容', badge: hiddenPendingCount, visible: canReadContentReview },
+          { view: 'announcement', icon: <Bell size={18} />, label: '发布中心', visible: canReadPublish },
         ],
       },
       {
         title: '用户与安全',
         items: [
-          { view: 'bans', icon: <Shield size={18} />, label: '封禁管理' },
-          { view: 'audit', icon: <ClipboardList size={18} />, label: '操作审计' },
-          { view: 'processed', icon: <Gavel size={18} />, label: '已处理举报' },
+          { view: 'bans', icon: <Shield size={18} />, label: '封禁管理', visible: canReadUserSafety },
+          { view: 'audit', icon: <ClipboardList size={18} />, label: '操作审计', visible: isSuperAdmin },
+          { view: 'processed', icon: <Gavel size={18} />, label: '已处理举报', visible: canReadContentReview },
         ],
       },
       {
         title: '系统',
         items: [
-          { view: 'settings', icon: <Settings size={18} />, label: '系统设置' },
+          { view: 'settings', icon: <Settings size={18} />, label: '系统设置', visible: canReadSettings },
+          { view: 'adminUsers', icon: <UserCog size={18} />, label: '管理员管理', visible: isSuperAdmin },
         ],
       },
-    ];
+    ] satisfies AdminNavGroup[])
+      .map((group) => ({ ...group, items: group.items.filter((item) => item.visible !== false) }))
+      .filter((group) => group.items.length > 0);
 
   const AdminNavGroups: React.FC<{ onSelect?: () => void }> = ({ onSelect }) => (
     <nav className="flex flex-col gap-5 font-sans text-sm">
@@ -2049,6 +2335,14 @@ const AdminDashboard: React.FC = () => {
     </nav>
   );
 
+  const firstAvailableView = adminNavGroups[0]?.items[0]?.view || 'overview';
+  useEffect(() => {
+    const exists = adminNavGroups.some((group) => group.items.some((item) => item.view === currentView));
+    if (!exists) {
+      setCurrentView(firstAvailableView);
+    }
+  }, [adminNavGroups, currentView, firstAvailableView]);
+
   const totalPostPages = Math.max(Math.ceil(postTotal / POST_PAGE_SIZE), 1);
   const totalHiddenPages = Math.max(Math.ceil(hiddenTotal / HIDDEN_PAGE_SIZE), 1);
   const isReportView = currentView === 'reports' || currentView === 'processed';
@@ -2057,6 +2351,7 @@ const AdminDashboard: React.FC = () => {
   const isBanView = currentView === 'bans';
   const isAuditView = currentView === 'audit';
   const isFeedbackView = currentView === 'feedback';
+  const isAdminUsersView = currentView === 'adminUsers';
   const isSearchableView = isReportView || isPostView || isHiddenView || isBanView || isAuditView || isFeedbackView;
   const currentSearchValue = isPostView
     ? postSearchInput
@@ -2250,6 +2545,7 @@ const AdminDashboard: React.FC = () => {
                 feedbackUnreadCount={feedbackUnreadCount}
                 totalPosts={state.stats.totalPosts}
                 totalVisits={state.stats.totalVisits}
+                onlineCount={state.stats.onlineCount}
                 totalWeeklyVisits={totalWeeklyVisits}
                 appVersionLabel={appVersionLabel}
                 postVolumeData={postVolumeData}
@@ -2263,6 +2559,12 @@ const AdminDashboard: React.FC = () => {
                 onReportAction={handleAction}
                 onReportDetail={(item) => setReportDetail({ isOpen: true, report: item })}
                 renderIdentity={renderIdentity}
+                canReadContentReview={canReadContentReview}
+                canReadPosts={canReadPosts}
+                canReadWiki={canReadWiki}
+                canReadFeedback={canReadFeedback}
+                canReadSettings={canReadSettings}
+                canManageContentReview={canManageContentReview}
               />
             )}
 
@@ -2307,50 +2609,56 @@ const AdminDashboard: React.FC = () => {
                     <span>第 {postPage} / {totalPostPages} 页</span>
                   </div>
                   <div className="flex flex-wrap items-center justify-between gap-3 text-xs font-sans">
-                    <label className="flex items-center gap-2 text-pencil">
-                      <input
-                        type="checkbox"
-                        className="accent-black"
-                        checked={postItems.length > 0 && postItems.every((post) => selectedPosts.has(post.id))}
-                        onChange={toggleAllPosts}
-                      />
-                      本页全选
-                    </label>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-pencil">已选 {selectedPosts.size} 条</span>
-                      <SketchButton
-                        variant="danger"
-                        className="h-8 px-3 text-xs"
-                        disabled={selectedPosts.size === 0}
-                        onClick={() => openBulkPostModal('delete')}
-                      >
-                        批量删除
-                      </SketchButton>
-                      <SketchButton
-                        variant="secondary"
-                        className="h-8 px-3 text-xs"
-                        disabled={selectedPosts.size === 0}
-                        onClick={() => openBulkPostModal('restore')}
-                      >
-                        批量恢复
-                      </SketchButton>
-                      <SketchButton
-                        variant="secondary"
-                        className="h-8 px-3 text-xs"
-                        disabled={selectedPosts.size === 0}
-                        onClick={() => openBulkPostModal('ban')}
-                      >
-                        批量封禁
-                      </SketchButton>
-                      <SketchButton
-                        variant="secondary"
-                        className="h-8 px-3 text-xs"
-                        disabled={selectedPosts.size === 0}
-                        onClick={() => openBulkPostModal('unban')}
-                      >
-                        批量解封
-                      </SketchButton>
-                    </div>
+                    {canManagePosts ? (
+                      <label className="flex items-center gap-2 text-pencil">
+                        <input
+                          type="checkbox"
+                          className="accent-black"
+                          checked={postItems.length > 0 && postItems.every((post) => selectedPosts.has(post.id))}
+                          onChange={toggleAllPosts}
+                        />
+                        本页全选
+                      </label>
+                    ) : (
+                      <span className="text-pencil">只读模式</span>
+                    )}
+                    {canManagePosts && (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-pencil">已选 {selectedPosts.size} 条</span>
+                        <SketchButton
+                          variant="danger"
+                          className="h-8 px-3 text-xs"
+                          disabled={selectedPosts.size === 0}
+                          onClick={() => openBulkPostModal('delete')}
+                        >
+                          批量删除
+                        </SketchButton>
+                        <SketchButton
+                          variant="secondary"
+                          className="h-8 px-3 text-xs"
+                          disabled={selectedPosts.size === 0}
+                          onClick={() => openBulkPostModal('restore')}
+                        >
+                          批量恢复
+                        </SketchButton>
+                        <SketchButton
+                          variant="secondary"
+                          className="h-8 px-3 text-xs"
+                          disabled={selectedPosts.size === 0}
+                          onClick={() => openBulkPostModal('ban')}
+                        >
+                          批量封禁
+                        </SketchButton>
+                        <SketchButton
+                          variant="secondary"
+                          className="h-8 px-3 text-xs"
+                          disabled={selectedPosts.size === 0}
+                          onClick={() => openBulkPostModal('unban')}
+                        >
+                          批量解封
+                        </SketchButton>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -2373,12 +2681,14 @@ const AdminDashboard: React.FC = () => {
                         <div className="flex flex-col md:flex-row gap-6 justify-between items-start">
                           <div className="flex-1">
                             <div className="flex items-center gap-3 mb-3 flex-wrap">
-                              <input
-                                type="checkbox"
-                                className="accent-black"
-                                checked={selectedPosts.has(post.id)}
-                                onChange={() => togglePostSelection(post.id)}
-                              />
+                              {canManagePosts && (
+                                <input
+                                  type="checkbox"
+                                  className="accent-black"
+                                  checked={selectedPosts.has(post.id)}
+                                  onChange={() => togglePostSelection(post.id)}
+                                />
+                              )}
                               <span className="bg-gray-100 border border-ink text-ink text-[10px] font-bold px-2 py-0.5 rounded font-sans">ID: #{post.id}</span>
                               <span className="text-pencil text-xs font-bold font-sans">{post.timestamp}</span>
                               <Badge color={post.deleted ? 'bg-gray-200' : post.hidden ? 'bg-yellow-100' : 'bg-highlight'}>
@@ -2444,6 +2754,7 @@ const AdminDashboard: React.FC = () => {
                             <SketchButton
                               variant="secondary"
                               className="h-10 px-3 text-xs flex items-center gap-1"
+                              disabled={!canManagePosts}
                               onClick={() => openEditModal(post)}
                             >
                               <Pencil size={14} /> 编辑
@@ -2451,6 +2762,7 @@ const AdminDashboard: React.FC = () => {
                             <SketchButton
                               variant="primary"
                               className="h-10 px-3 text-xs flex items-center gap-1 text-white"
+                              disabled={!canManagePosts}
                               onClick={() => openPostBanDrawer(post)}
                             >
                               <Ban size={14} /> 封禁
@@ -2459,6 +2771,7 @@ const AdminDashboard: React.FC = () => {
                               <SketchButton
                                 variant="secondary"
                                 className="h-10 px-3 text-xs flex items-center gap-1"
+                                disabled={!canManagePosts}
                                 onClick={() => handlePostAction(post.id, 'restore', post.content)}
                               >
                                 <RotateCcw size={14} /> 恢复
@@ -2467,6 +2780,7 @@ const AdminDashboard: React.FC = () => {
                               <SketchButton
                                 variant="danger"
                                 className="h-10 px-3 text-xs flex items-center gap-1"
+                                disabled={!canManagePosts}
                                 onClick={() => handlePostAction(post.id, 'delete', post.content)}
                               >
                                 <Trash2 size={14} /> 删除
@@ -2608,6 +2922,7 @@ const AdminDashboard: React.FC = () => {
                             <SketchButton
                               variant="secondary"
                               className="h-10 px-3 text-xs flex items-center gap-1"
+                              disabled={!canManageContentReview}
                               onClick={() => openHiddenActionModal(item, 'keep')}
                             >
                               <EyeOff size={14} /> 保持隐藏
@@ -2615,6 +2930,7 @@ const AdminDashboard: React.FC = () => {
                             <SketchButton
                               variant="primary"
                               className="h-10 px-3 text-xs flex items-center gap-1 text-white"
+                              disabled={!canManageContentReview}
                               onClick={() => openHiddenActionModal(item, 'restore')}
                             >
                               <RotateCcw size={14} /> 恢复
@@ -2665,6 +2981,7 @@ const AdminDashboard: React.FC = () => {
                 updateAnnouncementSubmitting={updateAnnouncementSubmitting}
                 updateAnnouncementLoading={updateAnnouncementLoading}
                 updateAnnouncements={updateAnnouncements}
+                canManage={canManagePublish}
                 showToast={showToast}
                 formatAnnouncementTime={formatAnnouncementTime}
                 onComposeTextChange={setComposeText}
@@ -2709,6 +3026,7 @@ const AdminDashboard: React.FC = () => {
                 totalVocabularyPages={totalVocabularyPages}
                 vocabularyLoading={vocabularyLoading}
                 vocabularySubmitting={vocabularySubmitting}
+                canManage={canManageSettings}
                 formatUpdatedAt={formatAnnouncementTime}
                 onSubmit={handleSettingsSubmit}
                 onTurnstileEnabledChange={setTurnstileEnabled}
@@ -2740,11 +3058,11 @@ const AdminDashboard: React.FC = () => {
               />
             )}
             {currentView === 'wiki' && (
-              <AdminWikiPanel showToast={showToast} onPendingCountChange={fetchWikiPendingCount} />
+              <AdminWikiPanel showToast={showToast} onPendingCountChange={fetchWikiPendingCount} canManage={canManageWiki} />
             )}
 
             {currentView === 'rumors' && (
-              <AdminRumorPanel showToast={showToast} onPendingCountChange={fetchRumorPendingCount} />
+              <AdminRumorPanel showToast={showToast} onPendingCountChange={fetchRumorPendingCount} canManage={canManageContentReview} />
             )}
 
             {/* Feedback View */}
@@ -2756,6 +3074,7 @@ const AdminDashboard: React.FC = () => {
                 totalFeedbackPages={totalFeedbackPages}
                 feedbackLoading={feedbackLoading}
                 feedbackItems={feedbackItems}
+                canManage={canManageFeedback}
                 formatTimestamp={formatTimestamp}
                 renderIdentity={renderIdentity}
                 onFeedbackStatusChange={(status) => {
@@ -2774,6 +3093,7 @@ const AdminDashboard: React.FC = () => {
                 mergedBans={mergedBans}
                 banLoading={banLoading}
                 banSearchInput={banSearchInput}
+                canManage={canManageUserSafety}
                 formatTimestamp={formatTimestamp}
                 formatBanPermissions={formatBanPermissions}
                 renderIdentity={renderIdentity}
@@ -2797,11 +3117,27 @@ const AdminDashboard: React.FC = () => {
               />
             )}
 
+            {currentView === 'adminUsers' && (
+              <AdminUsersView
+                items={adminUsers}
+                permissionDefinitions={adminPermissionDefinitions}
+                loading={adminUsersLoading}
+                submitting={adminUsersSubmitting}
+                onRefresh={fetchAdminUsers}
+                onCreate={handleAdminUserCreate}
+                onPermissionsChange={handleAdminUserPermissionsChange}
+                onStatusChange={handleAdminUserStatusChange}
+                onPasswordReset={handleAdminUserPasswordReset}
+                formatTimestamp={formatAnnouncementTime}
+              />
+            )}
+
             {/* Reports View */}
             {(currentView === 'reports' || currentView === 'processed') && (
               <AdminReportsView
                 showProcessed={currentView === 'processed'}
                 reportsLoading={reportsLoading}
+                canManage={canManageContentReview}
                 searchQuery={searchQuery}
                 filteredReports={filteredReports}
                 selectedReports={selectedReports}
@@ -2819,9 +3155,9 @@ const AdminDashboard: React.FC = () => {
 
       <AdminActionDrawer
         isOpen={confirmModal.isOpen}
-        title={getActionLabel(confirmModal.action, confirmModal.targetType, confirmModal.deleteComment, confirmModal.deleteChatMessage)}
-        actionLabel={`确认${confirmModal.action === 'delete' ? '删除' : confirmModal.action === 'mute' ? '禁言' : '忽略'}`}
-        actionVariant={confirmModal.action === 'ignore' ? 'secondary' : confirmModal.action === 'mute' ? 'primary' : 'danger'}
+        title={getActionLabel(confirmModal.action, confirmModal.targetType, confirmModal.deleteComment)}
+        actionLabel={`确认${confirmModal.action === 'delete' ? '删除' : confirmModal.action === 'ban' ? '封禁' : '忽略'}`}
+        actionVariant={confirmModal.action === 'ignore' ? 'secondary' : 'danger'}
         summary={confirmModal.content}
         meta={`举报目标：${confirmModal.targetType} · ${confirmModal.targetId || '-'}`}
         reason={confirmModal.reason}
@@ -3019,7 +3355,7 @@ const AdminDashboard: React.FC = () => {
         <div className="flex flex-col gap-4">
           <div className="text-xs text-pencil font-sans">
             <p>举报 ID：{reportDetail.report?.id}</p>
-            <p>类型：{reportDetail.report?.targetType === 'comment' ? '评论举报' : reportDetail.report?.targetType === 'chat' ? '聊天室发言举报' : '帖子举报'}</p>
+            <p>类型：{reportDetail.report?.targetType === 'comment' ? '评论举报' : '帖子举报'}</p>
             <p>原因：{reportDetail.report?.reason}</p>
             <div className="break-words">{renderIdentity({
               ip: reportDetail.report?.targetIp,

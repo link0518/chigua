@@ -72,7 +72,6 @@ permissions 常见值（见服务端/前端映射）：
 - `like`：禁止点赞
 - `view`：禁止浏览
 - `site`：禁止进入站点
-- `chat`：禁止进入聊天室
 
 ### 1.6 identity_aliases（身份映射）
 
@@ -87,7 +86,7 @@ permissions 常见值（见服务端/前端映射）：
 典型用途：
 
 - 请求进入后构造 `lookupHashes`，让同一用户在指纹变化后仍能命中旧数据
-- 让封禁判断、通知读取、收藏/点赞状态、举报去重、连续登录彩蛋、聊天室身份识别按“身份集合”聚合
+- 让封禁判断、通知读取、收藏/点赞状态、举报去重、连续登录彩蛋按“身份集合”聚合
 
 ### 1.7 notifications（通知）
 
@@ -152,30 +151,6 @@ permissions 常见值（见服务端/前端映射）：
 
 - `post_edits`：后台编辑帖子内容的前后对比与原因
 - `admin_audit_logs`：后台动作审计（action、target、before_json/after_json、reason、ip、session_id）
-
-### 1.14 chat_sessions / chat_messages / chat_mutes / chat_ban_sync（聊天室）
-
-单聊天室实时能力的数据基座：
-
-- `chat_sessions`
-  - 一次“在线存在期”一条记录（同一指纹多端连接只算同一个在线人）
-  - 关键字段：`fingerprint_hash`、`nickname`、`joined_at`、`left_at`、`connection_count_peak`
-- `chat_messages`
-  - 聊天消息永久保存（支持文本/图片/表情短码）
-  - 关键字段：`session_id`、`fingerprint_hash`、`nickname_snapshot`、`msg_type`
-  - `client_msg_id` + `fingerprint_hash` 唯一索引用于去重
-  - `deleted` / `deleted_at` / `deleted_by_admin_id` 为管理删除语义
-- `chat_mutes`
-  - 聊天禁言状态（按指纹哈希）
-  - `muted_until` 为到期时间，空值表示长期禁言
-- `chat_ban_sync`
-  - 聊天封禁时用于记录“指纹封禁同步到的 IP”
-  - 用于解封时优先清理同一条同步 IP 封禁，避免残留
-
-补充说明：
-
-- 聊天消息、禁言、封禁同步表目前仍以单个 `fingerprint_hash` 为主键字段
-- 运行时会结合 `identity_aliases` 做身份归一，尽量让同一用户在指纹变化后延续既有封禁/禁言/在线状态判断
 
 ## 2. 删除语义（重要）
 

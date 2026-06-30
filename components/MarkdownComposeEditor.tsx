@@ -45,6 +45,7 @@ interface MarkdownComposeEditorProps {
   toolbarLabel?: string;
   emptyPreviewText?: string;
   renderClassName?: string;
+  readOnly?: boolean;
   showToast?: (message: string, type?: 'success' | 'error' | 'info' | 'warning') => void;
 }
 
@@ -59,6 +60,7 @@ const MarkdownComposeEditor: React.FC<MarkdownComposeEditorProps> = ({
   toolbarLabel = '支持 Markdown',
   emptyPreviewText = '预览区域（请先输入内容）',
   renderClassName = 'font-sans text-lg text-ink',
+  readOnly = false,
   showToast,
 }) => {
   const [showPreview, setShowPreview] = useState(false);
@@ -80,7 +82,7 @@ const MarkdownComposeEditor: React.FC<MarkdownComposeEditorProps> = ({
   }, [onChange]);
 
   const handleEditorContainerMouseDown = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
-    if (showPreview || event.button !== 0) {
+    if (readOnly || showPreview || event.button !== 0) {
       return;
     }
     const target = event.target instanceof Element ? event.target : null;
@@ -95,9 +97,12 @@ const MarkdownComposeEditor: React.FC<MarkdownComposeEditorProps> = ({
     }
     event.preventDefault();
     editorRef.current?.focus();
-  }, [showPreview]);
+  }, [readOnly, showPreview]);
 
   const insertIntoEditor = useCallback((insert: string) => {
+    if (readOnly) {
+      return;
+    }
     if (!showPreview && editorRef.current?.insertText(insert)) {
       return;
     }
@@ -106,23 +111,26 @@ const MarkdownComposeEditor: React.FC<MarkdownComposeEditorProps> = ({
     requestAnimationFrame(() => {
       editorRef.current?.focus();
     });
-  }, [handleValueChange, showPreview]);
+  }, [handleValueChange, readOnly, showPreview]);
 
   const handleRunCommand = useCallback((command: MarkdownEditorCommand) => {
-    if (showPreview) {
+    if (readOnly || showPreview) {
       return;
     }
     editorRef.current?.runCommand(command);
-  }, [showPreview]);
+  }, [readOnly, showPreview]);
 
   const handlePickUpload = useCallback(() => {
-    if (uploading) {
+    if (readOnly || uploading) {
       return;
     }
     uploadInputRef.current?.click();
-  }, [uploading]);
+  }, [readOnly, uploading]);
 
   const handleUploadFile = useCallback(async (file: File) => {
+    if (readOnly) {
+      return;
+    }
     if (!file) {
       return;
     }
@@ -140,7 +148,7 @@ const MarkdownComposeEditor: React.FC<MarkdownComposeEditorProps> = ({
     } finally {
       setUploading(false);
     }
-  }, [insertIntoEditor, showToast]);
+  }, [insertIntoEditor, readOnly, showToast]);
 
   useEffect(() => {
     if (!showPreview || value.trim()) {
@@ -195,7 +203,7 @@ const MarkdownComposeEditor: React.FC<MarkdownComposeEditorProps> = ({
           />
           <SketchIconButton
             onClick={handlePickUpload}
-            disabled={uploading}
+            disabled={readOnly || uploading}
             label={uploading ? '上传中' : '上传图片'}
             icon={<Image className="w-5 h-5" />}
             variant="doodle"
@@ -235,10 +243,10 @@ const MarkdownComposeEditor: React.FC<MarkdownComposeEditorProps> = ({
               type="button"
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => handleRunCommand(tool.key)}
-              disabled={showPreview}
+              disabled={readOnly || showPreview}
               aria-label={tool.title}
               title={tool.shortcut ? `${tool.title}（${tool.shortcut}）` : tool.title}
-              className={`inline-flex min-h-[40px] w-full items-center justify-center rounded-full border-2 px-2.5 py-1.5 text-xs font-hand font-bold leading-none tracking-wide transition-all shadow-sketch active:translate-x-[2px] active:translate-y-[2px] active:shadow-sketch-active sm:w-auto sm:px-3 sm:text-sm ${showPreview ? 'cursor-not-allowed border-gray-200 bg-gray-100 text-pencil/60 shadow-none' : 'border-ink bg-white text-ink hover:-translate-y-0.5 hover:bg-highlight'} ${roughBorderClassSm}`}
+              className={`inline-flex min-h-[40px] w-full items-center justify-center rounded-full border-2 px-2.5 py-1.5 text-xs font-hand font-bold leading-none tracking-wide transition-all shadow-sketch active:translate-x-[2px] active:translate-y-[2px] active:shadow-sketch-active sm:w-auto sm:px-3 sm:text-sm ${readOnly || showPreview ? 'cursor-not-allowed border-gray-200 bg-gray-100 text-pencil/60 shadow-none' : 'border-ink bg-white text-ink hover:-translate-y-0.5 hover:bg-highlight'} ${roughBorderClassSm}`}
             >
               {tool.label}
             </button>
@@ -272,6 +280,7 @@ const MarkdownComposeEditor: React.FC<MarkdownComposeEditorProps> = ({
               minHeight={minHeight}
               autoFocus={autoFocus}
               ariaLabel={ariaLabel}
+              readOnly={readOnly}
               onPasteImage={handleUploadFile}
             />
           </div>

@@ -4,7 +4,6 @@ export enum ViewType {
   FEED = 'FEED',
   SEARCH = 'SEARCH',
   FAVORITES = 'FAVORITES',
-  CHAT = 'CHAT',
   WIKI = 'WIKI',
   ADMIN = 'ADMIN',
   NOT_FOUND = 'NOT_FOUND'
@@ -49,7 +48,7 @@ export interface ReportSubmissionResult {
 export interface Report {
   id: string;
   targetId: string;
-  targetType: 'post' | 'comment' | 'chat';
+  targetType: 'post' | 'comment';
   postId?: string;
   reason: string;
   reasonCode?: string | null;
@@ -107,6 +106,51 @@ export interface NotificationItem {
   preview?: string | null;
   createdAt: number;
   readAt?: number | null;
+}
+
+export type WikiEntrySort = 'updated' | 'number';
+
+export interface WikiEntry {
+  id: string;
+  slug: string;
+  name: string;
+  narrative: string;
+  tags: string[];
+  status?: string;
+  currentRevisionId?: string | null;
+  versionNumber: number;
+  displayOrder?: number | null;
+  createdAt: number;
+  updatedAt: number;
+  deleted?: boolean;
+  deletedAt?: number | null;
+}
+
+export interface WikiRevisionData {
+  name: string;
+  narrative: string;
+  tags: string[];
+  editSummary?: string;
+}
+
+export interface WikiRevision {
+  id: string;
+  entryId?: string | null;
+  entryName?: string | null;
+  entrySlug?: string | null;
+  actionType: 'create' | 'edit';
+  baseRevisionId?: string | null;
+  baseVersionNumber: number;
+  data: WikiRevisionData;
+  editSummary?: string;
+  status: 'pending' | 'approved' | 'rejected';
+  submitterFingerprint?: string | null;
+  submitterIp?: string | null;
+  createdAt: number;
+  reviewReason?: string;
+  reviewedAt?: number | null;
+  reviewedBy?: string | null;
+  versionNumber?: number | null;
 }
 
 export interface AdminIdentityInfo {
@@ -245,110 +289,43 @@ export interface UpdateAnnouncementItem {
   updatedAt: number;
 }
 
+export type AdminPermissionLevel = 'read' | 'manage';
+export type AdminPermissionModuleKey =
+  | 'content_review'
+  | 'posts'
+  | 'wiki'
+  | 'feedback'
+  | 'user_safety'
+  | 'publish'
+  | 'settings';
+
+export type AdminPermissions = Partial<Record<AdminPermissionModuleKey, AdminPermissionLevel>>;
+
+export interface AdminPermissionDefinitions {
+  modules: Array<{
+    key: AdminPermissionModuleKey;
+    label: string;
+    description?: string;
+  }>;
+  levels: Array<{
+    key: AdminPermissionLevel;
+    label: string;
+    description?: string;
+  }>;
+}
+
+export interface AdminUserAccount {
+  id: number;
+  username: string;
+  role: 'admin' | 'super_admin';
+  isSuperAdmin: boolean;
+  disabled: boolean;
+  permissions: AdminPermissions;
+  createdAt: number;
+  updatedAt?: number | null;
+}
+
 export interface ChartDataPoint {
   name: string;
   value: number;
-}
-
-export interface ChatReplyRef {
-  id: number;
-  nickname: string;
-  preview: string;
-}
-
-export interface ChatMessage {
-  id: number;
-  sessionId: string;
-  nickname: string;
-  isAdmin?: boolean;
-  type: 'text' | 'image' | 'sticker';
-  content: string;
-  imageUrl?: string;
-  stickerCode?: string;
-  clientMsgId?: string;
-  createdAt: number;
-  deleted?: boolean;
-  deletedAt?: number | null;
-  deleteReason?: string | null;
-  pending?: boolean;
-  replyTo?: ChatReplyRef | null;
-}
-
-export interface ChatOnlineUser {
-  nickname: string;
-  isAdmin?: boolean;
-  joinedAt: number;
-  lastActiveAt: number;
-  connections: number;
-}
-
-export interface AdminChatOnlineUser extends ChatOnlineUser {
-  fingerprintHash: string;
-  sessionId: string;
-  identityKey?: string | null;
-  identityHashes?: string[];
-  hiddenInOnline?: boolean;
-}
-
-export interface ChatMuteEntry {
-  fingerprintHash: string;
-  identityKey?: string | null;
-  identityHashes?: string[];
-  mutedUntil: number | null;
-  reason: string | null;
-  createdAt: number;
-  createdByAdminId: number | null;
-}
-
-export interface ChatRoomConfig {
-  chatEnabled: boolean;
-  muteAll: boolean;
-  adminOnly: boolean;
-  messageIntervalMs: number;
-  maxTextLength: number;
-}
-
-export interface WikiEntry {
-  id: string;
-  slug: string;
-  name: string;
-  narrative: string;
-  tags: string[];
-  status: 'pending' | 'approved' | 'rejected';
-  currentRevisionId?: string | null;
-  versionNumber: number;
-  displayOrder?: number | null;
-  createdAt: number;
-  updatedAt: number;
-  deleted?: boolean;
-  deletedAt?: number | null;
-}
-
-export type WikiEntrySort = 'updated' | 'number';
-
-export interface WikiRevisionData {
-  name: string;
-  narrative: string;
-  tags: string[];
-  editSummary?: string;
-}
-
-export interface WikiRevision {
-  id: string;
-  entryId?: string | null;
-  entryName?: string | null;
-  entrySlug?: string | null;
-  actionType: 'create' | 'edit';
-  baseRevisionId?: string | null;
-  baseVersionNumber: number;
-  data: WikiRevisionData;
-  editSummary: string;
-  status: 'pending' | 'approved' | 'rejected';
-  submitterFingerprint?: string | null;
-  submitterIp?: string | null;
-  createdAt: number;
-  reviewReason?: string;
-  reviewedAt?: number | null;
-  reviewedBy?: string | null;
-  versionNumber?: number | null;
 }

@@ -2,10 +2,11 @@
   const {
     db,
     requireAdmin,
+    requireSuperAdmin = (_req, _res, next) => next(),
     AUDIT_RETENTION_MS,
   } = deps;
 
-  app.get('/api/admin/audit-logs', requireAdmin, (req, res) => {
+  app.get('/api/admin/audit-logs', requireAdmin, requireSuperAdmin, (req, res) => {
     const search = String(req.query.search || '').trim();
     const page = Math.max(Number(req.query.page || 1), 1);
     const limit = Math.min(Math.max(Number(req.query.limit || 20), 1), 100);

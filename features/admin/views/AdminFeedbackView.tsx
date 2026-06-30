@@ -14,6 +14,7 @@ interface AdminFeedbackViewProps {
   totalFeedbackPages: number;
   feedbackLoading: boolean;
   feedbackItems: FeedbackMessage[];
+  canManage: boolean;
   formatTimestamp: (timestamp?: number) => string;
   renderIdentity: RenderIdentity;
   onFeedbackStatusChange: (status: AdminFeedbackStatus) => void;
@@ -29,6 +30,7 @@ const AdminFeedbackView: React.FC<AdminFeedbackViewProps> = ({
   totalFeedbackPages,
   feedbackLoading,
   feedbackItems,
+  canManage,
   formatTimestamp,
   renderIdentity,
   onFeedbackStatusChange,
@@ -89,7 +91,7 @@ const AdminFeedbackView: React.FC<AdminFeedbackViewProps> = ({
                   {renderIdentity(message)}
                 </div>
               </div>
-              <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 min-w-fit mt-2 md:mt-0 font-sans">
+              {canManage && <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 min-w-fit mt-2 md:mt-0 font-sans">
                 {!message.readAt && (
                   <SketchButton
                     variant="secondary"
@@ -113,7 +115,7 @@ const AdminFeedbackView: React.FC<AdminFeedbackViewProps> = ({
                 >
                   删除
                 </SketchButton>
-              </div>
+              </div>}
             </div>
           </div>
         ))}

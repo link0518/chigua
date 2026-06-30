@@ -7,12 +7,13 @@ export const registerAdminReportsRoutes = (app, deps) => {
     db,
     requireAdmin,
     requireAdminCsrf,
+    requireAdminRead = (_req, _res, next) => next(),
+    requireAdminManage = (_req, _res, next) => next(),
     formatRelativeTime,
     logAdminAction,
     resolveBanOptions,
     upsertBan,
     BAN_PERMISSIONS,
-    chatRealtime,
     resolveStoredIdentityHash,
   } = deps;
 
@@ -33,7 +34,7 @@ export const registerAdminReportsRoutes = (app, deps) => {
     resolveStoredIdentityHash,
   });
 
-  app.get('/api/reports', requireAdmin, (req, res) => {
+  app.get('/api/reports', requireAdmin, requireAdminRead, (req, res) => {
     const status = String(req.query.status || '').trim();
     const search = String(req.query.search || '').trim();
     const includeRumor = req.query.includeRumor === true
@@ -44,7 +45,7 @@ export const registerAdminReportsRoutes = (app, deps) => {
       ? Math.min(Math.floor(parsedLimit), 50)
       : 0;
 
-    const conditions = [];
+    const conditions = ["reports.target_type != 'chat'"];
     const params = [];
 
     if (status) {
@@ -76,17 +77,10 @@ export const registerAdminReportsRoutes = (app, deps) => {
           comments.content AS comment_content,
           comments.ip AS comment_ip,
           comments.fingerprint AS comment_fingerprint,
-          chat_messages.text_content AS chat_content,
-          chat_messages.ip_snapshot AS chat_ip,
-          chat_messages.session_id AS chat_session_id,
-          chat_messages.fingerprint_hash AS chat_fingerprint,
           reporter_stats.reporter_count AS reporter_count
         FROM reports
         LEFT JOIN posts ON posts.id = reports.post_id
         LEFT JOIN comments ON comments.id = reports.comment_id
-        LEFT JOIN chat_messages ON reports.target_type = 'chat'
-          AND reports.post_id LIKE 'chat:%'
-          AND chat_messages.id = CAST(SUBSTR(reports.post_id, 6) AS INTEGER)
         LEFT JOIN (
           SELECT fingerprint, COUNT(1) AS reporter_count
           FROM reports
@@ -101,14 +95,12 @@ export const registerAdminReportsRoutes = (app, deps) => {
 
     const reports = rows.map((row) => {
       const isComment = row.target_type === 'comment';
-      const isChat = row.target_type === 'chat';
       const postContent = row.post_content || '';
       const commentContent = row.comment_content || '';
-      const chatContent = row.chat_content || '';
       const targetIdentity = resolveAdminIdentity({
-        fingerprint: isComment ? row.comment_fingerprint || '' : isChat ? row.chat_fingerprint || '' : row.post_fingerprint || '',
-        sessionId: isComment ? '' : isChat ? row.chat_session_id || '' : row.post_session_id || '',
-        ip: isComment ? row.comment_ip || '' : isChat ? row.chat_ip || '' : row.post_ip || '',
+        fingerprint: isComment ? row.comment_fingerprint || '' : row.post_fingerprint || '',
+        sessionId: isComment ? '' : row.post_session_id || '',
+        ip: isComment ? row.comment_ip || '' : row.post_ip || '',
       });
       const reporterIdentity = resolveAdminIdentity({
         fingerprint: row.fingerprint || '',
@@ -125,10 +117,10 @@ export const registerAdminReportsRoutes = (app, deps) => {
         contentSnippet: row.content_snippet,
         postContent,
         commentContent,
-        targetContent: isComment ? commentContent : isChat ? chatContent : postContent,
-        targetIp: isComment ? row.comment_ip || null : isChat ? row.chat_ip || null : row.post_ip || null,
-        targetSessionId: isComment ? null : isChat ? row.chat_session_id || null : row.post_session_id || null,
-        targetFingerprint: isComment ? row.comment_fingerprint || null : isChat ? row.chat_fingerprint || null : row.post_fingerprint || null,
+        targetContent: isComment ? commentContent : postContent,
+        targetIp: isComment ? row.comment_ip || null : row.post_ip || null,
+        targetSessionId: isComment ? null : row.post_session_id || null,
+        targetFingerprint: isComment ? row.comment_fingerprint || null : row.post_fingerprint || null,
         targetIdentityKey: targetIdentity.identityKey,
         targetIdentityHashes: targetIdentity.identityHashes,
         reporterIp: row.reporter_ip || null,
@@ -172,118 +164,28 @@ export const registerAdminReportsRoutes = (app, deps) => {
     });
   });
 
-  app.post('/api/reports/:id/action', requireAdmin, requireAdminCsrf, (req, res) => {
+  app.post('/api/reports/:id/action', requireAdmin, requireAdminCsrf, requireAdminManage, (req, res) => {
     const reportId = req.params.id;
     const rawAction = String(req.body?.action || '').trim().toLowerCase();
-    const action = rawAction === 'muted' || rawAction === 'silence'
-      ? 'mute'
-      : rawAction;
+    const action = rawAction;
     const reason = String(req.body?.reason || '').trim();
 
-    if (!['ignore', 'delete', 'mute', 'ban'].includes(action)) {
+    if (!['ignore', 'delete', 'ban'].includes(action)) {
       return res.status(400).json({ error: '无效操作' });
     }
 
-    const banOptions = action === 'ban' || action === 'mute' ? resolveBanOptions(req) : null;
+    const banOptions = action === 'ban' ? resolveBanOptions(req) : null;
     const deleteComment = action === 'ban'
       && (req.body?.deleteComment === true
         || req.body?.deleteComment === 'true'
         || req.body?.deleteComment === 1
         || req.body?.deleteComment === '1');
-    const deleteChatMessage = action === 'ban'
-      && (req.body?.deleteChatMessage === true
-        || req.body?.deleteChatMessage === 'true'
-        || req.body?.deleteChatMessage === 1
-        || req.body?.deleteChatMessage === '1');
-
     const report = db.prepare('SELECT * FROM reports WHERE id = ?').get(reportId);
     if (!report) {
       return res.status(404).json({ error: '举报不存在' });
     }
 
-    if (report.target_type === 'chat') {
-      const nextStatus = action === 'ignore' ? 'ignored' : 'resolved';
-      const now = Date.now();
 
-      if (action === 'delete' || action === 'ban' || action === 'mute') {
-        const matched = String(report.post_id || '').match(/^chat:(\d+)$/);
-        const messageId = matched ? Number(matched[1]) : 0;
-        if (messageId <= 0) {
-          return res.status(400).json({ error: '无法识别聊天室消息 ID' });
-        }
-
-        const chatMessage = db.prepare(
-          `
-            SELECT id, fingerprint_hash, ip_snapshot, created_at
-            FROM chat_messages
-            WHERE id = ?
-            LIMIT 1
-          `
-        ).get(messageId);
-        if (!chatMessage) {
-          return res.status(404).json({ error: '聊天室消息不存在' });
-        }
-
-        if (action === 'delete' || (action === 'ban' && deleteChatMessage)) {
-          const deleteResult = chatRealtime.deleteMessageByAdmin({
-            req,
-            messageId,
-            reason: reason || '管理员处理聊天室举报删除消息',
-          });
-          if (!deleteResult?.ok) {
-            return res.status(404).json({ error: '聊天室消息不存在' });
-          }
-        }
-
-        if (action === 'ban' || action === 'mute') {
-          const fingerprintHash = String(chatMessage.fingerprint_hash || '').trim();
-          if (!fingerprintHash) {
-            return res.status(400).json({ error: '无法识别被举报消息作者指纹' });
-          }
-
-          if (action === 'ban') {
-            const permissions = Array.isArray(banOptions?.permissions) ? banOptions.permissions : null;
-            const scope = permissions && permissions.includes('site') ? 'site' : 'chat';
-            const resolvedIdentity = resolveStoredIdentityHash(fingerprintHash);
-            chatRealtime.banByAdmin({
-              req,
-              fingerprintHash,
-              reason: reason || '管理员处理聊天室举报封禁用户',
-              ip: String(chatMessage.ip_snapshot || '').trim(),
-              expiresAt: banOptions?.expiresAt || null,
-              scope,
-              permissions,
-              identityType: resolvedIdentity?.type === 'identity' ? 'identity' : 'fingerprint',
-            });
-          } else {
-            chatRealtime.muteByAdmin({
-              req,
-              fingerprintHash,
-              reason: reason || '管理员处理聊天室举报禁言用户',
-              expiresAt: banOptions?.expiresAt || null,
-            });
-          }
-        }
-      }
-
-      db.prepare('UPDATE reports SET status = ?, action = ?, resolved_at = ? WHERE id = ?')
-        .run(nextStatus, action, now, reportId);
-
-      logAdminAction(req, {
-        action: `report_${action}`,
-        targetType: 'report',
-        targetId: reportId,
-        before: { status: report.status, action: report.action || null },
-        after: { status: nextStatus, action },
-        reason,
-      });
-
-      return res.json({ status: nextStatus, action });
-    }
-
-    if (action === 'mute') {
-      return res.status(400).json({ error: '当前举报类型不支持禁言' });
-    }
 
     const result = moderationService.executeReportAction({
       req,
@@ -300,7 +202,7 @@ export const registerAdminReportsRoutes = (app, deps) => {
 
     return res.json(result);
   });
-  app.post('/api/admin/reports/batch', requireAdmin, requireAdminCsrf, (req, res) => {
+  app.post('/api/admin/reports/batch', requireAdmin, requireAdminCsrf, requireAdminManage, (req, res) => {
     const action = String(req.body?.action || '').trim();
     const reason = String(req.body?.reason || '').trim();
     const reportIds = Array.isArray(req.body?.reportIds) ? req.body.reportIds : [];

@@ -73,7 +73,6 @@ const BAN_PERMISSION_LABELS: Record<string, string> = {
   like: '点赞',
   view: '浏览',
   site: '站点',
-  chat: '聊天室',
 };
 
 const ALL_BAN_PERMISSIONS = Object.keys(BAN_PERMISSION_LABELS);

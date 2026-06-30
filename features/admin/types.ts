@@ -2,7 +2,7 @@ import React from 'react';
 import type { AdminAuditLog, FeedbackMessage, Report } from '@/types';
 import type { AdminIdentityLike } from '@/components/adminIdentity';
 
-export type ReportAction = 'ignore' | 'delete' | 'mute' | 'ban';
+export type ReportAction = 'ignore' | 'delete' | 'ban';
 export type AdminFeedbackStatus = 'unread' | 'read' | 'all';
 export type AdminBanType = 'ip' | 'fingerprint' | 'identity';
 export type AdminChartDatum = {

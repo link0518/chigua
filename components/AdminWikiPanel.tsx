@@ -16,6 +16,7 @@ type EntryStatus = 'active' | 'deleted' | 'all';
 interface AdminWikiPanelProps {
   showToast: (message: string, type?: Toast['type']) => void;
   onPendingCountChange?: () => void;
+  canManage?: boolean;
 }
 
 const WIKI_PAGE_SIZE = 12;
@@ -42,7 +43,8 @@ const WikiEntryEditor: React.FC<{
   onClose: () => void;
   onSaved: () => void;
   showToast: AdminWikiPanelProps['showToast'];
-}> = ({ open, entry, onClose, onSaved, showToast }) => {
+  canManage: boolean;
+}> = ({ open, entry, onClose, onSaved, showToast, canManage }) => {
   const [name, setName] = useState('');
   const [narrative, setNarrative] = useState('');
   const [tagsInput, setTagsInput] = useState('');
@@ -64,6 +66,10 @@ const WikiEntryEditor: React.FC<{
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (!canManage) {
+      showToast('当前账号只有查看权限，不能保存瓜条', 'warning');
+      return;
+    }
     const payload = {
       name: name.trim(),
       narrative: narrative.trim(),
@@ -130,6 +136,7 @@ const WikiEntryEditor: React.FC<{
               toolbarLabel="记录叙述"
               emptyPreviewText="预览区为空，请先填写记录叙述。"
               renderClassName="font-sans text-sm leading-relaxed text-ink [&_p]:mb-4 [&_blockquote]:my-4 [&_ol]:my-4 [&_ul]:my-4 [&_pre]:my-4"
+              readOnly={!canManage}
               theme="admin"
             />
           </div>
@@ -138,7 +145,7 @@ const WikiEntryEditor: React.FC<{
           <SketchButton type="button" variant="secondary" onClick={onClose} disabled={submitting}>
             取消
           </SketchButton>
-          <SketchButton type="submit" disabled={submitting}>
+          <SketchButton type="submit" disabled={submitting || !canManage}>
             {submitting ? '保存中...' : '保存'}
           </SketchButton>
         </div>
@@ -147,7 +154,7 @@ const WikiEntryEditor: React.FC<{
   );
 };
 
-const AdminWikiPanel: React.FC<AdminWikiPanelProps> = ({ showToast, onPendingCountChange }) => {
+const AdminWikiPanel: React.FC<AdminWikiPanelProps> = ({ showToast, onPendingCountChange, canManage = true }) => {
   const [tab, setTab] = useState<'revisions' | 'entries'>('revisions');
   const [revisionStatus, setRevisionStatus] = useState<RevisionStatus>('pending');
   const [revisionActionType, setRevisionActionType] = useState<RevisionActionType>('all');
@@ -226,6 +233,10 @@ const AdminWikiPanel: React.FC<AdminWikiPanelProps> = ({ showToast, onPendingCou
   ), [revisionStatus, revisionTotal, revisions]);
 
   const handleRevisionAction = async (revision: WikiRevision, action: 'approve' | 'reject') => {
+    if (!canManage) {
+      showToast('当前账号只有查看权限，不能处理瓜条审核', 'warning');
+      return;
+    }
     const reason = action === 'reject'
       ? window.prompt('请输入拒绝原因（可留空）') || ''
       : '';
@@ -243,6 +254,10 @@ const AdminWikiPanel: React.FC<AdminWikiPanelProps> = ({ showToast, onPendingCou
   };
 
   const handleEntryAction = async (entry: WikiEntry, action: 'delete' | 'restore') => {
+    if (!canManage) {
+      showToast('当前账号只有查看权限，不能处理瓜条', 'warning');
+      return;
+    }
     const confirmed = window.confirm(action === 'delete' ? '确认删除该瓜条？' : '确认恢复该瓜条？');
     if (!confirmed) {
       return;
@@ -380,7 +395,7 @@ const AdminWikiPanel: React.FC<AdminWikiPanelProps> = ({ showToast, onPendingCou
                       </div>
                       {revision.reviewReason && <p className="text-xs text-red-600">拒绝原因：{revision.reviewReason}</p>}
                     </div>
-                    {revision.status === 'pending' && (
+                    {revision.status === 'pending' && canManage && (
                       <div className="flex shrink-0 flex-wrap gap-2">
                         <SketchButton
                           type="button"
@@ -449,6 +464,7 @@ const AdminWikiPanel: React.FC<AdminWikiPanelProps> = ({ showToast, onPendingCou
             <SketchButton
               type="button"
               className="h-10 px-4 text-sm"
+              disabled={!canManage}
               onClick={() => {
                 setEditingEntry(null);
                 setEditorOpen(true);
@@ -483,7 +499,7 @@ const AdminWikiPanel: React.FC<AdminWikiPanelProps> = ({ showToast, onPendingCou
                       </p>
                       <p className="text-xs text-pencil">更新：{formatTime(entry.updatedAt)} · slug：{entry.slug}</p>
                     </div>
-                    <div className="flex shrink-0 flex-col gap-2">
+                    {canManage && <div className="flex shrink-0 flex-col gap-2">
                       <SketchButton
                         type="button"
                         variant="secondary"
@@ -504,7 +520,7 @@ const AdminWikiPanel: React.FC<AdminWikiPanelProps> = ({ showToast, onPendingCou
                           <Trash2 className="mr-1 inline h-4 w-4" /> 删除
                         </SketchButton>
                       )}
-                    </div>
+                    </div>}
                   </div>
                 </article>
               ))}
@@ -532,6 +548,7 @@ const AdminWikiPanel: React.FC<AdminWikiPanelProps> = ({ showToast, onPendingCou
           loadRevisions();
         }}
         showToast={showToast}
+        canManage={canManage}
       />
     </section>
   );

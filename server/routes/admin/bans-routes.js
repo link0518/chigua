@@ -6,6 +6,8 @@ export const registerAdminBansRoutes = (app, deps) => {
     db,
     requireAdmin,
     requireAdminCsrf,
+    requireAdminRead = (_req, _res, next) => next(),
+    requireAdminManage = (_req, _res, next) => next(),
     pruneExpiredBans,
     normalizePermissions,
     resolveBanOptions,
@@ -24,7 +26,7 @@ export const registerAdminBansRoutes = (app, deps) => {
     resolveStoredIdentityHash,
   });
 
-  app.get('/api/admin/bans', requireAdmin, (req, res) => {
+  app.get('/api/admin/bans', requireAdmin, requireAdminRead, (req, res) => {
     pruneExpiredBans('banned_ips');
     pruneExpiredBans('banned_fingerprints');
     pruneExpiredBans('banned_identities');
@@ -68,7 +70,7 @@ export const registerAdminBansRoutes = (app, deps) => {
     return res.json({ ips, fingerprints: [...fingerprints, ...identities] });
   });
 
-  app.post('/api/admin/bans/action', requireAdmin, requireAdminCsrf, (req, res) => {
+  app.post('/api/admin/bans/action', requireAdmin, requireAdminCsrf, requireAdminManage, (req, res) => {
     const action = String(req.body?.action || '').trim();
     const type = String(req.body?.type || '').trim();
     const value = String(req.body?.value || '').trim();
@@ -91,4 +93,3 @@ export const registerAdminBansRoutes = (app, deps) => {
     );
   });
 };
-

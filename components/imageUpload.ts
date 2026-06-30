@@ -1,6 +1,6 @@
 import { api } from '../api';
 
-export type ImageUploadUsage = 'post' | 'comment' | 'chat';
+export type ImageUploadUsage = 'post' | 'comment';
 
 export const isImageUploadFile = (file: File | null | undefined): file is File => (
   Boolean(file?.type?.startsWith('image/'))

@@ -40,7 +40,6 @@ const getExtensionByType = (contentType) => {
 const UPLOAD_USAGE_PERMISSIONS = Object.freeze({
   post: { permission: 'post', message: '账号已被封禁，无法上传图片' },
   comment: { permission: 'comment', message: '账号已被封禁，无法上传图片' },
-  chat: { permission: 'chat', message: '账号已被封禁，无法上传图片' },
 });
 
 const resolveUploadUsagePermission = (value) => {

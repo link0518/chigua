@@ -3,13 +3,15 @@
     db,
     requireAdmin,
     requireAdminCsrf,
+    requireAdminRead = (_req, _res, next) => next(),
+    requireAdminManage = (_req, _res, next) => next(),
     normalizeText,
     reloadVocabulary,
     importVocabularyFromFiles,
     logAdminAction,
   } = deps;
 
-  app.get('/api/admin/vocabulary', requireAdmin, (req, res) => {
+  app.get('/api/admin/vocabulary', requireAdmin, requireAdminRead, (req, res) => {
     const search = String(req.query.search || '').trim();
     const page = Math.max(Number(req.query.page || 1), 1);
     const limit = Math.min(Math.max(Number(req.query.limit || 20), 1), 200);
@@ -56,7 +58,7 @@
     });
   });
 
-  app.post('/api/admin/vocabulary', requireAdmin, requireAdminCsrf, (req, res) => {
+  app.post('/api/admin/vocabulary', requireAdmin, requireAdminCsrf, requireAdminManage, (req, res) => {
     const word = String(req.body?.word || '').trim();
     if (!word) {
       return res.status(400).json({ error: '词不能为空' });
@@ -91,7 +93,7 @@
     return res.json({ id, word, normalized, enabled: true, updatedAt: now });
   });
 
-  app.post('/api/admin/vocabulary/:id/toggle', requireAdmin, requireAdminCsrf, (req, res) => {
+  app.post('/api/admin/vocabulary/:id/toggle', requireAdmin, requireAdminCsrf, requireAdminManage, (req, res) => {
     const id = Number(req.params.id || 0);
     if (!id) {
       return res.status(400).json({ error: '参数错误' });
@@ -115,7 +117,7 @@
     return res.json({ id, enabled });
   });
 
-  app.post('/api/admin/vocabulary/:id/delete', requireAdmin, requireAdminCsrf, (req, res) => {
+  app.post('/api/admin/vocabulary/:id/delete', requireAdmin, requireAdminCsrf, requireAdminManage, (req, res) => {
     const id = Number(req.params.id || 0);
     if (!id) {
       return res.status(400).json({ error: '参数错误' });
@@ -136,7 +138,7 @@
     return res.json({ id });
   });
 
-  app.post('/api/admin/vocabulary/import', requireAdmin, requireAdminCsrf, (req, res) => {
+  app.post('/api/admin/vocabulary/import', requireAdmin, requireAdminCsrf, requireAdminManage, (req, res) => {
     const result = importVocabularyFromFiles();
     logAdminAction(req, {
       action: 'vocabulary_import',
@@ -148,7 +150,7 @@
     return res.json(result);
   });
 
-  app.get('/api/admin/vocabulary/export', requireAdmin, (req, res) => {
+  app.get('/api/admin/vocabulary/export', requireAdmin, requireAdminRead, (req, res) => {
     const rows = db.prepare('SELECT word FROM vocabulary_words WHERE enabled = 1 ORDER BY word ASC').all();
     const content = rows.map((row) => row.word).join('\n');
     return res.json({ content });

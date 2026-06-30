@@ -2,12 +2,14 @@ export const registerAdminAnnouncementRoutes = (app, deps) => {
   const {
     requireAdmin,
     requireAdminCsrf,
+    requireAdminRead = (_req, _res, next) => next(),
+    requireAdminManage = (_req, _res, next) => next(),
     db,
     getAnnouncement,
     logAdminAction,
   } = deps;
 
-  app.get('/api/admin/announcement', requireAdmin, (req, res) => {
+  app.get('/api/admin/announcement', requireAdmin, requireAdminRead, (req, res) => {
     const row = getAnnouncement();
     if (!row) {
       return res.json({ content: '', updatedAt: null });
@@ -15,7 +17,7 @@ export const registerAdminAnnouncementRoutes = (app, deps) => {
     return res.json({ content: row.content, updatedAt: row.updated_at });
   });
 
-  app.post('/api/admin/announcement', requireAdmin, requireAdminCsrf, (req, res) => {
+  app.post('/api/admin/announcement', requireAdmin, requireAdminCsrf, requireAdminManage, (req, res) => {
     const content = String(req.body?.content || '').trim();
     if (!content) {
       return res.status(400).json({ error: '\u516c\u544a\u5185\u5bb9\u4e0d\u80fd\u4e3a\u7a7a' });
@@ -42,7 +44,7 @@ export const registerAdminAnnouncementRoutes = (app, deps) => {
     return res.json({ content, updatedAt: now });
   });
 
-  app.post('/api/admin/announcement/clear', requireAdmin, requireAdminCsrf, (req, res) => {
+  app.post('/api/admin/announcement/clear', requireAdmin, requireAdminCsrf, requireAdminManage, (req, res) => {
     db.prepare('DELETE FROM announcements WHERE id = ?').run('current');
     logAdminAction(req, {
       action: 'announcement_clear',

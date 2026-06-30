@@ -46,6 +46,7 @@ type AdminSystemSettingsViewProps = {
   totalVocabularyPages: number;
   vocabularyLoading: boolean;
   vocabularySubmitting: boolean;
+  canManage: boolean;
   formatUpdatedAt: (value: number | null) => string;
   onSubmit: React.FormEventHandler<HTMLFormElement>;
   onTurnstileEnabledChange: (value: boolean) => void;
@@ -96,6 +97,7 @@ const AdminSystemSettingsView: React.FC<AdminSystemSettingsViewProps> = ({
   totalVocabularyPages,
   vocabularyLoading,
   vocabularySubmitting,
+  canManage,
   formatUpdatedAt,
   onSubmit,
   onTurnstileEnabledChange,
@@ -117,12 +119,18 @@ const AdminSystemSettingsView: React.FC<AdminSystemSettingsViewProps> = ({
   onVocabularyDelete,
   onVocabularyPageChange,
 }) => {
-  const disabled = settingsLoading || settingsSubmitting;
+  const disabled = !canManage || settingsLoading || settingsSubmitting;
 
   return (
     <section className="space-y-6">
       <form
-        onSubmit={onSubmit}
+        onSubmit={(event) => {
+          if (!canManage) {
+            event.preventDefault();
+            return;
+          }
+          onSubmit(event);
+        }}
         className="bg-white p-6 border-2 border-ink rounded-lg shadow-sketch-sm"
       >
         <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
@@ -194,7 +202,7 @@ const AdminSystemSettingsView: React.FC<AdminSystemSettingsViewProps> = ({
           <SketchButton
             type="submit"
             className="h-10 px-6 text-sm"
-            disabled={settingsSubmitting || settingsLoading}
+            disabled={!canManage || settingsSubmitting || settingsLoading}
           >
             {settingsSubmitting ? '保存中...' : '保存设置'}
           </SketchButton>
@@ -210,6 +218,7 @@ const AdminSystemSettingsView: React.FC<AdminSystemSettingsViewProps> = ({
         totalPages={totalVocabularyPages}
         loading={vocabularyLoading}
         submitting={vocabularySubmitting}
+        canManage={canManage}
         formatUpdatedAt={formatUpdatedAt}
         onSearchChange={onVocabularySearchChange}
         onNewWordChange={onVocabularyNewWordChange}

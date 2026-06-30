@@ -20,6 +20,7 @@ import { Badge, SketchButton } from './SketchUI';
 interface AdminRumorPanelProps {
   showToast: (message: string, type?: Toast['type']) => void;
   onPendingCountChange?: () => void;
+  canManage?: boolean;
 }
 
 type RumorTab = 'pending' | 'suspected' | 'rejected';
@@ -48,7 +49,7 @@ const formatTime = (value?: number | null) => {
   return new Date(value).toLocaleString('zh-CN');
 };
 
-const AdminRumorPanel: React.FC<AdminRumorPanelProps> = ({ showToast, onPendingCountChange }) => {
+const AdminRumorPanel: React.FC<AdminRumorPanelProps> = ({ showToast, onPendingCountChange, canManage = true }) => {
   const [tab, setTab] = useState<RumorTab>('pending');
   const [targetType, setTargetType] = useState<RumorTargetFilter>('all');
   const [search, setSearch] = useState('');
@@ -117,6 +118,10 @@ const AdminRumorPanel: React.FC<AdminRumorPanelProps> = ({ showToast, onPendingC
   };
 
   const submitAction = async (item: RumorReviewItem, action: RumorAction, reason = '') => {
+    if (!canManage) {
+      showToast('当前账号只有查看权限，不能处理谣言审核', 'warning');
+      return;
+    }
     setActingId(item.id);
     try {
       await api.handleAdminRumor(item.targetType, item.targetId, action, reason);
@@ -167,6 +172,9 @@ const AdminRumorPanel: React.FC<AdminRumorPanelProps> = ({ showToast, onPendingC
   );
 
   const toggleRumorSelection = (itemId: string) => {
+    if (!canManage) {
+      return;
+    }
     setSelectedRumors((prev) => {
       const next = new Set(prev);
       if (next.has(itemId)) {
@@ -179,6 +187,9 @@ const AdminRumorPanel: React.FC<AdminRumorPanelProps> = ({ showToast, onPendingC
   };
 
   const toggleAllRumors = () => {
+    if (!canManage) {
+      return;
+    }
     if (selectableItems.length === 0) {
       return;
     }
@@ -192,6 +203,10 @@ const AdminRumorPanel: React.FC<AdminRumorPanelProps> = ({ showToast, onPendingC
   };
 
   const openBulkIgnoreModal = (scope: 'selected' | 'filter') => {
+    if (!canManage) {
+      showToast('当前账号只有查看权限，不能批量处理谣言审核', 'warning');
+      return;
+    }
     if (tab !== 'pending') {
       showToast('只能忽略待审核的谣言举报', 'warning');
       return;
@@ -222,6 +237,10 @@ const AdminRumorPanel: React.FC<AdminRumorPanelProps> = ({ showToast, onPendingC
   };
 
   const confirmBulkIgnore = async () => {
+    if (!canManage) {
+      showToast('当前账号只有查看权限，不能批量处理谣言审核', 'warning');
+      return;
+    }
     setBulkIgnoring(true);
     try {
       await api.batchAdminRumors(
@@ -254,6 +273,10 @@ const AdminRumorPanel: React.FC<AdminRumorPanelProps> = ({ showToast, onPendingC
   };
 
   const confirmReject = async () => {
+    if (!canManage) {
+      showToast('当前账号只有查看权限，不能驳回谣言举报', 'warning');
+      return;
+    }
     if (!rejectModal.item) {
       return;
     }
@@ -341,7 +364,7 @@ const AdminRumorPanel: React.FC<AdminRumorPanelProps> = ({ showToast, onPendingC
           />
         </div>
 
-        {tab === 'pending' && (
+        {tab === 'pending' && canManage && (
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed border-gray-300 bg-gray-50 px-3 py-2 text-xs font-sans">
             <label className="flex items-center gap-2 text-pencil">
               <input
@@ -396,7 +419,7 @@ const AdminRumorPanel: React.FC<AdminRumorPanelProps> = ({ showToast, onPendingC
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                   <div className="min-w-0 flex-1 space-y-4">
                     <div className="flex flex-wrap items-center gap-2 text-xs">
-                      {tab === 'pending' && item.pendingReportCount > 0 && (
+                      {tab === 'pending' && canManage && item.pendingReportCount > 0 && (
                         <input
                           type="checkbox"
                           className="accent-black"
@@ -461,51 +484,53 @@ const AdminRumorPanel: React.FC<AdminRumorPanelProps> = ({ showToast, onPendingC
                     </div>
                   </div>
 
-                  <div className="flex shrink-0 flex-wrap gap-2 lg:w-[220px] lg:flex-col">
-                    {item.pendingReportCount > 0 && (
+                  {canManage && (
+                    <div className="flex shrink-0 flex-wrap gap-2 lg:w-[220px] lg:flex-col">
+                      {item.pendingReportCount > 0 && (
+                        <SketchButton
+                          type="button"
+                          variant="secondary"
+                          className="h-10 px-3 text-xs"
+                          disabled={isActing}
+                          onClick={() => handleAction(item, 'ignore')}
+                        >
+                          <EyeOff className="mr-1 inline h-4 w-4" />
+                          忽略举报
+                        </SketchButton>
+                      )}
+                      <SketchButton
+                        type="button"
+                        className="h-10 px-3 text-xs"
+                        disabled={isActing}
+                        onClick={() => handleAction(item, 'mark')}
+                      >
+                        <CheckCircle2 className="mr-1 inline h-4 w-4" />
+                        判定疑似谣言
+                      </SketchButton>
                       <SketchButton
                         type="button"
                         variant="secondary"
                         className="h-10 px-3 text-xs"
                         disabled={isActing}
-                        onClick={() => handleAction(item, 'ignore')}
+                        onClick={() => handleAction(item, 'reject')}
                       >
-                        <EyeOff className="mr-1 inline h-4 w-4" />
-                        忽略举报
+                        <XCircle className="mr-1 inline h-4 w-4" />
+                        驳回举报
                       </SketchButton>
-                    )}
-                    <SketchButton
-                      type="button"
-                      className="h-10 px-3 text-xs"
-                      disabled={isActing}
-                      onClick={() => handleAction(item, 'mark')}
-                    >
-                      <CheckCircle2 className="mr-1 inline h-4 w-4" />
-                      判定疑似谣言
-                    </SketchButton>
-                    <SketchButton
-                      type="button"
-                      variant="secondary"
-                      className="h-10 px-3 text-xs"
-                      disabled={isActing}
-                      onClick={() => handleAction(item, 'reject')}
-                    >
-                      <XCircle className="mr-1 inline h-4 w-4" />
-                      驳回举报
-                    </SketchButton>
-                    {item.rumorStatus && (
-                      <SketchButton
-                        type="button"
-                        variant="secondary"
-                        className="h-10 px-3 text-xs"
-                        disabled={isActing}
-                        onClick={() => handleAction(item, 'clear')}
-                      >
-                        <RotateCcw className="mr-1 inline h-4 w-4" />
-                        取消谣言标记
-                      </SketchButton>
-                    )}
-                  </div>
+                      {item.rumorStatus && (
+                        <SketchButton
+                          type="button"
+                          variant="secondary"
+                          className="h-10 px-3 text-xs"
+                          disabled={isActing}
+                          onClick={() => handleAction(item, 'clear')}
+                        >
+                          <RotateCcw className="mr-1 inline h-4 w-4" />
+                          取消谣言标记
+                        </SketchButton>
+                      )}
+                    </div>
+                  )}
                 </div>
               </article>
             );

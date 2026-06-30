@@ -9,6 +9,8 @@ export const registerAdminFeedbackRoutes = (app, deps) => {
     db,
     requireAdmin,
     requireAdminCsrf,
+    requireAdminRead = (_req, _res, next) => next(),
+    requireAdminManage = (_req, _res, next) => next(),
     logAdminAction,
     resolveBanOptions,
     upsertBan,
@@ -49,7 +51,7 @@ export const registerAdminFeedbackRoutes = (app, deps) => {
     ...buildAdminIdentitySearchValues(item),
   ];
 
-  app.get('/api/admin/feedback', requireAdmin, (req, res) => {
+  app.get('/api/admin/feedback', requireAdmin, requireAdminRead, (req, res) => {
     const status = String(req.query.status || 'unread').trim();
     const search = String(req.query.search || '').trim();
     const page = Math.max(Number(req.query.page || 1), 1);
@@ -120,7 +122,7 @@ export const registerAdminFeedbackRoutes = (app, deps) => {
     });
   });
 
-  app.post('/api/admin/feedback/:id/action', requireAdmin, requireAdminCsrf, (req, res) => {
+  app.post('/api/admin/feedback/:id/action', requireAdmin, requireAdminCsrf, requireAdminManage, (req, res) => {
     const feedbackId = String(req.params.id || '').trim();
     const action = String(req.body?.action || '').trim();
     const reason = String(req.body?.reason || '').trim();
