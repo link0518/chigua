@@ -45,9 +45,15 @@ const readStoredHomeViewMode = (): HomeViewMode => {
 const parseHomeLocation = () => {
   const sharedPathMatch = window.location.pathname.match(/^\/post\/([^/]+)\/?$/);
   const searchParams = new URLSearchParams(window.location.search);
+  const rawHomeIndex = searchParams.get('homeIndex');
+  const parsedHomeIndex = rawHomeIndex === null || rawHomeIndex.trim() === '' ? NaN : Number(rawHomeIndex);
+  const homeIndex = Number.isFinite(parsedHomeIndex) && parsedHomeIndex >= 0
+    ? Math.floor(parsedHomeIndex)
+    : null;
   return {
     postId: sharedPathMatch ? decodeURIComponent(sharedPathMatch[1]) : '',
     commentId: searchParams.get('comment'),
+    homeIndex,
   };
 };
 
@@ -100,6 +106,7 @@ const HomeView: React.FC = () => {
   const handledRouteCommentKeyRef = useRef('');
   const routePostId = routeState.postId;
   const routeCommentId = routeState.commentId;
+  const routeHomeIndex = routeState.homeIndex;
   const routeCommentKey = routePostId && routeCommentId ? `${routePostId}:${routeCommentId}` : '';
   const allPosts = getHomePosts();
   const hiddenPostTags = state.hiddenPostTags;
@@ -127,7 +134,11 @@ const HomeView: React.FC = () => {
   const isLatestPost = boundedIndex === 0;
   const turnstileEnabled = state.settings.turnstileEnabled;
   const initialLoadLimitRef = useRef(
-    routePostId || preferredViewMode === 'focus' ? HOME_FOCUS_PAGE_SIZE : HOME_GRID_PAGE_SIZE
+    routePostId
+      ? Math.max(HOME_FOCUS_PAGE_SIZE, (routeHomeIndex ?? 0) + HOME_FOCUS_PAGE_SIZE)
+      : preferredViewMode === 'focus'
+        ? HOME_FOCUS_PAGE_SIZE
+        : HOME_GRID_PAGE_SIZE
   );
 
   const syncRouteState = useCallback(() => {
@@ -156,20 +167,23 @@ const HomeView: React.FC = () => {
 
   const navigateToHomeRoot = useCallback((replace = false) => {
     updateHistoryPath('/', replace);
-    setRouteState({ postId: '', commentId: null });
+    setRouteState({ postId: '', commentId: null, homeIndex: null });
   }, [updateHistoryPath]);
 
-  const openPostInFocus = useCallback((postId: string, options?: { commentId?: string | null; replace?: boolean }) => {
-    updateHistoryPath(buildPostPath(postId, options?.commentId || null), Boolean(options?.replace));
-    setRouteState({ postId, commentId: options?.commentId || null });
+  const openPostInFocus = useCallback((postId: string, options?: { commentId?: string | null; homeIndex?: number | null; replace?: boolean }) => {
+    updateHistoryPath(
+      buildPostPath(postId, options?.commentId || null, { homeIndex: options?.homeIndex ?? null }),
+      Boolean(options?.replace)
+    );
+    setRouteState({ postId, commentId: options?.commentId || null, homeIndex: options?.homeIndex ?? null });
     const targetIndex = posts.findIndex((item) => item.id === postId);
     if (targetIndex >= 0) {
       setCurrentIndex(targetIndex);
     }
   }, [posts, updateHistoryPath]);
 
-  const openPostInNewTab = useCallback((postId: string, commentId?: string | null) => {
-    const targetUrl = `${window.location.origin}${buildPostPath(postId, commentId)}`;
+  const openPostInNewTab = useCallback((postId: string, commentId?: string | null, homeIndex?: number | null) => {
+    const targetUrl = `${window.location.origin}${buildPostPath(postId, commentId, { homeIndex: homeIndex ?? null })}`;
     const newWindow = window.open(targetUrl, '_blank', 'noopener,noreferrer');
     if (newWindow) {
       newWindow.opener = null;
@@ -337,7 +351,7 @@ const HomeView: React.FC = () => {
       if (detail.commentId) {
         handledRouteCommentKeyRef.current = '';
       }
-      setRouteState({ postId: detail.postId, commentId: detail.commentId || null });
+      setRouteState({ postId: detail.postId, commentId: detail.commentId || null, homeIndex: null });
     };
     window.addEventListener('notification:navigate', handleNavigate as EventListener);
     return () => {
@@ -376,13 +390,27 @@ const HomeView: React.FC = () => {
     const shouldAutoOpenRouteComment = Boolean(routeCommentKey) && handledRouteCommentKeyRef.current !== routeCommentKey;
     const existingIndex = allPosts.findIndex((post) => post.id === routePostId);
     if (existingIndex >= 0) {
-      if (currentIndex !== existingIndex) {
-        setCurrentIndex(existingIndex);
+      const targetIndex = (
+        routeHomeIndex !== null
+        && allPosts[routeHomeIndex]?.id === routePostId
+      )
+        ? routeHomeIndex
+        : existingIndex;
+      if (currentIndex !== targetIndex) {
+        setCurrentIndex(targetIndex);
       }
       if (shouldAutoOpenRouteComment && routeCommentId) {
         handledRouteCommentKeyRef.current = routeCommentKey;
         openCommentModal(routePostId, routeCommentId);
       }
+      return;
+    }
+
+    if (routeHomeIndex !== null && routeHomeIndex >= allPosts.length && hasMore) {
+      if (loading || loadingMore) {
+        return;
+      }
+      loadMorePosts(Math.max(HOME_FOCUS_PAGE_SIZE, routeHomeIndex - allPosts.length + HOME_FOCUS_PAGE_SIZE));
       return;
     }
 
@@ -411,7 +439,22 @@ const HomeView: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [allPosts, currentIndex, navigateToHomeRoot, openCommentModal, routeCommentId, routeCommentKey, routePostId, showToast, upsertHomePost]);
+  }, [
+    allPosts,
+    currentIndex,
+    hasMore,
+    loadMorePosts,
+    loading,
+    loadingMore,
+    navigateToHomeRoot,
+    openCommentModal,
+    routeCommentId,
+    routeCommentKey,
+    routeHomeIndex,
+    routePostId,
+    showToast,
+    upsertHomePost,
+  ]);
 
   useEffect(() => {
     if (effectiveViewMode !== 'focus' || !currentPost?.id) {
@@ -494,7 +537,7 @@ const HomeView: React.FC = () => {
       const nextIndex = Math.min(currentIndex + 1, posts.length - 1);
       setCurrentIndex(nextIndex);
       if (routePostId && posts[nextIndex]) {
-        openPostInFocus(posts[nextIndex].id);
+        openPostInFocus(posts[nextIndex].id, { homeIndex: nextIndex });
       }
       setPendingAdvance(false);
     }
@@ -567,7 +610,7 @@ const HomeView: React.FC = () => {
       const targetPost = posts[nextIndex];
       setCurrentIndex(nextIndex);
       if (routePostId && targetPost) {
-        openPostInFocus(targetPost.id);
+        openPostInFocus(targetPost.id, { homeIndex: nextIndex });
       }
       setAnimate(false);
     }, 200);
@@ -588,7 +631,7 @@ const HomeView: React.FC = () => {
       const targetPost = posts[nextIndex];
       setCurrentIndex(nextIndex);
       if (routePostId && targetPost) {
-        openPostInFocus(targetPost.id);
+        openPostInFocus(targetPost.id, { homeIndex: nextIndex });
       }
       setAnimate(false);
     }, 200);
@@ -843,14 +886,16 @@ const HomeView: React.FC = () => {
   const renderGridMode = () => (
     <>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:gap-5">
-        {posts.map((post) => (
+        {posts.map((post) => {
+          const homeIndex = allPosts.findIndex((item) => item.id === post.id);
+          return (
           <HomePostGridCard
             key={post.id}
             post={post}
             isLiked={isLiked(post.id)}
             isDisliked={isDisliked(post.id)}
             isFavorited={isFavorited(post.id)}
-            onOpen={() => openPostInNewTab(post.id)}
+            onOpen={() => openPostInNewTab(post.id, null, homeIndex >= 0 ? homeIndex : null)}
             onLike={() => handleLike(post.id)}
             onDislike={() => handleDislike(post.id)}
             onFavorite={() => handleFavorite(post.id)}
@@ -858,7 +903,8 @@ const HomeView: React.FC = () => {
             onReport={() => setReportModal({ isOpen: true, postId: post.id, content: post.content })}
             onTagClick={openTagSearch}
           />
-        ))}
+          );
+        })}
       </div>
 
       {hasMore && (

@@ -21,10 +21,17 @@ export const copyTextToClipboard = async (text: string) => {
   }
 };
 
-export const buildPostPath = (postId: string, commentId?: string | null) => {
+export const buildPostPath = (
+  postId: string,
+  commentId?: string | null,
+  options?: { homeIndex?: number | null }
+) => {
   const params = new URLSearchParams();
   if (commentId) {
     params.set('comment', commentId);
+  }
+  if (typeof options?.homeIndex === 'number' && Number.isFinite(options.homeIndex) && options.homeIndex >= 0) {
+    params.set('homeIndex', String(Math.floor(options.homeIndex)));
   }
   const qs = params.toString();
   const basePath = `/post/${encodeURIComponent(postId)}`;
