@@ -1,6 +1,7 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@config "./tailwind.config.cjs";
+@source "./node_modules/@cloudflare/kumo/dist/**/*.{js,jsx,ts,tsx}";
+@import "@cloudflare/kumo/styles/tailwind";
+@import "tailwindcss";
 
 body {
   background-color: #f9f7f1;
@@ -354,6 +355,10 @@ body.theme-wiki {
   letter-spacing: 0;
 }
 
+.wiki-page :where(button, a, [role='button'], input, textarea, select) {
+  -webkit-tap-highlight-color: transparent;
+}
+
 .pattern-grid-lg {
   background-image:
     radial-gradient(circle at top right, rgba(84, 99, 84, 0.08), transparent 38%),
@@ -361,6 +366,27 @@ body.theme-wiki {
     linear-gradient(90deg, rgba(84, 99, 84, 0.03) 1px, transparent 1px);
   background-position: 0 0, -1px -1px, -1px -1px;
   background-size: auto, 32px 32px, 32px 32px;
+}
+
+@keyframes wiki-row-enter {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes wiki-skeleton-pulse {
+  0%,
+  100% {
+    opacity: 0.66;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 
 @keyframes wiki-feedback-enter {
@@ -407,6 +433,372 @@ body.theme-wiki {
   }
 }
 
+.wiki-motion-button {
+  transition-property: color, background-color, border-color, box-shadow, transform, opacity;
+  transition-duration: 160ms;
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.wiki-motion-button:not(:disabled):active {
+  transform: translate3d(0, 1px, 0) scale(0.99);
+}
+
+@media (hover: hover) {
+  .wiki-motion-button:not(:disabled):hover {
+    transform: translate3d(0, -1px, 0);
+  }
+}
+
+.wiki-focus-ring {
+  outline: none;
+}
+
+.wiki-focus-ring:focus-visible {
+  box-shadow:
+    0 0 0 2px var(--kumo-color-surface, #fff),
+    0 0 0 4px color-mix(in srgb, var(--kumo-color-contrast, #202425) 24%, transparent);
+}
+
+.wiki-surface-soft {
+  background-image:
+    linear-gradient(180deg, color-mix(in srgb, var(--kumo-color-tint, #f4f5f5) 42%, transparent), transparent 72%);
+}
+
+.wiki-detail-command {
+  background-image:
+    linear-gradient(180deg, color-mix(in srgb, var(--kumo-color-surface, #fff) 92%, transparent), color-mix(in srgb, var(--kumo-color-tint, #f4f5f5) 32%, transparent));
+  box-shadow:
+    0 1px 0 color-mix(in srgb, var(--kumo-color-base, #fff) 78%, transparent) inset,
+    0 10px 28px color-mix(in srgb, var(--kumo-color-strong, #111827) 7%, transparent);
+}
+
+.wiki-entry-cover {
+  box-shadow:
+    0 1px 0 color-mix(in srgb, var(--kumo-color-base, #fff) 78%, transparent) inset,
+    0 18px 46px color-mix(in srgb, var(--kumo-color-strong, #111827) 6%, transparent);
+}
+
+.wiki-reading-card {
+  box-shadow:
+    0 1px 0 color-mix(in srgb, var(--kumo-color-base, #fff) 82%, transparent) inset,
+    0 10px 28px color-mix(in srgb, var(--kumo-color-strong, #111827) 5%, transparent);
+}
+
+.wiki-mobile-action-bar {
+  padding-bottom: calc(0.75rem + env(safe-area-inset-bottom));
+}
+
+.wiki-detail-panel {
+  overscroll-behavior: contain;
+}
+
+.wiki-detail-main {
+  padding-top: calc(1.25rem + env(safe-area-inset-top));
+  padding-bottom: calc(8.5rem + env(safe-area-inset-bottom));
+}
+
+.wiki-detail-aside {
+  padding-bottom: calc(7.5rem + env(safe-area-inset-bottom));
+}
+
+.wiki-form-modal-panel {
+  max-height: min(calc(100vh - 0.75rem - env(safe-area-inset-top)), 60rem);
+}
+
+@supports (height: 100dvh) {
+  .wiki-form-modal-panel {
+    max-height: min(calc(100dvh - 0.75rem - env(safe-area-inset-top)), 60rem);
+  }
+}
+
+.wiki-modal-footer {
+  padding-bottom: calc(1.25rem + env(safe-area-inset-bottom));
+}
+
+@media (min-width: 640px) {
+  .wiki-form-modal-panel {
+    max-height: min(92vh, 60rem);
+  }
+
+  .wiki-modal-footer {
+    padding-bottom: 1.25rem;
+  }
+
+  @supports (height: 100dvh) {
+    .wiki-form-modal-panel {
+      max-height: min(92dvh, 60rem);
+    }
+  }
+}
+
+@media (min-width: 768px) {
+  .wiki-detail-main {
+    padding-top: 2rem;
+    padding-bottom: 5rem;
+  }
+
+  .wiki-detail-aside {
+    padding-bottom: 1.5rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .wiki-detail-aside {
+    padding-bottom: 2.5rem;
+  }
+}
+
+.wiki-page .wiki-solid-action {
+  --kumo-button-emphasis-bg: var(--kumo-color-contrast, #202425) !important;
+  --kumo-button-emphasis-gradient-start: color-mix(in srgb, var(--kumo-color-contrast, #202425) 88%, var(--kumo-color-base, #fff)) !important;
+  --kumo-button-emphasis-gradient-end: var(--kumo-color-contrast, #202425) !important;
+  --kumo-button-emphasis-ring: color-mix(in srgb, var(--kumo-color-contrast, #202425) 32%, transparent) !important;
+  border-color: var(--kumo-color-contrast, #202425);
+  background: var(--kumo-color-contrast, #202425);
+  color: var(--kumo-color-inverse, #fffef8);
+  box-shadow:
+    0 1px 0 color-mix(in srgb, var(--kumo-color-base, #fff) 18%, transparent) inset,
+    0 10px 22px color-mix(in srgb, var(--kumo-color-contrast, #202425) 16%, transparent);
+}
+
+.wiki-page .wiki-solid-action:focus-visible {
+  box-shadow:
+    0 0 0 2px var(--kumo-color-base, #fff),
+    0 0 0 4px color-mix(in srgb, var(--kumo-color-contrast, #202425) 30%, transparent),
+    0 10px 22px color-mix(in srgb, var(--kumo-color-contrast, #202425) 16%, transparent);
+}
+
+@media (hover: hover) {
+  .wiki-page .wiki-solid-action:not(:disabled):hover {
+    --kumo-button-emphasis-bg: color-mix(in srgb, var(--kumo-color-contrast, #202425) 88%, var(--kumo-color-base, #fff)) !important;
+    --kumo-button-emphasis-gradient-start: color-mix(in srgb, var(--kumo-color-contrast, #202425) 82%, var(--kumo-color-base, #fff)) !important;
+    --kumo-button-emphasis-gradient-end: color-mix(in srgb, var(--kumo-color-contrast, #202425) 92%, var(--kumo-color-base, #fff)) !important;
+    border-color: color-mix(in srgb, var(--kumo-color-contrast, #202425) 88%, var(--kumo-color-base, #fff));
+    background: color-mix(in srgb, var(--kumo-color-contrast, #202425) 88%, var(--kumo-color-base, #fff));
+    box-shadow:
+      0 1px 0 color-mix(in srgb, var(--kumo-color-base, #fff) 18%, transparent) inset,
+      0 12px 26px color-mix(in srgb, var(--kumo-color-contrast, #202425) 18%, transparent);
+  }
+}
+
+.wiki-detail-action-group {
+  -webkit-mask-image: none;
+  mask-image: none;
+  scrollbar-width: none;
+}
+
+.wiki-detail-action-group::-webkit-scrollbar {
+  display: none;
+}
+
+@media (min-width: 1024px) {
+  .wiki-detail-action-group {
+    mask-image: none;
+    border: 1px solid var(--kumo-color-line, #d7dcdf);
+    border-radius: 0.5rem;
+    background: color-mix(in srgb, var(--kumo-color-tint, #f4f5f5) 38%, transparent);
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--kumo-color-base, #fff) 74%, transparent);
+    padding: 0.25rem;
+  }
+}
+
+.wiki-resource-row {
+  position: relative;
+  overflow: hidden;
+  transition-property: background-color, box-shadow, transform;
+  transition-duration: 180ms;
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.wiki-resource-row::before {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  width: 3px;
+  background: var(--kumo-color-contrast, #202425);
+  opacity: 0;
+  transform: scaleY(0.35);
+  transform-origin: center;
+  transition: opacity 160ms ease, transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (hover: hover) {
+  .wiki-resource-row:hover {
+    transform: translate3d(0, -1px, 0);
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--kumo-color-contrast, #202425) 8%, transparent);
+  }
+
+  .wiki-resource-row:hover::before {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
+
+.wiki-resource-row:active {
+  transform: translate3d(0, 1px, 0);
+}
+
+.wiki-entry-card {
+  position: relative;
+  overflow: hidden;
+  transition-property: background-color, border-color, box-shadow, transform;
+  transition-duration: 180ms;
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.wiki-entry-card::before {
+  content: '';
+  position: absolute;
+  inset-inline: 1rem;
+  top: 0;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--kumo-color-contrast, #202425);
+  opacity: 0;
+  transform: translateY(-2px);
+  transition: opacity 160ms ease, transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (hover: hover) {
+  .wiki-entry-card:hover {
+    transform: translate3d(0, -2px, 0);
+    border-color: color-mix(in srgb, var(--kumo-color-contrast, #202425) 24%, var(--kumo-color-line, #d7dcdf));
+    box-shadow: 0 16px 40px color-mix(in srgb, var(--kumo-color-contrast, #202425) 8%, transparent);
+  }
+
+  .wiki-entry-card:hover::before {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.wiki-entry-card:active {
+  transform: translate3d(0, 1px, 0);
+}
+
+.wiki-skeleton-card {
+  animation: wiki-skeleton-pulse 1200ms ease-in-out infinite;
+}
+
+.wiki-empty-state {
+  min-height: min(28rem, 70vh);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.wiki-row-enter {
+  animation: wiki-row-enter 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: calc(var(--wiki-row-index, 0) * 34ms);
+}
+
+.wiki-action-strip {
+  scrollbar-gutter: stable;
+  mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 1rem), transparent 100%);
+}
+
+.wiki-detail-action-group.wiki-action-strip {
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+.wiki-chip-button {
+  transition-property: color, background-color, border-color, box-shadow, transform;
+  transition-duration: 160ms;
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (hover: hover) {
+  .wiki-chip-button:hover {
+    transform: translate3d(0, -1px, 0);
+    box-shadow: 0 6px 18px color-mix(in srgb, var(--kumo-color-contrast, #202425) 10%, transparent);
+  }
+}
+
+.wiki-chip-button:active {
+  transform: translate3d(0, 1px, 0);
+}
+
+.wiki-timeline {
+  position: relative;
+}
+
+.wiki-timeline-item {
+  position: relative;
+  padding: 0 0 1rem 1.5rem;
+}
+
+.wiki-timeline-item:last-child {
+  padding-bottom: 0;
+}
+
+.wiki-timeline-item::before {
+  content: '';
+  position: absolute;
+  left: 0.35rem;
+  top: 0.8rem;
+  bottom: -0.3rem;
+  width: 1px;
+  background: var(--kumo-color-line, #d7dcdf);
+}
+
+.wiki-timeline-item:last-child::before {
+  display: none;
+}
+
+.wiki-timeline-dot {
+  position: absolute;
+  left: 0;
+  top: 0.72rem;
+  width: 0.75rem;
+  height: 0.75rem;
+  border: 2px solid var(--kumo-color-base, #fff);
+  border-radius: 999px;
+  background: var(--kumo-color-contrast, #202425);
+  box-shadow: 0 0 0 1px var(--kumo-color-line, #d7dcdf);
+}
+
+.wiki-timeline-card {
+  transition-property: border-color, box-shadow, transform;
+  transition-duration: 160ms;
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (hover: hover) {
+  .wiki-timeline-card:hover {
+    border-color: color-mix(in srgb, var(--kumo-color-contrast, #202425) 20%, var(--kumo-color-line, #d7dcdf));
+    box-shadow: 0 12px 32px color-mix(in srgb, var(--kumo-color-contrast, #202425) 7%, transparent);
+  }
+}
+
+.wiki-form-step {
+  position: relative;
+  transition: background-color 160ms ease, color 160ms ease;
+}
+
+.wiki-form-step::before {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  width: 2px;
+  background: var(--kumo-color-contrast, #202425);
+  opacity: 0;
+  transform: scaleY(0.5);
+  transition: opacity 160ms ease, transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.wiki-form-step:first-child::before {
+  opacity: 1;
+  transform: scaleY(1);
+}
+
+.wiki-editor-toolbar {
+  scrollbar-gutter: stable;
+  mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 1.25rem), transparent 100%);
+}
+
 .wiki-feedback-enter {
   animation: wiki-feedback-enter 220ms cubic-bezier(0.22, 1, 0.36, 1);
 }
@@ -434,8 +826,19 @@ body.theme-wiki {
   .wiki-feedback-enter,
   .wiki-feedback-progress,
   .wiki-modal-backdrop-enter,
-  .wiki-modal-panel-enter {
+  .wiki-modal-panel-enter,
+  .wiki-row-enter,
+  .wiki-skeleton-card {
     animation: none !important;
+  }
+
+  .wiki-motion-button,
+  .wiki-resource-row,
+  .wiki-chip-button,
+  .wiki-form-step,
+  .wiki-resource-row::before,
+  .wiki-form-step::before {
+    transition: none !important;
   }
 }
 
@@ -494,6 +897,41 @@ body.theme-wiki {
 
 ::-webkit-scrollbar-thumb:hover {
   background: #555;
+}
+
+.wiki-page * {
+  scrollbar-color: color-mix(in srgb, var(--kumo-text-muted, #6b7280) 35%, transparent) transparent;
+  scrollbar-width: thin;
+}
+
+.wiki-page *::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.wiki-page *::-webkit-scrollbar-track {
+  background: transparent;
+  border-left: 0;
+}
+
+.wiki-page *::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--kumo-text-muted, #6b7280) 35%, transparent);
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+
+.wiki-page *::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--kumo-text-muted, #6b7280) 52%, transparent);
+}
+
+.wiki-scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.wiki-scrollbar-none::-webkit-scrollbar {
+  display: none;
 }
 
 @keyframes markdown-photo-viewer-spin {

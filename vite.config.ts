@@ -3,6 +3,7 @@ import fs from 'fs';
 import { execSync } from 'child_process';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 
 const readPackageVersion = () => {
   try {
@@ -63,7 +64,7 @@ export default defineConfig(({ mode }) => {
           },
         },
       },
-      plugins: [react(), versionedFaviconPlugin(appVersion)],
+      plugins: [tailwindcss(), react(), versionedFaviconPlugin(appVersion)],
       define: {
         'import.meta.env.VITE_APP_VERSION': JSON.stringify(appVersion)
       },
@@ -80,6 +81,21 @@ export default defineConfig(({ mode }) => {
 
               const normalized = id.replace(/\\/g, '/');
               if (normalized.includes('/node_modules/recharts/')) return 'recharts';
+              if (normalized.includes('/node_modules/@uiw/react-codemirror/')) return 'markdown-editor-ui';
+              if (normalized.includes('/node_modules/@lezer/')) return 'markdown-editor-lezer';
+              if (normalized.includes('/node_modules/@codemirror/lang-markdown/')) return 'markdown-editor-markdown';
+              if (
+                normalized.includes('/node_modules/@codemirror/state/') ||
+                normalized.includes('/node_modules/@codemirror/view/')
+              ) {
+                return 'markdown-editor-core';
+              }
+              if (
+                normalized.includes('/node_modules/@codemirror/') ||
+                normalized.includes('/node_modules/codemirror/')
+              ) {
+                return 'markdown-editor-extensions';
+              }
               if (normalized.includes('/node_modules/react-dom/')) return 'react-vendor';
               if (normalized.includes('/node_modules/react/')) return 'react-vendor';
               if (normalized.includes('/node_modules/scheduler/')) return 'react-vendor';
