@@ -114,7 +114,13 @@ sync_repo() {
 
 install_deps() {
   log "Installing dependencies..."
-  npm install
+  npm install --include=optional
+  if ! node -e "require('@tailwindcss/oxide')" >/dev/null 2>&1; then
+    log "Tailwind native binding is missing; reinstalling dependencies..."
+    rm -rf node_modules
+    npm install --include=optional
+    node -e "require('@tailwindcss/oxide')"
+  fi
 }
 
 build_app() {
