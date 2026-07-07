@@ -164,6 +164,19 @@ install_deps() {
 
 build_app() {
   log "Building frontend..."
+  BUILD_NODE_HEAP_MB="${BUILD_NODE_HEAP_MB:-2048}"
+  case " ${NODE_OPTIONS:-} " in
+    *" --max-old-space-size="*) ;;
+    *" --max_old_space_size="*) ;;
+    *)
+      if [ -z "${NODE_OPTIONS:-}" ]; then
+        export NODE_OPTIONS="--max-old-space-size=${BUILD_NODE_HEAP_MB}"
+      else
+        export NODE_OPTIONS="${NODE_OPTIONS} --max-old-space-size=${BUILD_NODE_HEAP_MB}"
+      fi
+      ;;
+  esac
+  log "Using NODE_OPTIONS=${NODE_OPTIONS}"
   npm run build
 }
 
