@@ -59,8 +59,12 @@ const WikiView: React.FC = () => {
   const slug = useMemo(() => getSlugFromPath(path), [path]);
   const isDetail = Boolean(slug);
   const [detailMounted, setDetailMounted] = useState(isDetail);
-  const [detailVisible, setDetailVisible] = useState(isDetail);
+  const [detailVisible, setDetailVisible] = useState(false);
   const detailActive = isDetail || detailMounted;
+  const detailTransitionStyle = useMemo(() => ({
+    '--wiki-detail-enter-ms': `${WIKI_DETAIL_ENTER_MS}ms`,
+    '--wiki-detail-exit-ms': `${WIKI_DETAIL_EXIT_MS}ms`,
+  }) as React.CSSProperties, []);
   const listUrl = useMemo(
     () => createWikiListUrl({ query, tag: activeTag, sortBy, page }),
     [activeTag, page, query, sortBy],
@@ -107,9 +111,12 @@ const WikiView: React.FC = () => {
 
     if (isDetail) {
       setDetailMounted(true);
+      setDetailVisible(false);
       detailAnimationFrameRef.current = window.requestAnimationFrame(() => {
-        setDetailVisible(true);
-        detailAnimationFrameRef.current = null;
+        detailAnimationFrameRef.current = window.requestAnimationFrame(() => {
+          setDetailVisible(true);
+          detailAnimationFrameRef.current = null;
+        });
       });
       return;
     }
@@ -357,31 +364,20 @@ const WikiView: React.FC = () => {
       />
 
       <div
-        className={`pointer-events-none fixed inset-0 right-0 z-[60] w-full transition-opacity motion-reduce:transition-none lg:left-80 lg:w-auto 2xl:left-auto 2xl:w-[1300px] ${detailVisible ? 'opacity-100' : 'opacity-0'}`}
-        style={{
-          transitionDuration: `${detailVisible ? WIKI_DETAIL_ENTER_MS : WIKI_DETAIL_EXIT_MS}ms`,
-          transitionTimingFunction: detailVisible ? 'cubic-bezier(0.0, 0, 0.2, 1)' : 'cubic-bezier(0.4, 0, 1, 1)',
-        }}
+        className={`wiki-detail-overlay pointer-events-none fixed inset-0 right-0 z-[60] w-full lg:left-80 lg:w-auto 2xl:left-auto 2xl:w-[1300px] ${detailVisible ? 'is-open' : ''}`}
+        style={detailTransitionStyle}
       >
         <button
           type="button"
           aria-label="关闭瓜条详情"
-          className={`absolute inset-0 z-0 bg-kumo-scrim/30 backdrop-blur-sm transition-opacity motion-reduce:transition-none lg:hidden ${detailActive ? 'pointer-events-auto' : 'pointer-events-none'} ${detailVisible ? 'opacity-100' : 'opacity-0'}`}
-          style={{
-            transitionDuration: `${detailVisible ? WIKI_DETAIL_ENTER_MS : WIKI_DETAIL_EXIT_MS}ms`,
-            transitionTimingFunction: detailVisible ? 'cubic-bezier(0.0, 0, 0.2, 1)' : 'cubic-bezier(0.4, 0, 1, 1)',
-          }}
+          className={`wiki-detail-scrim absolute inset-0 z-0 lg:hidden ${detailActive ? 'pointer-events-auto' : 'pointer-events-none'}`}
           onClick={() => navigateTo(listUrl)}
         />
         <div
-          className={`absolute inset-y-0 right-0 z-10 w-full overflow-hidden bg-kumo-overlay transition-[transform,opacity,box-shadow,border-color] motion-reduce:transition-none lg:border-l ${detailActive ? 'pointer-events-auto' : 'pointer-events-none'} ${detailVisible ? 'translate-x-0 border-kumo-line opacity-100 shadow-2xl' : 'translate-x-full border-transparent opacity-0 shadow-none'}`}
-          style={{
-            transitionDuration: `${detailVisible ? WIKI_DETAIL_ENTER_MS : WIKI_DETAIL_EXIT_MS}ms`,
-            transitionTimingFunction: detailVisible ? 'cubic-bezier(0.0, 0, 0.2, 1)' : 'cubic-bezier(0.4, 0, 1, 1)',
-          }}
+          className={`wiki-detail-shell absolute inset-y-0 right-0 z-10 w-full overflow-hidden bg-kumo-overlay lg:border-l ${detailActive ? 'pointer-events-auto' : 'pointer-events-none'}`}
         >
           <div
-            className={`absolute inset-y-0 right-0 w-full min-w-0 transition-[opacity,transform,filter] motion-reduce:transition-none ${detailVisible ? 'translate-x-0 opacity-100 delay-[60ms] duration-180 ease-out blur-0' : 'translate-x-3 opacity-0 delay-0 duration-120 ease-in blur-[2px]'}`}
+            className="wiki-detail-content absolute inset-y-0 right-0 w-full min-w-0"
           >
             {detailActive && (
               <WikiEntryDetail
