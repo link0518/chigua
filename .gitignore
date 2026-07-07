@@ -23,6 +23,7 @@ CLAUDE.md
 .codex
 .cursor
 .trellis
+.superpowers
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

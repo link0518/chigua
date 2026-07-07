@@ -13,6 +13,7 @@ import {
 import { copyTextToClipboard } from '../clipboard';
 import MarkdownRenderer from '../MarkdownRenderer';
 import WikiFloatingFeedback from './WikiFeedback';
+import WikiLoadingScreen from './WikiLoadingScreen';
 import { useWikiFeedback } from './wikiHooks';
 import type { WikiEntry, WikiRevision } from './wikiTypes';
 import {
@@ -286,9 +287,11 @@ const WikiEntryDetail: React.FC<WikiEntryDetailProps> = ({
 
   if (loading) {
     return (
-      <div className="flex h-full w-full items-center justify-center bg-kumo-overlay text-sm text-kumo-subtle">
-        档案读取中...
-      </div>
+      <WikiLoadingScreen
+        variant="detail"
+        title="正在读取档案详情"
+        description="同步记录叙述、版本历史和分享信息"
+      />
     );
   }
 

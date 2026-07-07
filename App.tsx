@@ -32,6 +32,7 @@ import AppViewRenderer from '@/features/app/AppViewRenderer';
 import { getPathForView, resolveViewFromPath } from '@/features/app/routing';
 import { useAccessStatus } from '@/features/app/hooks/useAccessStatus';
 import { useStreakCelebration } from '@/features/app/hooks/useStreakCelebration';
+import WikiLoadingScreen from './components/wiki/WikiLoadingScreen';
 
 const syncDocumentThemeClass = (className: string, enabled: boolean) => {
   document.documentElement.classList.toggle(className, enabled);
@@ -672,9 +673,7 @@ const App: React.FC = () => {
         <React.Suspense
           fallback={(
             currentView === ViewType.WIKI ? (
-              <div aria-busy="true" className="wiki-page flex min-h-screen items-center justify-center bg-surface px-6 text-on-surface-variant">
-                正在整理档案...
-              </div>
+              <WikiLoadingScreen />
             ) : (
               <div
                 aria-busy="true"
