@@ -54,7 +54,7 @@ copy .env.example .env.local
 | `VITE_TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile 站点与服务端校验密钥。 |
 | `IMGBED_BASE_URL` / `IMGBED_TOKEN` | 服务端图片上传代理配置；缺失时图片上传不可用。 |
 | `FINGERPRINT_SALT` | 客户端指纹哈希盐；缺失时回退到 `SESSION_SECRET` 或内置默认值。 |
-| `SITE_URL` | 生产站点地址，用于 SEO、分享链接与 sitemap，默认 `https://933211.xyz`。 |
+| `SITE_URL` | 生产站点地址，用于 SEO、分享链接与 sitemap；请在本地或部署环境中配置真实域名，不要提交私有站点信息。 |
 
 ### 4. 初始化数据
 
