@@ -173,7 +173,7 @@ install_deps() {
 
 build_app() {
   log "Building frontend..."
-  BUILD_NODE_HEAP_MB="${BUILD_NODE_HEAP_MB:-2048}"
+  BUILD_NODE_HEAP_MB="${BUILD_NODE_HEAP_MB:-1536}"
   case " ${NODE_OPTIONS:-} " in
     *" --max-old-space-size="*) ;;
     *" --max_old_space_size="*) ;;

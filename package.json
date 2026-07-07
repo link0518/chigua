@@ -13,6 +13,8 @@
     "seo:generate": "node server/seo-generate.js",
     "prebuild": "node scripts/generate-meme-manifest.mjs",
     "build": "vite build",
+    "deploy:web": "node scripts/deploy-dist.mjs",
+    "deploy:app": "node scripts/deploy-app.mjs",
     "preview": "vite preview",
     "perf:budget": "node scripts/perf-budget.mjs",
     "test:server": "node scripts/run-server-tests.mjs"
