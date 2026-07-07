@@ -34,14 +34,14 @@ ensure_node() {
   if require_cmd node; then
     local major
     major="$(node -v | sed 's/v//' | cut -d. -f1)"
-    if [ "$major" -ge 18 ]; then
+    if [ "$major" -ge 20 ]; then
       return
     fi
   fi
-  log "Installing Node.js 18..."
+  log "Installing Node.js 20..."
   as_root apt-get update -y
   as_root apt-get install -y curl
-  curl -fsSL https://deb.nodesource.com/setup_18.x | as_root bash -
+  curl -fsSL https://deb.nodesource.com/setup_20.x | as_root bash -
   as_root apt-get install -y nodejs
 }
 
@@ -121,6 +121,42 @@ sync_repo_force() {
   git clean -fd
 }
 
+install_tailwind_oxide_binding() {
+  local oxide_version platform arch libc_suffix oxide_package
+  oxide_version="$(node -p "require('./node_modules/@tailwindcss/oxide/package.json').version")"
+  platform="$(node -p "process.platform")"
+  arch="$(node -p "process.arch")"
+
+  if [ "$platform" != "linux" ]; then
+    log "Unsupported Tailwind native binding fallback platform: ${platform}/${arch}"
+    return 1
+  fi
+
+  libc_suffix="gnu"
+  if command -v ldd >/dev/null 2>&1 && ldd --version 2>&1 | grep -qi musl; then
+    libc_suffix="musl"
+  fi
+
+  case "$arch" in
+    x64)
+      oxide_package="@tailwindcss/oxide-linux-x64-${libc_suffix}@${oxide_version}"
+      ;;
+    arm64)
+      oxide_package="@tailwindcss/oxide-linux-arm64-${libc_suffix}@${oxide_version}"
+      ;;
+    arm)
+      oxide_package="@tailwindcss/oxide-linux-arm-gnueabihf@${oxide_version}"
+      ;;
+    *)
+      log "Unsupported Tailwind native binding fallback architecture: ${arch}"
+      return 1
+      ;;
+  esac
+
+  log "Installing Tailwind native binding fallback: ${oxide_package}"
+  npm install --include=optional --no-save --package-lock=false "$oxide_package"
+}
+
 install_deps() {
   log "Installing dependencies..."
   npm install --include=optional
@@ -128,7 +164,10 @@ install_deps() {
     log "Tailwind native binding is missing; reinstalling dependencies..."
     rm -rf node_modules
     npm install --include=optional
-    node -e "require('@tailwindcss/oxide')"
+    if ! node -e "require('@tailwindcss/oxide')" >/dev/null 2>&1; then
+      install_tailwind_oxide_binding
+      node -e "require('@tailwindcss/oxide')"
+    fi
   fi
 }
 
