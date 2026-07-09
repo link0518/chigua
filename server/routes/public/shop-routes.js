@@ -1,5 +1,5 @@
 import {
-  DAILY_CLAIM_COINS,
+  DAILY_CLAIM_COINS as DEFAULT_DAILY_CLAIM_COINS,
   ensureDefaultOwned,
   getFrameById,
   getShopCatalogItems,
@@ -26,7 +26,17 @@ export const registerPublicShopRoutes = (app, deps) => {
     requireFingerprint,
     formatDateKey,
     getShopEnabled = () => true,
+    getShopDailyClaimCoins = () => DEFAULT_DAILY_CLAIM_COINS,
   } = deps;
+
+  const resolveDailyClaimCoins = () => {
+    if (typeof getShopDailyClaimCoins !== 'function') {
+      return DEFAULT_DAILY_CLAIM_COINS;
+    }
+    const n = Math.trunc(Number(getShopDailyClaimCoins()));
+    if (!Number.isFinite(n) || n < 0) return DEFAULT_DAILY_CLAIM_COINS;
+    return Math.min(n, 100000);
+  };
 
   const assertShopOpen = (res) => {
     if (typeof getShopEnabled === 'function' && !getShopEnabled()) {
@@ -159,7 +169,7 @@ export const registerPublicShopRoutes = (app, deps) => {
       ownedFramesMeta: profile.ownedFrames,
       ownedNameStylesMeta: profile.ownedNameStyles,
       canClaimDaily: profile.lastDailyClaimDate !== today,
-      dailyClaimCoins: DAILY_CLAIM_COINS,
+      dailyClaimCoins: resolveDailyClaimCoins(),
       catalog: catalog.map((item) => {
         const own = findOwnership(profile.ownedFrames, item.id);
         const priceTiers = Array.isArray(item.priceTiers) ? item.priceTiers : [];
@@ -218,17 +228,18 @@ export const registerPublicShopRoutes = (app, deps) => {
       return res.status(400).json({ error: '今日已领取瓜子' });
     }
 
+    const claimAmount = resolveDailyClaimCoins();
     db.prepare(
       `
       UPDATE user_cosmetics
       SET coins = ?, last_daily_claim_date = ?, updated_at = ?
       WHERE identity_key = ?
       `
-    ).run(profile.coins + DAILY_CLAIM_COINS, today, Date.now(), fingerprint);
+    ).run(profile.coins + claimAmount, today, Date.now(), fingerprint);
 
     return res.json({
       ...buildShopPayload(getOrCreateProfile(fingerprint)),
-      claimed: DAILY_CLAIM_COINS,
+      claimed: claimAmount,
     });
   });
 

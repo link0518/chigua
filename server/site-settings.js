@@ -4,6 +4,9 @@ import { maskWecomWebhookUrl, normalizeWecomWebhookUrl } from './services/wecom-
 const SETTINGS_KEY_TURNSTILE_ENABLED = 'turnstile_enabled';
 const SETTINGS_KEY_CNY_THEME_ENABLED = 'cny_theme_enabled';
 const SETTINGS_KEY_SHOP_ENABLED = 'shop_enabled';
+const SETTINGS_KEY_SHOP_DAILY_CLAIM_COINS = 'shop_daily_claim_coins';
+const SHOP_DAILY_CLAIM_COINS_DEFAULT = 10;
+const SHOP_DAILY_CLAIM_COINS_MAX = 100000;
 const SETTINGS_KEY_DEFAULT_POST_TAGS = 'default_post_tags';
 const SETTINGS_KEY_RATE_LIMITS = 'rate_limits';
 const SETTINGS_KEY_WECOM_WEBHOOK = 'wecom_webhook';
@@ -220,6 +223,21 @@ export const createSiteSettingsService = ({ db, turnstileSecretKey }) => {
     return String(stored).trim() === '1';
   };
 
+  const sanitizeShopDailyClaimCoins = (input) => Math.min(
+    Math.max(toSafeInt(input, SHOP_DAILY_CLAIM_COINS_DEFAULT), 0),
+    SHOP_DAILY_CLAIM_COINS_MAX
+  );
+
+  /** 每日签到瓜子，默认 10 */
+  const resolveShopDailyClaimCoins = () => {
+    const stored = getSetting(SETTINGS_KEY_SHOP_DAILY_CLAIM_COINS);
+    if (stored === null || stored === undefined) {
+      upsertSetting(SETTINGS_KEY_SHOP_DAILY_CLAIM_COINS, String(SHOP_DAILY_CLAIM_COINS_DEFAULT));
+      return SHOP_DAILY_CLAIM_COINS_DEFAULT;
+    }
+    return sanitizeShopDailyClaimCoins(stored);
+  };
+
   const resolveDefaultPostTags = () => {
     const stored = getSetting(SETTINGS_KEY_DEFAULT_POST_TAGS);
     if (stored === null || stored === undefined) {
@@ -295,6 +313,7 @@ export const createSiteSettingsService = ({ db, turnstileSecretKey }) => {
   let turnstileEnabled = resolveTurnstileEnabled();
   let cnyThemeEnabled = resolveCnyThemeEnabled();
   let shopEnabled = resolveShopEnabled();
+  let shopDailyClaimCoins = resolveShopDailyClaimCoins();
   let defaultPostTags = resolveDefaultPostTags();
   let rateLimits = resolveRateLimits();
   let autoHideReportThreshold = resolveAutoHideReportThreshold();
@@ -313,6 +332,12 @@ export const createSiteSettingsService = ({ db, turnstileSecretKey }) => {
   const setShopEnabled = (enabled) => {
     shopEnabled = Boolean(enabled);
     upsertSetting(SETTINGS_KEY_SHOP_ENABLED, shopEnabled ? '1' : '0');
+  };
+
+  const setShopDailyClaimCoins = (value) => {
+    shopDailyClaimCoins = sanitizeShopDailyClaimCoins(value);
+    upsertSetting(SETTINGS_KEY_SHOP_DAILY_CLAIM_COINS, String(shopDailyClaimCoins));
+    return shopDailyClaimCoins;
   };
 
   const setDefaultPostTags = (tags) => {
@@ -355,6 +380,7 @@ export const createSiteSettingsService = ({ db, turnstileSecretKey }) => {
   const getTurnstileEnabled = () => turnstileEnabled;
   const getCnyThemeEnabled = () => cnyThemeEnabled;
   const getShopEnabled = () => shopEnabled;
+  const getShopDailyClaimCoins = () => shopDailyClaimCoins;
   const getDefaultPostTags = () => [...defaultPostTags];
   const getRateLimits = () => sanitizeRateLimits(rateLimits);
   const getAutoHideReportThreshold = () => autoHideReportThreshold;
@@ -376,6 +402,7 @@ export const createSiteSettingsService = ({ db, turnstileSecretKey }) => {
       turnstileEnabled,
       cnyThemeEnabled,
       shopEnabled,
+      shopDailyClaimCoins,
       defaultPostTags: getDefaultPostTags(),
       cnyThemeAutoActive,
       cnyThemeActive: cnyThemeEnabled && cnyThemeAutoActive,
@@ -386,6 +413,7 @@ export const createSiteSettingsService = ({ db, turnstileSecretKey }) => {
     getTurnstileEnabled,
     getCnyThemeEnabled,
     getShopEnabled,
+    getShopDailyClaimCoins,
     getDefaultPostTags,
     getRateLimits,
     getRateLimitConfig,
@@ -397,6 +425,7 @@ export const createSiteSettingsService = ({ db, turnstileSecretKey }) => {
     setTurnstileEnabled,
     setCnyThemeEnabled,
     setShopEnabled,
+    setShopDailyClaimCoins,
     setDefaultPostTags,
     setRateLimits,
     setAutoHideReportThreshold,

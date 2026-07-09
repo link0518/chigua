@@ -5,6 +5,7 @@
 - 商城商品支持 **阶梯定价**（如 `10/1天`、`70/7天`、`300/永久`）：商品 `price_tiers` JSON，前台按档位兑换/续期。涉及 `shop-inventory.js`、`frame-service`、`name-style-service`、`UserMeModal`。
 - 后台阶梯定价改为可视化编辑器（瓜子 + 时长预设/自定义 + 增删档 + 预览 chips）；前台改为分段档位卡 + 主价位摘要。涉及 `PriceTiersEditor`、`ShopPriceTiers`。
 - 商城管理增加 **商城总开关**（`shop_enabled`，默认关闭）：关闭时前台「我的」无商城入口，相关 `/api/me/shop*` 返回 403。涉及 `site-settings.js`、`AdminShopView`、`AppContext`。
+- 商城管理可配置 **每日签到瓜子**（`shop_daily_claim_coins`，默认 10），并支持按指纹查询/增减用户瓜子。涉及 `admin/shop-routes.js`、`AdminShopView`。
 - 商城商品支持 **价格 + 有效期（天）**（如 10 瓜子 / 1 天）；到期自动卸下装备并恢复默认头像框/昵称颜色，限时可续期。涉及 `duration_days`、库存 `{id,expiresAt}`、`shop-inventory.js`。
 - 商城新增栏目「炫彩昵称」：可兑换「红色昵称」（`vip-red`，80 瓜子）；装备后**新发帖与新评论/回复**快照生效，他人可见。
 - 后台「商城管理」同步增加「炫彩昵称」Tab：支持用 **RGB / 取色器** 直接添加与改色；数据表 `name_styles`；公开 `GET /api/name-styles`。涉及 `server/name-style-service.js`、`AdminNameStylesView`、`ColorfulName` 动态着色。

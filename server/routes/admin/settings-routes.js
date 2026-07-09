@@ -8,6 +8,7 @@ export const registerAdminSettingsRoutes = (app, deps) => {
     setTurnstileEnabled,
     setCnyThemeEnabled,
     setShopEnabled,
+    setShopDailyClaimCoins,
     setDefaultPostTags,
     setRateLimits,
     setAutoHideReportThreshold,
@@ -15,6 +16,7 @@ export const registerAdminSettingsRoutes = (app, deps) => {
     getTurnstileEnabled,
     getCnyThemeEnabled,
     getShopEnabled,
+    getShopDailyClaimCoins,
     getDefaultPostTags,
     getRateLimits,
     getAutoHideReportThreshold,
@@ -39,6 +41,8 @@ export const registerAdminSettingsRoutes = (app, deps) => {
     const rawTurnstileEnabled = req.body?.turnstileEnabled;
     const rawCnyThemeEnabled = req.body?.cnyThemeEnabled;
     const rawShopEnabled = req.body?.shopEnabled;
+    const hasShopDailyClaimCoins = Object.prototype.hasOwnProperty.call(req.body || {}, 'shopDailyClaimCoins');
+    const rawShopDailyClaimCoins = req.body?.shopDailyClaimCoins;
     const hasDefaultPostTags = Object.prototype.hasOwnProperty.call(req.body || {}, 'defaultPostTags');
     const rawDefaultPostTags = req.body?.defaultPostTags;
     const hasRateLimits = Object.prototype.hasOwnProperty.call(req.body || {}, 'rateLimits');
@@ -51,6 +55,7 @@ export const registerAdminSettingsRoutes = (app, deps) => {
       typeof rawTurnstileEnabled !== 'boolean'
       && typeof rawCnyThemeEnabled !== 'boolean'
       && typeof rawShopEnabled !== 'boolean'
+      && !hasShopDailyClaimCoins
       && !hasDefaultPostTags
       && !hasRateLimits
       && !hasAutoHideReportThreshold
@@ -82,6 +87,16 @@ export const registerAdminSettingsRoutes = (app, deps) => {
       return res.status(400).json({ error: '\u53c2\u6570\u683c\u5f0f\u9519\u8bef' });
     }
     if (
+      hasShopDailyClaimCoins
+      && (
+        !['number', 'string'].includes(typeof rawShopDailyClaimCoins)
+        || !Number.isFinite(Number(rawShopDailyClaimCoins))
+        || Number(rawShopDailyClaimCoins) < 0
+      )
+    ) {
+      return res.status(400).json({ error: '\u53c2\u6570\u683c\u5f0f\u9519\u8bef' });
+    }
+    if (
       hasWecomWebhook
       && (!rawWecomWebhook || typeof rawWecomWebhook !== 'object' || Array.isArray(rawWecomWebhook))
     ) {
@@ -91,6 +106,7 @@ export const registerAdminSettingsRoutes = (app, deps) => {
       turnstileEnabled: getTurnstileEnabled(),
       cnyThemeEnabled: getCnyThemeEnabled(),
       shopEnabled: getShopEnabled ? getShopEnabled() : false,
+      shopDailyClaimCoins: getShopDailyClaimCoins ? getShopDailyClaimCoins() : 10,
       defaultPostTags: getDefaultPostTags(),
       rateLimits: getRateLimits(),
       autoHideReportThreshold: getAutoHideReportThreshold(),
@@ -104,6 +120,9 @@ export const registerAdminSettingsRoutes = (app, deps) => {
     }
     if (typeof rawShopEnabled === 'boolean' && typeof setShopEnabled === 'function') {
       setShopEnabled(rawShopEnabled);
+    }
+    if (hasShopDailyClaimCoins && typeof setShopDailyClaimCoins === 'function') {
+      setShopDailyClaimCoins(rawShopDailyClaimCoins);
     }
     if (hasDefaultPostTags) {
       setDefaultPostTags(rawDefaultPostTags);
@@ -125,6 +144,7 @@ export const registerAdminSettingsRoutes = (app, deps) => {
       turnstileEnabled: getTurnstileEnabled(),
       cnyThemeEnabled: getCnyThemeEnabled(),
       shopEnabled: getShopEnabled ? getShopEnabled() : false,
+      shopDailyClaimCoins: getShopDailyClaimCoins ? getShopDailyClaimCoins() : 10,
       defaultPostTags: getDefaultPostTags(),
       rateLimits: getRateLimits(),
       autoHideReportThreshold: getAutoHideReportThreshold(),

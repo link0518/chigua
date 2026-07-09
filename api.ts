@@ -338,6 +338,7 @@ export const api = {
     turnstileEnabled?: boolean;
     cnyThemeEnabled?: boolean;
     shopEnabled?: boolean;
+    shopDailyClaimCoins?: number;
     defaultPostTags?: string[];
     rateLimits?: Partial<Record<'post' | 'comment' | 'report' | 'feedback' | 'wiki' | 'upload', { limit?: number; windowMs?: number }>>;
     autoHideReportThreshold?: number;
@@ -345,6 +346,15 @@ export const api = {
   }) => apiFetch('/admin/settings', {
     method: 'POST',
     body: JSON.stringify(settings || {}),
+  }),
+  getAdminShopUser: (fingerprint: string) => apiFetch(`/admin/shop/users${toQuery({ fingerprint })}`),
+  adjustAdminShopUserCoins: (payload: {
+    fingerprint: string;
+    delta?: number;
+    coins?: number;
+  }) => apiFetch('/admin/shop/users/coins', {
+    method: 'POST',
+    body: JSON.stringify(payload || {}),
   }),
   testAdminWecomWebhook: (options: { url?: string } = {}) => apiFetch('/admin/settings/wecom-webhook/test', {
     method: 'POST',

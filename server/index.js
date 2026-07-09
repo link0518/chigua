@@ -22,6 +22,7 @@ import { registerPublicReportsRoutes } from './routes/public/reports-routes.js';
 import { registerPublicSystemRoutes } from './routes/public/system-routes.js';
 import { registerPublicShopRoutes } from './routes/public/shop-routes.js';
 import { registerPublicFramesRoutes } from './routes/public/frames-routes.js';
+import { registerAdminShopRoutes } from './routes/admin/shop-routes.js';
 import { registerAdminNicknameFramesRoutes } from './routes/admin/nickname-frames-routes.js';
 import { initFrameService, getEquippedFrameIdIfValid } from './frame-service.js';
 import {
@@ -97,11 +98,13 @@ const {
   getTurnstileEnabled,
   getCnyThemeEnabled,
   getShopEnabled,
+  getShopDailyClaimCoins,
   getDefaultPostTags,
   buildSettingsResponse,
   setTurnstileEnabled,
   setCnyThemeEnabled,
   setShopEnabled,
+  setShopDailyClaimCoins,
   setDefaultPostTags,
   getRateLimits,
   getRateLimitConfig,
@@ -1351,6 +1354,7 @@ registerPublicShopRoutes(app, {
   requireFingerprint,
   formatDateKey,
   getShopEnabled,
+  getShopDailyClaimCoins,
 });
 
 registerPublicFramesRoutes(app);
@@ -1483,6 +1487,15 @@ registerAdminNicknameFramesRoutes(app, {
 });
 
 registerAdminNameStylesRoutes(app, {
+  requireAdmin,
+  requireAdminCsrf,
+  requireAdminRead: settingsAdmin.read,
+  requireAdminManage: settingsAdmin.manage,
+  logAdminAction,
+});
+
+registerAdminShopRoutes(app, {
+  db,
   requireAdmin,
   requireAdminCsrf,
   requireAdminRead: settingsAdmin.read,
@@ -1718,12 +1731,14 @@ registerAdminSettingsRoutes(app, {
   setTurnstileEnabled,
   setCnyThemeEnabled,
   setShopEnabled,
+  setShopDailyClaimCoins,
   setDefaultPostTags,
   setRateLimits,
   setAutoHideReportThreshold,
   getTurnstileEnabled,
   getCnyThemeEnabled,
   getShopEnabled,
+  getShopDailyClaimCoins,
   getDefaultPostTags,
   getRateLimits,
   getAutoHideReportThreshold,
