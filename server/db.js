@@ -397,11 +397,6 @@ ensureColumn('comments', 'fingerprint', 'TEXT');
 ensureColumn('comments', 'author_name_style_id', 'TEXT');
 ensureColumn('user_cosmetics', 'owned_name_styles_json', "TEXT NOT NULL DEFAULT '[]'");
 ensureColumn('user_cosmetics', 'equipped_name_style_id', 'TEXT');
-// 商品有效期（天）：0=永久；阶梯定价 JSON
-ensureColumn('nickname_frames', 'duration_days', 'INTEGER NOT NULL DEFAULT 0');
-ensureColumn('name_styles', 'duration_days', 'INTEGER NOT NULL DEFAULT 0');
-ensureColumn('nickname_frames', 'price_tiers', "TEXT NOT NULL DEFAULT '[]'");
-ensureColumn('name_styles', 'price_tiers', "TEXT NOT NULL DEFAULT '[]'");
 ensureColumn('comments', 'parent_id', 'TEXT');
 ensureColumn('comments', 'reply_to_id', 'TEXT');
 ensureColumn('comments', 'deleted', 'INTEGER NOT NULL DEFAULT 0');
