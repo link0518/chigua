@@ -30,9 +30,25 @@ import { buildPostPath, buildPostShareUrl, copyTextToClipboard } from './clipboa
 
 type HomeViewMode = 'focus' | 'grid';
 
+type HomeReportModalState = {
+  isOpen: boolean;
+  postId: string;
+  content: string;
+  viewerIsAuthor: boolean;
+  viewerDeleteRequestStatus?: Post['viewerDeleteRequestStatus'];
+};
+
 const HOME_FOCUS_PAGE_SIZE = 10;
 const HOME_GRID_PAGE_SIZE = 20;
 const HOME_VIEW_MODE_STORAGE_KEY = 'home:viewMode:v1';
+
+const createEmptyReportModalState = (): HomeReportModalState => ({
+  isOpen: false,
+  postId: '',
+  content: '',
+  viewerIsAuthor: false,
+  viewerDeleteRequestStatus: null,
+});
 
 const readStoredHomeViewMode = (): HomeViewMode => {
   try {
@@ -80,11 +96,14 @@ const HomeView: React.FC = () => {
   const [commentModalOpen, setCommentModalOpen] = useState(false);
   const [commentPostId, setCommentPostId] = useState<string | null>(null);
   const [focusCommentId, setFocusCommentId] = useState<string | null>(null);
-  const [reportModal, setReportModal] = useState<{ isOpen: boolean; postId: string; content: string }>({
+  const [reportModal, setReportModal] = useState<HomeReportModalState>(() => createEmptyReportModalState());
+  const [deleteRequestModal, setDeleteRequestModal] = useState<{ isOpen: boolean; postId: string; content: string; reason: string }>({
     isOpen: false,
     postId: '',
     content: '',
+    reason: '',
   });
+  const [deleteRequestSubmitting, setDeleteRequestSubmitting] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [feedbackContent, setFeedbackContent] = useState('');
   const [feedbackEmail, setFeedbackEmail] = useState('');
@@ -280,6 +299,13 @@ const HomeView: React.FC = () => {
     setFeedbackWechat('');
     setFeedbackQq('');
   }, []);
+
+  const closeDeleteRequestModal = useCallback(() => {
+    if (deleteRequestSubmitting) {
+      return;
+    }
+    setDeleteRequestModal({ isOpen: false, postId: '', content: '', reason: '' });
+  }, [deleteRequestSubmitting]);
 
   const isCommentModalActiveForPost = useCallback((postId: string) => (
     commentModalOpen && commentPostId === postId
@@ -684,6 +710,63 @@ const HomeView: React.FC = () => {
     }
   };
 
+  const openReportModal = (post: Post) => {
+    setReportModal({
+      isOpen: true,
+      postId: post.id,
+      content: post.content,
+      viewerIsAuthor: Boolean(post.viewerIsAuthor),
+      viewerDeleteRequestStatus: post.viewerDeleteRequestStatus ?? null,
+    });
+  };
+
+  const closeReportModal = () => {
+    setReportModal(createEmptyReportModalState());
+  };
+
+  const openDeleteRequestModal = (post: Pick<Post, 'id' | 'content'>) => {
+    setDeleteRequestModal({
+      isOpen: true,
+      postId: post.id,
+      content: post.content,
+      reason: '',
+    });
+  };
+
+  const handleDeleteRequestSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const reason = deleteRequestModal.reason.trim();
+    if (!reason) {
+      showToast('请填写删除原因', 'warning');
+      return;
+    }
+    setDeleteRequestSubmitting(true);
+    try {
+      await api.createPostDeleteRequest(deleteRequestModal.postId, reason);
+      const targetPost = posts.find((post) => post.id === deleteRequestModal.postId);
+      if (targetPost) {
+        upsertHomePost({
+          ...targetPost,
+          viewerIsAuthor: true,
+          viewerDeleteRequestStatus: 'pending',
+        });
+      }
+      showToast('删除申请已提交，等待管理员审核', 'success');
+      setDeleteRequestModal({ isOpen: false, postId: '', content: '', reason: '' });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '删除申请提交失败';
+      showToast(message, 'error');
+    } finally {
+      setDeleteRequestSubmitting(false);
+    }
+  };
+
+  const handleRequestPostDeletionFromReport = () => {
+    const { postId, content } = reportModal;
+    closeReportModal();
+    openDeleteRequestModal({ id: postId, content });
+  };
+
   const bannerContent = (
     <div className="relative overflow-hidden rounded-lg border-2 border-ink bg-[linear-gradient(90deg,rgba(255,245,157,0.75),rgba(129,212,250,0.35),rgba(255,245,157,0.75))] shadow-sketch doodle-border !rounded-lg">
       <div className="absolute -right-10 -top-6 h-44 w-44 rotate-12 rounded-full border border-ink/20 bg-white/25" />
@@ -850,7 +933,7 @@ const HomeView: React.FC = () => {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setReportModal({ isOpen: true, postId: currentPost.id, content: currentPost.content })}
+                  onClick={() => openReportModal(currentPost)}
                   className="flex items-center gap-1 border-l-2 border-dotted border-gray-200 pl-2 text-gray-400 transition-colors hover:text-red-600"
                 >
                   <Flag className="h-5 w-5" />
@@ -900,7 +983,7 @@ const HomeView: React.FC = () => {
             onDislike={() => handleDislike(post.id)}
             onFavorite={() => handleFavorite(post.id)}
             onShare={() => copyShareLink(post.id)}
-            onReport={() => setReportModal({ isOpen: true, postId: post.id, content: post.content })}
+            onReport={() => openReportModal(post)}
             onTagClick={openTagSearch}
           />
           );
@@ -1043,10 +1126,39 @@ const HomeView: React.FC = () => {
 
       <ReportModal
         isOpen={reportModal.isOpen}
-        onClose={() => setReportModal({ isOpen: false, postId: '', content: '' })}
+        onClose={closeReportModal}
         postId={reportModal.postId}
         contentPreview={reportModal.content.substring(0, 80)}
+        canRequestPostDeletion={reportModal.viewerIsAuthor && reportModal.viewerDeleteRequestStatus !== 'pending'}
+        onRequestPostDeletion={handleRequestPostDeletionFromReport}
       />
+
+      <Modal isOpen={deleteRequestModal.isOpen} onClose={closeDeleteRequestModal} title="申请删除帖子">
+        <form className="flex flex-col gap-4" onSubmit={handleDeleteRequestSubmit}>
+          <div className="rounded-lg border-2 border-dashed border-gray-200 bg-gray-50 p-3">
+            <p className="line-clamp-3 text-sm text-pencil">"{deleteRequestModal.content}"</p>
+          </div>
+          <div>
+            <label className="text-xs font-sans text-pencil">删除原因（必填）</label>
+            <textarea
+              value={deleteRequestModal.reason}
+              onChange={(event) => setDeleteRequestModal((prev) => ({ ...prev, reason: event.target.value }))}
+              className="mt-2 h-28 w-full resize-none rounded-lg border-2 border-gray-200 p-3 text-sm font-sans outline-none focus:border-ink"
+              placeholder="请说明为什么要删除这条帖子"
+              maxLength={1000}
+            />
+          </div>
+          <p className="text-xs font-sans text-pencil">提交后帖子会继续公开展示，管理员审核通过后才会删除。</p>
+          <div className="flex gap-3">
+            <SketchButton type="button" variant="secondary" className="flex-1" onClick={closeDeleteRequestModal} disabled={deleteRequestSubmitting}>
+              取消
+            </SketchButton>
+            <SketchButton type="submit" variant="danger" className="flex-1" disabled={deleteRequestSubmitting}>
+              {deleteRequestSubmitting ? '提交中...' : '提交申请'}
+            </SketchButton>
+          </div>
+        </form>
+      </Modal>
 
       {commentModalOpen && commentTargetPost && (
         <CommentModal

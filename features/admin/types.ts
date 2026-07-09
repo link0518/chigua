@@ -4,6 +4,8 @@ import type { AdminIdentityLike } from '@/components/adminIdentity';
 
 export type ReportAction = 'ignore' | 'delete' | 'ban';
 export type AdminFeedbackStatus = 'unread' | 'read' | 'all';
+export type AdminPostDeleteRequestStatus = 'pending' | 'processed';
+export type AdminPostDeleteRequestAction = 'approve' | 'reject';
 export type AdminBanType = 'ip' | 'fingerprint' | 'identity';
 export type AdminChartDatum = {
   name: string;

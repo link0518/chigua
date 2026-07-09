@@ -40,7 +40,7 @@
 
 普通管理员模块权限：
 
-- `content_review`：内容审核（举报、隐藏内容、谣言审核）
+- `content_review`：内容审核（举报、隐藏内容、谣言审核、帖子删除申请）
 - `posts`：帖子管理
 - `wiki`：Wiki 管理
 - `feedback`：留言管理
@@ -71,6 +71,7 @@
 - `POST /api/online/heartbeat`：在线心跳
 - `GET /api/notifications`：拉取通知列表
 - `POST /api/notifications/read`：标记通知已读
+- 通知类型包括互动通知、谣言审核结果、管理员留言回复和帖子删除申请审核结果
 - `GET /api/easter-eggs/streak7`：查询“连续登录 7 天”状态
 - `POST /api/easter-eggs/streak7/seen`：标记彩蛋已看过
 
@@ -83,6 +84,7 @@
 - `GET /api/posts/search`：帖子搜索（分页）
 - `POST /api/posts`：发帖（通常需要 turnstile 校验）
 - `GET /api/posts/:id`：帖子详情
+- `POST /api/posts/:id/delete-requests`：发帖人提交删除申请，需填写原因；待审核期间帖子继续公开
 - `POST /api/posts/:id/like`：点赞
 - `POST /api/posts/:id/dislike`：点踩
 - `POST /api/posts/:id/favorite`：收藏/取消收藏
@@ -129,6 +131,15 @@
 - `mark` / `reject` 会把该目标下仍处于 `pending` 的谣言举报批量置为 `resolved`
 - 若后台已启用企业微信 Webhook，`mark` / `reject` / `clear` 成功后会异步推送谣言审核结果提醒；推送失败不影响接口返回
 
+帖子删除申请审核：
+
+- `GET /api/admin/post-delete-requests?status=pending|processed&page=&limit=`：查看删除申请队列（`content_review:read`）
+- `POST /api/admin/post-delete-requests/:id/action`：审核删除申请（`content_review:manage` + CSRF）
+- 支持动作：
+  - `approve`：申请置为 `approved`，帖子软删除，并通知申请人
+  - `reject`：申请置为 `rejected`，帖子保持公开，并通知申请人
+- 审核说明可选；为空时通知使用默认文案
+
 帖子管理：
 
 - `GET /api/admin/posts`：后台帖子列表（`posts:read`）
@@ -146,10 +157,11 @@
 
 - `GET /api/admin/feedback`：反馈列表（`feedback:read`）
 - `POST /api/admin/feedback/:id/action`：处理反馈（`feedback:manage` + CSRF）
+- `POST /api/admin/feedback/:id/replies`：回复留言并通知提交者（`feedback:manage` + CSRF）
 - `GET /api/admin/bans`：封禁列表（`user_safety:read`）
 - `POST /api/admin/bans/action`：封禁/解封（`user_safety:manage` + CSRF）
 
-- `GET /api/admin/audit-logs`：后台操作审计日志（仅 `super_admin`）
+- `GET /api/admin/audit-logs`：后台操作审计日志（仅 `super_admin`），支持 `search`、`action`、`category`、`targetType`、`adminUsername`、`riskLevel=high`、`from`、`to`、`hasReason` 筛选；响应项会返回派生的 `category` 和 `riskLevel` 供前端展示。
 - `GET /api/admin/stats`：统计概览（登录后按模块权限返回对应统计字段）
 
 公告/设置/敏感词：
@@ -231,4 +243,4 @@
 - Wiki 投稿和编辑会附带 `X-Client-Fingerprint`，并记录提交者指纹与 IP。
 - Wiki 投稿和编辑执行 Turnstile 校验和封禁检查。
 - 新增 `wiki` 限流配置，默认 `3 次 / 小时`。
-- 后台审核、拒绝、删除、恢复、管理员创建和管理员编辑都写入 `admin_audit_logs`。
+- 后台审核、拒绝、删除、恢复、管理员创建和管理员编辑都写入 `admin_audit_logs`；审计查询会按 `action` 派生操作分类和风险等级，便于后台展示和筛选。

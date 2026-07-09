@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Flag, Gavel, BarChart2, Bell, Search, Trash2, Ban, Eye, EyeOff, LayoutDashboard, LogOut, CheckCircle, XCircle, FileText, Pencil, RotateCcw, Shield, ClipboardList, MessageSquare, Menu, X, Settings, BookOpen, AlertTriangle, UserCog } from 'lucide-react';
 import { SketchButton, Badge } from './SketchUI';
-import { AdminAuditLog, AdminComment, AdminHiddenItem, AdminPermissionDefinitions, AdminPermissions, AdminUserAccount, AdminPost, FeedbackMessage, Report, UpdateAnnouncementItem } from '../types';
+import { AdminAuditLog, AdminComment, AdminHiddenItem, AdminPermissionDefinitions, AdminPermissions, AdminUserAccount, AdminPost, FeedbackMessage, PostDeleteRequest, Report, UpdateAnnouncementItem } from '../types';
 import { useApp } from '../store/AppContext';
 import Modal from './Modal';
 import { api } from '../api';
@@ -18,6 +18,7 @@ import AdminRumorPanel from './AdminRumorPanel';
 import { copyTextToClipboard } from './clipboard';
 import AdminOverviewView from '@/features/admin/views/AdminOverviewView';
 import AdminFeedbackView from '@/features/admin/views/AdminFeedbackView';
+import AdminPostDeleteRequestsView from '@/features/admin/views/AdminPostDeleteRequestsView';
 import AdminBansView from '@/features/admin/views/AdminBansView';
 import AdminAuditView from '@/features/admin/views/AdminAuditView';
 import AdminReportsView from '@/features/admin/views/AdminReportsView';
@@ -25,7 +26,13 @@ import AdminPublishCenterView from '@/features/admin/views/AdminPublishCenterVie
 import AdminSystemSettingsView from '@/features/admin/views/AdminSystemSettingsView';
 import AdminUsersView from '@/features/admin/views/AdminUsersView';
 import { hasPermission } from '@/features/admin/permissions';
-import type { ReportAction } from '@/features/admin/types';
+import type { AdminPostDeleteRequestAction, AdminPostDeleteRequestStatus, ReportAction } from '@/features/admin/types';
+import AdminAuditDetailModal from '@/features/admin/components/AdminAuditDetailModal';
+import {
+  DEFAULT_AUDIT_FILTERS,
+  getAuditTimeRangeParams,
+  type AuditFilterState,
+} from '@/features/admin/audit/auditPresentation';
 import {
   AUTO_HIDE_REPORT_THRESHOLD_DEFAULT,
   RATE_LIMIT_DEFAULTS,
@@ -45,7 +52,7 @@ import AdminModerationDrawer, {
 } from '@/features/admin/components/AdminModerationDrawer';
 import AdminActionDrawer from '@/features/admin/components/AdminActionDrawer';
 
-type AdminView = 'overview' | 'reports' | 'processed' | 'posts' | 'hidden' | 'bans' | 'audit' | 'feedback' | 'announcement' | 'settings' | 'wiki' | 'rumors' | 'adminUsers';
+type AdminView = 'overview' | 'reports' | 'processed' | 'posts' | 'hidden' | 'deleteRequests' | 'bans' | 'audit' | 'feedback' | 'announcement' | 'settings' | 'wiki' | 'rumors' | 'adminUsers';
 type PostStatusFilter = 'all' | 'active' | 'hidden' | 'deleted';
 type PostSort = 'time' | 'hot' | 'reports';
 type HiddenTypeFilter = 'all' | 'post' | 'comment';
@@ -65,6 +72,7 @@ type ReportConfirmModalState = {
 const WEEK_DAYS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
 const POST_PAGE_SIZE = 10;
 const HIDDEN_PAGE_SIZE = 10;
+const DELETE_REQUEST_PAGE_SIZE = 10;
 const AUDIT_PAGE_SIZE = 12;
 const FEEDBACK_PAGE_SIZE = 8;
 const VOCABULARY_PAGE_SIZE = 20;
@@ -243,6 +251,12 @@ const AdminDashboard: React.FC = () => {
   const [hiddenPendingCount, setHiddenPendingCount] = useState(0);
   const [hiddenItems, setHiddenItems] = useState<AdminHiddenItem[]>([]);
   const [hiddenLoading, setHiddenLoading] = useState(false);
+  const [deleteRequestStatus, setDeleteRequestStatus] = useState<AdminPostDeleteRequestStatus>('pending');
+  const [deleteRequestPage, setDeleteRequestPage] = useState(1);
+  const [deleteRequestTotal, setDeleteRequestTotal] = useState(0);
+  const [deleteRequestPendingCount, setDeleteRequestPendingCount] = useState(0);
+  const [deleteRequestItems, setDeleteRequestItems] = useState<PostDeleteRequest[]>([]);
+  const [deleteRequestLoading, setDeleteRequestLoading] = useState(false);
   const [selectedPosts, setSelectedPosts] = useState<Set<string>>(new Set());
   const [selectedReports, setSelectedReports] = useState<Set<string>>(new Set());
   const [composeText, setComposeText] = useState('');
@@ -316,6 +330,7 @@ const AdminDashboard: React.FC = () => {
   const [auditLogs, setAuditLogs] = useState<AdminAuditLog[]>([]);
   const [auditSearch, setAuditSearch] = useState('');
   const [auditSearchInput, setAuditSearchInput] = useState('');
+  const [auditFilters, setAuditFilters] = useState<AuditFilterState>({ ...DEFAULT_AUDIT_FILTERS });
   const [auditPage, setAuditPage] = useState(1);
   const [auditTotal, setAuditTotal] = useState(0);
   const [auditLoading, setAuditLoading] = useState(false);
@@ -345,6 +360,13 @@ const AdminDashboard: React.FC = () => {
     content: string;
     reason: string;
   }>({ isOpen: false, feedbackId: '', action: 'delete', content: '', reason: '' });
+  const [feedbackReplyModal, setFeedbackReplyModal] = useState<{
+    isOpen: boolean;
+    feedbackId: string;
+    content: string;
+    reply: string;
+  }>({ isOpen: false, feedbackId: '', content: '', reply: '' });
+  const [feedbackReplySubmitting, setFeedbackReplySubmitting] = useState(false);
   const [confirmModal, setConfirmModal] = useState<ReportConfirmModalState>({ ...EMPTY_REPORT_CONFIRM_MODAL });
   const [postConfirmModal, setPostConfirmModal] = useState<{
     isOpen: boolean;
@@ -366,6 +388,12 @@ const AdminDashboard: React.FC = () => {
     action: HiddenAction;
     reason: string;
   }>({ isOpen: false, item: null, action: 'keep', reason: '' });
+  const [deleteRequestActionModal, setDeleteRequestActionModal] = useState<{
+    isOpen: boolean;
+    item: PostDeleteRequest | null;
+    action: AdminPostDeleteRequestAction;
+    reason: string;
+  }>({ isOpen: false, item: null, action: 'approve', reason: '' });
   const [reportDetail, setReportDetail] = useState<{ isOpen: boolean; report: Report | null }>({ isOpen: false, report: null });
   const composeMaxLength = 2000;
   const appVersion = import.meta.env.VITE_APP_VERSION || '0.0.0';
@@ -638,6 +666,50 @@ const AdminDashboard: React.FC = () => {
     }
   }, [canReadContentReview]);
 
+  const fetchDeleteRequests = useCallback(async () => {
+    if (!canReadContentReview) {
+      setDeleteRequestItems([]);
+      setDeleteRequestTotal(0);
+      setDeleteRequestPendingCount(0);
+      return;
+    }
+    setDeleteRequestLoading(true);
+    try {
+      const data = await api.getAdminPostDeleteRequests({
+        status: deleteRequestStatus,
+        page: deleteRequestPage,
+        limit: DELETE_REQUEST_PAGE_SIZE,
+      });
+      setDeleteRequestItems(Array.isArray(data?.items) ? data.items : []);
+      setDeleteRequestTotal(Number(data?.total || 0));
+      if (deleteRequestStatus === 'pending') {
+        setDeleteRequestPendingCount(Number(data?.total || 0));
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '删除申请加载失败，请稍后重试';
+      showToast(message, 'error');
+    } finally {
+      setDeleteRequestLoading(false);
+    }
+  }, [canReadContentReview, deleteRequestPage, deleteRequestStatus, showToast]);
+
+  const fetchDeleteRequestPendingCount = useCallback(async () => {
+    if (!canReadContentReview) {
+      setDeleteRequestPendingCount(0);
+      return;
+    }
+    try {
+      const data = await api.getAdminPostDeleteRequests({
+        status: 'pending',
+        page: 1,
+        limit: 1,
+      });
+      setDeleteRequestPendingCount(Number(data?.total || 0));
+    } catch {
+      setDeleteRequestPendingCount(0);
+    }
+  }, [canReadContentReview]);
+
   const fetchPostComments = useCallback(async (postId: string, search = '') => {
     setPostCommentsLoading(true);
     try {
@@ -678,8 +750,16 @@ const AdminDashboard: React.FC = () => {
     }
     setAuditLoading(true);
     try {
+      const auditTimeParams = getAuditTimeRangeParams(auditFilters.timeRange);
       const data = await api.getAdminAuditLogs({
         search: auditSearch.trim(),
+        category: auditFilters.category === 'all' ? undefined : auditFilters.category,
+        riskLevel: auditFilters.riskLevel === 'all' ? undefined : auditFilters.riskLevel,
+        targetType: auditFilters.targetType === 'all' ? undefined : auditFilters.targetType,
+        adminUsername: auditFilters.adminUsername.trim() || undefined,
+        hasReason: auditFilters.reason === 'with' ? 'true' : auditFilters.reason === 'without' ? 'false' : undefined,
+        from: auditTimeParams.from,
+        to: auditTimeParams.to,
         page: auditPage,
         limit: AUDIT_PAGE_SIZE,
       });
@@ -691,7 +771,12 @@ const AdminDashboard: React.FC = () => {
     } finally {
       setAuditLoading(false);
     }
-  }, [auditPage, auditSearch, isSuperAdmin, showToast]);
+  }, [auditFilters, auditPage, auditSearch, isSuperAdmin, showToast]);
+
+  const handleAuditFiltersChange = useCallback((nextFilters: Partial<AuditFilterState>) => {
+    setAuditFilters((current) => ({ ...current, ...nextFilters }));
+    setAuditPage(1);
+  }, []);
 
   const fetchFeedback = useCallback(async () => {
     if (!canReadFeedback) {
@@ -918,6 +1003,16 @@ const AdminDashboard: React.FC = () => {
   }, [currentView, fetchHiddenItems]);
 
   useEffect(() => {
+    if (currentView !== 'deleteRequests') {
+      return;
+    }
+    const timer = setTimeout(() => {
+      fetchDeleteRequests().catch(() => { });
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [currentView, fetchDeleteRequests]);
+
+  useEffect(() => {
     if (currentView !== 'bans') {
       return;
     }
@@ -947,9 +1042,10 @@ const AdminDashboard: React.FC = () => {
   useEffect(() => {
     fetchFeedbackUnreadCount().catch(() => { });
     fetchHiddenPendingCount().catch(() => { });
+    fetchDeleteRequestPendingCount().catch(() => { });
     fetchWikiPendingCount().catch(() => { });
     fetchRumorPendingCount().catch(() => { });
-  }, [currentView, fetchFeedbackUnreadCount, fetchHiddenPendingCount, fetchRumorPendingCount, fetchWikiPendingCount]);
+  }, [currentView, fetchDeleteRequestPendingCount, fetchFeedbackUnreadCount, fetchHiddenPendingCount, fetchRumorPendingCount, fetchWikiPendingCount]);
 
   useEffect(() => {
     if (currentView !== 'announcement') {
@@ -1280,6 +1376,48 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
+  const openDeleteRequestActionModal = (item: PostDeleteRequest, action: AdminPostDeleteRequestAction) => {
+    if (!canManageContentReview) {
+      showToast('当前账号只有查看权限，不能处理删除申请', 'warning');
+      return;
+    }
+    setDeleteRequestActionModal({
+      isOpen: true,
+      item,
+      action,
+      reason: '',
+    });
+  };
+
+  const getDeleteRequestActionLabel = (action: AdminPostDeleteRequestAction) => (
+    action === 'approve' ? '通过删除申请' : '驳回删除申请'
+  );
+
+  const confirmDeleteRequestAction = async () => {
+    if (!canManageContentReview) {
+      showToast('当前账号只有查看权限，不能处理删除申请', 'warning');
+      return;
+    }
+    const { item, action, reason } = deleteRequestActionModal;
+    if (!item) {
+      return;
+    }
+    try {
+      await api.handleAdminPostDeleteRequest(item.id, action, reason);
+      showToast(action === 'approve' ? '删除申请已通过，帖子已删除' : '删除申请已驳回', 'success');
+      setDeleteRequestActionModal({ isOpen: false, item: null, action: 'approve', reason: '' });
+      await fetchDeleteRequests();
+      await fetchDeleteRequestPendingCount();
+      if (action === 'approve') {
+        await fetchAdminPosts();
+        await loadStats();
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '处理失败，请稍后重试';
+      showToast(message, 'error');
+    }
+  };
+
   const getPostActionLabel = (action: 'delete' | 'restore') => (action === 'delete' ? '删除帖子' : '恢复帖子');
   const getBulkActionLabel = (action: 'delete' | 'restore' | 'ban' | 'unban') => {
     switch (action) {
@@ -1555,33 +1693,6 @@ const AdminDashboard: React.FC = () => {
   };
 
 
-  const stripSessionFields = (value: unknown): unknown => {
-    if (Array.isArray(value)) {
-      return value.map(stripSessionFields);
-    }
-    if (value && typeof value === 'object') {
-      const next: Record<string, unknown> = {};
-      Object.entries(value).forEach(([key, val]) => {
-        if (key === 'sessionId' || key === 'session_id') {
-          return;
-        }
-        next[key] = stripSessionFields(val);
-      });
-      return next;
-    }
-    return value;
-  };
-
-  const formatAuditJson = (value?: string | null) => {
-    if (!value) return '—';
-    try {
-      const parsed = JSON.parse(value);
-      return JSON.stringify(stripSessionFields(parsed), null, 2);
-    } catch {
-      return value;
-    }
-  };
-
   const togglePostSelection = (postId: string) => {
     setSelectedPosts((prev) => {
       const next = new Set(prev);
@@ -1812,6 +1923,44 @@ const AdminDashboard: React.FC = () => {
     } catch (error) {
       const message = error instanceof Error ? error.message : '标记失败';
       showToast(message, 'error');
+    }
+  };
+
+  const openFeedbackReplyModal = (message: FeedbackMessage) => {
+    if (!canManageFeedback) {
+      showToast('当前账号只有查看权限，不能回复留言', 'warning');
+      return;
+    }
+    setFeedbackReplyModal({
+      isOpen: true,
+      feedbackId: message.id,
+      content: message.content,
+      reply: '',
+    });
+  };
+
+  const handleFeedbackReplySubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!canManageFeedback) {
+      showToast('当前账号只有查看权限，不能回复留言', 'warning');
+      return;
+    }
+    const content = feedbackReplyModal.reply.trim();
+    if (!content) {
+      showToast('请输入回复内容', 'warning');
+      return;
+    }
+    setFeedbackReplySubmitting(true);
+    try {
+      await api.replyAdminFeedback(feedbackReplyModal.feedbackId, content);
+      showToast('回复已发送', 'success');
+      setFeedbackReplyModal({ isOpen: false, feedbackId: '', content: '', reply: '' });
+      await fetchFeedback();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '回复发送失败';
+      showToast(message, 'error');
+    } finally {
+      setFeedbackReplySubmitting(false);
     }
   };
 
@@ -2282,6 +2431,7 @@ const AdminDashboard: React.FC = () => {
           { view: 'overview', icon: <LayoutDashboard size={18} />, label: '待办工作台', visible: true },
           { view: 'reports', icon: <Flag size={18} />, label: '待处理举报', badge: pendingReportCount, visible: canReadContentReview },
           { view: 'rumors', icon: <AlertTriangle size={18} />, label: '谣言审核', badge: rumorPendingCount, visible: canReadContentReview },
+          { view: 'deleteRequests', icon: <Trash2 size={18} />, label: '删除申请', badge: deleteRequestPendingCount, visible: canReadContentReview },
           { view: 'wiki', icon: <BookOpen size={18} />, label: '瓜条审核', badge: wikiPendingCount, visible: canReadWiki },
           { view: 'feedback', icon: <MessageSquare size={18} />, label: '留言管理', badge: feedbackUnreadCount, visible: canReadFeedback },
         ],
@@ -2345,6 +2495,7 @@ const AdminDashboard: React.FC = () => {
 
   const totalPostPages = Math.max(Math.ceil(postTotal / POST_PAGE_SIZE), 1);
   const totalHiddenPages = Math.max(Math.ceil(hiddenTotal / HIDDEN_PAGE_SIZE), 1);
+  const totalDeleteRequestPages = Math.max(Math.ceil(deleteRequestTotal / DELETE_REQUEST_PAGE_SIZE), 1);
   const isReportView = currentView === 'reports' || currentView === 'processed';
   const isPostView = currentView === 'posts';
   const isHiddenView = currentView === 'hidden';
@@ -2371,7 +2522,7 @@ const AdminDashboard: React.FC = () => {
       : isBanView
         ? '搜索封禁对象/理由/权限/IP/身份...'
         : isAuditView
-          ? '搜索操作/目标/管理员...'
+          ? '搜索操作/目标/管理员/IP/理由...'
           : isFeedbackView
             ? '搜索内容或联系方式/IP/身份...'
             : '搜索 ID/内容/IP/身份...';
@@ -2447,6 +2598,7 @@ const AdminDashboard: React.FC = () => {
               {currentView === 'overview' && <><LayoutDashboard /> 概览</>}
               {currentView === 'posts' && <><FileText /> 帖子管理</>}
               {currentView === 'hidden' && <><EyeOff /> 隐藏内容</>}
+              {currentView === 'deleteRequests' && <><Trash2 /> 删除申请</>}
               {currentView === 'announcement' && <><Bell /> 公告发布</>}
               {currentView === 'settings' && <><Settings /> 系统设置</>}
               {currentView === 'wiki' && <><BookOpen /> 瓜条审核</>}
@@ -2540,6 +2692,7 @@ const AdminDashboard: React.FC = () => {
               <AdminOverviewView
                 pendingReportCount={pendingReportCount}
                 hiddenPendingCount={hiddenPendingCount}
+                deleteRequestPendingCount={deleteRequestPendingCount}
                 wikiPendingCount={wikiPendingCount}
                 rumorPendingCount={rumorPendingCount}
                 feedbackUnreadCount={feedbackUnreadCount}
@@ -2553,6 +2706,7 @@ const AdminDashboard: React.FC = () => {
                 visiblePendingReports={visiblePendingReports}
                 onOpenReports={() => setCurrentView('reports')}
                 onOpenHidden={() => setCurrentView('hidden')}
+                onOpenDeleteRequests={() => setCurrentView('deleteRequests')}
                 onOpenWiki={() => setCurrentView('wiki')}
                 onOpenRumors={() => setCurrentView('rumors')}
                 onOpenFeedback={() => setCurrentView('feedback')}
@@ -2966,6 +3120,26 @@ const AdminDashboard: React.FC = () => {
               </section>
             )}
 
+            {currentView === 'deleteRequests' && (
+              <AdminPostDeleteRequestsView
+                status={deleteRequestStatus}
+                total={deleteRequestTotal}
+                page={deleteRequestPage}
+                totalPages={totalDeleteRequestPages}
+                loading={deleteRequestLoading}
+                items={deleteRequestItems}
+                canManage={canManageContentReview}
+                formatTimestamp={formatTimestamp}
+                renderIdentity={renderIdentity}
+                onStatusChange={(nextStatus) => {
+                  setDeleteRequestStatus(nextStatus);
+                  setDeleteRequestPage(1);
+                }}
+                onPageChange={setDeleteRequestPage}
+                onOpenAction={openDeleteRequestActionModal}
+              />
+            )}
+
             {/* Publish Center */}
             {currentView === 'announcement' && (
               <AdminPublishCenterView
@@ -3083,6 +3257,7 @@ const AdminDashboard: React.FC = () => {
                 }}
                 onFeedbackPageChange={setFeedbackPage}
                 onFeedbackRead={handleFeedbackRead}
+                onOpenFeedbackReply={openFeedbackReplyModal}
                 onOpenFeedbackAction={openFeedbackActionModal}
               />
             )}
@@ -3111,9 +3286,11 @@ const AdminDashboard: React.FC = () => {
                 totalAuditPages={totalAuditPages}
                 auditLoading={auditLoading}
                 auditLogs={auditLogs}
+                filters={auditFilters}
                 formatTimestamp={formatTimestamp}
                 onOpenAuditDetail={(log) => setAuditDetail({ isOpen: true, log })}
                 onAuditPageChange={setAuditPage}
+                onAuditFiltersChange={handleAuditFiltersChange}
               />
             )}
 
@@ -3218,6 +3395,20 @@ const AdminDashboard: React.FC = () => {
       />
 
       <AdminActionDrawer
+        isOpen={deleteRequestActionModal.isOpen}
+        title={getDeleteRequestActionLabel(deleteRequestActionModal.action)}
+        actionLabel={deleteRequestActionModal.action === 'approve' ? '确认通过并删除' : '确认驳回'}
+        actionVariant={deleteRequestActionModal.action === 'approve' ? 'danger' : 'secondary'}
+        summary={deleteRequestActionModal.item?.reason || '（无申请原因）'}
+        meta={deleteRequestActionModal.item ? `帖子 ID：${deleteRequestActionModal.item.postId}` : undefined}
+        reason={deleteRequestActionModal.reason}
+        reasonPlaceholder="处理说明（可选，留空会使用默认通知文案）"
+        onReasonChange={(value) => setDeleteRequestActionModal((prev) => ({ ...prev, reason: value }))}
+        onClose={() => setDeleteRequestActionModal({ isOpen: false, item: null, action: 'approve', reason: '' })}
+        onConfirm={confirmDeleteRequestAction}
+      />
+
+      <AdminActionDrawer
         isOpen={bulkPostModal.isOpen}
         title={`批量${getBulkActionLabel(bulkPostModal.action)}`}
         actionLabel="确认执行"
@@ -3255,6 +3446,52 @@ const AdminDashboard: React.FC = () => {
         onClose={() => setFeedbackActionModal({ isOpen: false, feedbackId: '', action: 'delete', content: '', reason: '' })}
         onConfirm={confirmFeedbackAction}
       />
+
+      <Modal
+        isOpen={feedbackReplyModal.isOpen}
+        onClose={() => {
+          if (!feedbackReplySubmitting) {
+            setFeedbackReplyModal({ isOpen: false, feedbackId: '', content: '', reply: '' });
+          }
+        }}
+        title="回复留言"
+      >
+        <form className="flex flex-col gap-4" onSubmit={handleFeedbackReplySubmit}>
+          <div className="rounded-lg border-2 border-dashed border-gray-200 bg-gray-50 p-3">
+            <p className="line-clamp-4 whitespace-pre-wrap text-sm text-pencil">"{feedbackReplyModal.content}"</p>
+          </div>
+          <div>
+            <label className="text-xs text-pencil font-sans">回复内容（必填）</label>
+            <textarea
+              value={feedbackReplyModal.reply}
+              onChange={(event) => setFeedbackReplyModal((prev) => ({ ...prev, reply: event.target.value }))}
+              className="mt-2 h-32 w-full resize-none rounded-lg border-2 border-gray-200 p-3 text-sm font-sans outline-none focus:border-ink"
+              placeholder="输入要发送给用户的回复"
+              maxLength={1000}
+            />
+          </div>
+          <p className="text-xs text-pencil font-sans">提交后会写入回复历史，并在用户通知中直接展示完整回复。</p>
+          <div className="flex gap-3">
+            <SketchButton
+              type="button"
+              variant="secondary"
+              className="flex-1"
+              disabled={feedbackReplySubmitting}
+              onClick={() => setFeedbackReplyModal({ isOpen: false, feedbackId: '', content: '', reply: '' })}
+            >
+              取消
+            </SketchButton>
+            <SketchButton
+              type="submit"
+              variant="primary"
+              className="flex-1"
+              disabled={feedbackReplySubmitting}
+            >
+              {feedbackReplySubmitting ? '发送中...' : '发送回复'}
+            </SketchButton>
+          </div>
+        </form>
+      </Modal>
 
       <Modal
         isOpen={editModal.isOpen}
@@ -3318,33 +3555,12 @@ const AdminDashboard: React.FC = () => {
         </div>
       </Modal>
 
-      <Modal
+      <AdminAuditDetailModal
         isOpen={auditDetail.isOpen}
+        log={auditDetail.log}
+        formatTimestamp={formatTimestamp}
         onClose={() => setAuditDetail({ isOpen: false, log: null })}
-        title="操作详情"
-      >
-        <div className="flex flex-col gap-4">
-          <div className="text-xs text-pencil font-sans">
-            <p>操作：{auditDetail.log?.action}</p>
-            <p>目标：{auditDetail.log?.targetType} · {auditDetail.log?.targetId}</p>
-            <p>操作者：{auditDetail.log?.adminUsername || '未知'}</p>
-            <p>时间：{formatTimestamp(auditDetail.log?.createdAt)}</p>
-            {auditDetail.log?.reason && <p>理由：{auditDetail.log.reason}</p>}
-          </div>
-          <div>
-            <p className="text-xs text-pencil font-sans mb-2">变更前</p>
-            <pre className="bg-gray-50 border-2 border-dashed border-gray-200 rounded-lg p-3 text-xs overflow-auto whitespace-pre-wrap">
-              {formatAuditJson(auditDetail.log?.before)}
-            </pre>
-          </div>
-          <div>
-            <p className="text-xs text-pencil font-sans mb-2">变更后</p>
-            <pre className="bg-gray-50 border-2 border-dashed border-gray-200 rounded-lg p-3 text-xs overflow-auto whitespace-pre-wrap">
-              {formatAuditJson(auditDetail.log?.after)}
-            </pre>
-          </div>
-        </div>
-      </Modal>
+      />
 
       <Modal
         isOpen={reportDetail.isOpen}

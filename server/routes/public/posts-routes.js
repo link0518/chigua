@@ -163,6 +163,24 @@ export const registerPublicPostsRoutes = (app, deps) => {
     };
   };
 
+  const buildViewerAuthorSelect = (identityHashes) => {
+    const authorMatch = buildIdentityMatch('posts.fingerprint', identityHashes);
+    return {
+      sql: `
+        CASE WHEN ${authorMatch.clause} THEN 1 ELSE 0 END AS viewer_is_author,
+        CASE WHEN ${authorMatch.clause} THEN (
+          SELECT pdr.status
+          FROM post_delete_requests pdr
+          WHERE pdr.post_id = posts.id
+            AND pdr.status = 'pending'
+          ORDER BY pdr.created_at DESC, pdr.id DESC
+          LIMIT 1
+        ) ELSE NULL END AS viewer_delete_request_status
+      `,
+      params: [...authorMatch.params, ...authorMatch.params],
+    };
+  };
+
   const findExistingReaction = (postId, identityHashes) => {
     const reactionMatch = buildIdentityMatch('fingerprint', identityHashes);
     return db
@@ -203,6 +221,7 @@ app.get('/api/posts/home', (req, res) => {
   trackDailyVisit(dateKey, req.sessionID);
   const viewerIdentityHashes = getIdentityLookupHashes(req, res);
   const viewerSelect = buildViewerSelect(viewerIdentityHashes);
+  const viewerAuthorSelect = buildViewerAuthorSelect(viewerIdentityHashes);
 
   const total = db
     .prepare(
@@ -218,14 +237,15 @@ app.get('/api/posts/home', (req, res) => {
     .prepare(
       `
         SELECT posts.*, ${hotScoreSql} AS hot_score,
-          ${viewerSelect.sql}
+          ${viewerSelect.sql},
+          ${viewerAuthorSelect.sql}
       FROM posts
         WHERE posts.deleted = 0 AND posts.hidden = 0
         ORDER BY posts.created_at DESC
         LIMIT ? OFFSET ?
         `
     )
-    .all(...viewerSelect.params, limit, offset);
+    .all(...viewerSelect.params, ...viewerAuthorSelect.params, limit, offset);
 
   const posts = rows.map((row) => mapPostRow(row, row.hot_score >= 20));
   res.json({ items: posts, total });
@@ -241,9 +261,10 @@ app.get('/api/posts/feed', (req, res) => {
   trackDailyVisit(dateKey, req.sessionID);
   const viewerIdentityHashes = getIdentityLookupHashes(req, res);
   const viewerSelect = buildViewerSelect(viewerIdentityHashes);
+  const viewerAuthorSelect = buildViewerAuthorSelect(viewerIdentityHashes);
 
   const conditions = ['posts.deleted = 0', 'posts.hidden = 0'];
-  const params = [...viewerSelect.params];
+  const params = [...viewerSelect.params, ...viewerAuthorSelect.params];
 
   if (filter === 'today') {
     conditions.push('posts.created_at >= ?');
@@ -265,7 +286,8 @@ app.get('/api/posts/feed', (req, res) => {
     .prepare(
       `
       SELECT posts.*, ${hotScoreSql} AS hot_score,
-        ${viewerSelect.sql}
+        ${viewerSelect.sql},
+        ${viewerAuthorSelect.sql}
       FROM posts
       ${whereClause}
       ORDER BY hot_score DESC, posts.created_at DESC
@@ -343,6 +365,7 @@ app.get('/api/posts/search', (req, res) => {
   trackDailyVisit(dateKey, req.sessionID);
   const viewerIdentityHashes = getIdentityLookupHashes(req, res);
   const viewerSelect = buildViewerSelect(viewerIdentityHashes);
+  const viewerAuthorSelect = buildViewerAuthorSelect(viewerIdentityHashes);
 
   if (dateRange.error) {
     return res.status(400).json({ error: dateRange.error });
@@ -391,14 +414,15 @@ app.get('/api/posts/search', (req, res) => {
     .prepare(
       `
         SELECT posts.*, ${hotScoreSql} AS hot_score,
-          ${viewerSelect.sql}
+          ${viewerSelect.sql},
+          ${viewerAuthorSelect.sql}
         FROM posts
         ${whereClause}
         ORDER BY posts.created_at DESC
         LIMIT ? OFFSET ?
       `
     )
-    .all(...viewerSelect.params, ...params, limit, offset);
+    .all(...viewerSelect.params, ...viewerAuthorSelect.params, ...params, limit, offset);
 
   const items = rows.map((row) => mapPostRow(row, row.hot_score >= 20));
   return res.json({ items, total, page, limit });
@@ -463,16 +487,18 @@ app.post('/api/posts', async (req, res) => {
   incrementDailyStat(formatDateKey(), 'posts', 1);
 
   const viewerSelect = buildViewerSelect([fingerprint]);
+  const viewerAuthorSelect = buildViewerAuthorSelect([fingerprint]);
   const row = db
     .prepare(
       `
       SELECT posts.*, ${hotScoreSql} AS hot_score,
-        ${viewerSelect.sql}
+        ${viewerSelect.sql},
+        ${viewerAuthorSelect.sql}
       FROM posts
       WHERE posts.id = ?
       `
     )
-    .get(...viewerSelect.params, postId);
+    .get(...viewerSelect.params, ...viewerAuthorSelect.params, postId);
 
   generateSnapshotForPost({ id: postId, content, created_at: now });
   scheduleSitemapGenerate();
@@ -490,25 +516,119 @@ app.get('/api/posts/:id', (req, res) => {
   }
   const viewerIdentityHashes = getIdentityLookupHashes(req, res);
   const viewerSelect = buildViewerSelect(viewerIdentityHashes);
+  const viewerAuthorSelect = buildViewerAuthorSelect(viewerIdentityHashes);
 
   const row = db
     .prepare(
       `
       SELECT posts.*, ${hotScoreSql} AS hot_score,
-        ${viewerSelect.sql}
+        ${viewerSelect.sql},
+        ${viewerAuthorSelect.sql}
       FROM posts
       WHERE posts.id = ?
         AND posts.deleted = 0
         AND posts.hidden = 0
       `
     )
-    .get(...viewerSelect.params, postId);
+    .get(...viewerSelect.params, ...viewerAuthorSelect.params, postId);
 
   if (!row) {
     return res.status(404).json({ error: '帖子不存在或已删除' });
   }
 
   return res.json({ post: mapPostRow(row, row.hot_score >= 20) });
+});
+
+app.post('/api/posts/:id/delete-requests', (req, res) => {
+  const postId = String(req.params.id || '').trim();
+  const reason = String(req.body?.reason || '').trim();
+
+  if (!postId) {
+    return res.status(400).json({ error: '帖子不存在' });
+  }
+
+  if (!reason) {
+    return res.status(400).json({ error: '请填写删除原因' });
+  }
+
+  if (reason.length > 1000) {
+    return res.status(400).json({ error: '删除原因不能超过 1000 字' });
+  }
+
+  const requesterFingerprint = requireFingerprint(req, res);
+  if (!requesterFingerprint) {
+    return;
+  }
+
+  if (!checkBanFor(req, res, 'post', '你已被限制操作', requesterFingerprint)) {
+    return;
+  }
+
+  const post = db
+    .prepare(
+      `
+      SELECT id, fingerprint, deleted, hidden
+      FROM posts
+      WHERE id = ?
+      `
+    )
+    .get(postId);
+
+  if (!post || post.deleted === 1 || post.hidden === 1) {
+    return res.status(404).json({ error: '帖子不存在或当前不可申请删除' });
+  }
+
+  const identityHashes = getIdentityLookupHashes(req, res);
+  const normalizedHashes = new Set(
+    [...identityHashes, requesterFingerprint]
+      .map((value) => String(value || '').trim())
+      .filter(Boolean)
+  );
+  const postFingerprint = String(post.fingerprint || '').trim();
+  if (!postFingerprint || !normalizedHashes.has(postFingerprint)) {
+    return res.status(403).json({ error: '只有发帖人可以申请删除' });
+  }
+
+  const existingPending = db
+    .prepare(
+      `
+      SELECT id
+      FROM post_delete_requests
+      WHERE post_id = ?
+        AND status = 'pending'
+      LIMIT 1
+      `
+    )
+    .get(postId);
+  if (existingPending) {
+    return res.status(409).json({ error: '删除申请正在审核中' });
+  }
+
+  const now = Date.now();
+  const requestId = crypto.randomUUID();
+  db.prepare(
+    `
+    INSERT INTO post_delete_requests (
+      id,
+      post_id,
+      requester_fingerprint,
+      requester_ip,
+      reason,
+      status,
+      created_at
+    ) VALUES (?, ?, ?, ?, ?, 'pending', ?)
+    `
+  ).run(requestId, postId, requesterFingerprint, getClientIp(req) || null, reason, now);
+
+  return res.status(201).json({
+    item: {
+      id: requestId,
+      postId,
+      reason,
+      status: 'pending',
+      createdAt: now,
+    },
+  });
 });
 
 const sumReactionCounts = (postId) => {

@@ -134,6 +134,10 @@ export const api = {
     method: 'POST',
     body: JSON.stringify({ content, tags, turnstileToken }),
   }),
+  createPostDeleteRequest: (postId, reason) => apiFetch(`/posts/${encodeURIComponent(String(postId || ''))}/delete-requests`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  }),
   likePost: (postId) => apiFetch(`/posts/${postId}/like`, { method: 'POST' }),
   dislikePost: (postId) => apiFetch(`/posts/${postId}/dislike`, { method: 'POST' }),
   toggleFavoritePost: (postId) => apiFetch(`/posts/${postId}/favorite`, { method: 'POST' }),
@@ -188,6 +192,11 @@ export const api = {
   }),
   getAdminPostComments: (postId, page = 1, limit = 100, search = '') => apiFetch(`/admin/posts/${postId}/comments${toQuery({ page, limit, search })}`),
   getAdminHiddenContent: (params = {}) => apiFetch(`/admin/hidden-content${toQuery(params)}`),
+  getAdminPostDeleteRequests: (params = {}) => apiFetch(`/admin/post-delete-requests${toQuery(params)}`),
+  handleAdminPostDeleteRequest: (requestId, action, reason = '') => apiFetch(`/admin/post-delete-requests/${encodeURIComponent(String(requestId || ''))}/action`, {
+    method: 'POST',
+    body: JSON.stringify({ action, reason }),
+  }),
   handleAdminHiddenContent: (type, id, action, reason = '') => apiFetch(`/admin/hidden-content/${encodeURIComponent(type)}/${encodeURIComponent(id)}/action`, {
     method: 'POST',
     body: JSON.stringify({ action, reason }),
@@ -239,6 +248,10 @@ export const api = {
   handleAdminFeedback: (feedbackId, action, reason = '', options = {}) => apiFetch(`/admin/feedback/${feedbackId}/action`, {
     method: 'POST',
     body: JSON.stringify({ action, reason, ...options }),
+  }),
+  replyAdminFeedback: (feedbackId, content) => apiFetch(`/admin/feedback/${encodeURIComponent(String(feedbackId || ''))}/replies`, {
+    method: 'POST',
+    body: JSON.stringify({ content }),
   }),
   getAdminBans: () => apiFetch('/admin/bans'),
   handleAdminBan: (action, type, value, reason = '', options = {}) => apiFetch('/admin/bans/action', {

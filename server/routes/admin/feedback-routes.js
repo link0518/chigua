@@ -16,6 +16,8 @@ export const registerAdminFeedbackRoutes = (app, deps) => {
     upsertBan,
     BAN_PERMISSIONS,
     resolveStoredIdentityHash,
+    createNotification,
+    crypto,
   } = deps;
 
   const resolveAdminIdentity = ({ fingerprint, sessionId = '', ip = '' }) => buildAdminIdentity({
@@ -25,7 +27,16 @@ export const registerAdminFeedbackRoutes = (app, deps) => {
     resolveStoredIdentityHash,
   });
 
-  const buildFeedbackItem = (row) => ({
+  const buildFeedbackReplyItem = (row) => ({
+    id: row.id,
+    feedbackId: row.feedback_id,
+    content: row.content,
+    adminId: row.admin_id || null,
+    adminUsername: row.admin_username || null,
+    createdAt: row.created_at,
+  });
+
+  const buildFeedbackItem = (row, replies = []) => ({
     id: row.id,
     content: row.content,
     email: row.email,
@@ -41,6 +52,7 @@ export const registerAdminFeedbackRoutes = (app, deps) => {
       sessionId: row.session_id || '',
       ip: row.ip || '',
     }),
+    replies,
   });
 
   const buildFeedbackSearchValues = (item) => [
@@ -107,7 +119,26 @@ export const registerAdminFeedbackRoutes = (app, deps) => {
         .all(...params, limit, offset);
     }
 
-    let items = rows.map((row) => buildFeedbackItem(row));
+    const replyRows = rows.length
+      ? db
+        .prepare(
+          `
+          SELECT *
+          FROM feedback_replies
+          WHERE feedback_id IN (${rows.map(() => '?').join(',')})
+          ORDER BY created_at ASC, id ASC
+          `
+        )
+        .all(...rows.map((row) => row.id))
+      : [];
+    const repliesByFeedback = new Map();
+    replyRows.forEach((row) => {
+      const current = repliesByFeedback.get(row.feedback_id) || [];
+      current.push(buildFeedbackReplyItem(row));
+      repliesByFeedback.set(row.feedback_id, current);
+    });
+
+    let items = rows.map((row) => buildFeedbackItem(row, repliesByFeedback.get(row.id) || []));
     if (search) {
       items = items.filter((item) => matchesAdminSearch(search, buildFeedbackSearchValues(item)));
       total = items.length;
@@ -159,7 +190,11 @@ export const registerAdminFeedbackRoutes = (app, deps) => {
     }
 
     if (action === 'delete') {
-      db.prepare('DELETE FROM feedback_messages WHERE id = ?').run(feedbackId);
+      const deleteFeedback = db.transaction((id) => {
+        db.prepare('DELETE FROM feedback_replies WHERE feedback_id = ?').run(id);
+        db.prepare('DELETE FROM feedback_messages WHERE id = ?').run(id);
+      });
+      deleteFeedback(feedbackId);
       logAdminAction(req, {
         action: 'feedback_delete',
         targetType: 'feedback',
@@ -236,6 +271,83 @@ export const registerAdminFeedbackRoutes = (app, deps) => {
       ipBanned: Boolean(ip),
       identityBanned,
       fingerprintBanned,
+    });
+  });
+
+  app.post('/api/admin/feedback/:id/replies', requireAdmin, requireAdminCsrf, requireAdminManage, (req, res) => {
+    const feedbackId = String(req.params.id || '').trim();
+    const content = String(req.body?.content || '').trim();
+
+    if (!feedbackId) {
+      return res.status(400).json({ error: '留言不存在' });
+    }
+
+    if (!content) {
+      return res.status(400).json({ error: '回复内容不能为空' });
+    }
+
+    if (content.length > 1000) {
+      return res.status(400).json({ error: '回复内容不能超过 1000 字' });
+    }
+
+    const row = db.prepare('SELECT * FROM feedback_messages WHERE id = ?').get(feedbackId);
+    if (!row) {
+      return res.status(404).json({ error: '留言不存在' });
+    }
+
+    const recipientFingerprint = String(row.fingerprint || '').trim();
+    if (!recipientFingerprint) {
+      return res.status(400).json({ error: '该留言缺少用户身份，无法发送站内回复' });
+    }
+
+    const admin = req.session?.admin || {};
+    const now = Date.now();
+    const replyId = crypto.randomUUID();
+    db.prepare(
+      `
+      INSERT INTO feedback_replies (
+        id,
+        feedback_id,
+        content,
+        admin_id,
+        admin_username,
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, ?)
+      `
+    ).run(
+      replyId,
+      feedbackId,
+      content,
+      typeof admin.id === 'number' ? admin.id : null,
+      admin.username || null,
+      now
+    );
+
+    createNotification?.({
+      recipientFingerprint,
+      type: 'feedback_reply',
+      preview: content,
+      actorIdentityContext: null,
+    });
+
+    logAdminAction(req, {
+      action: 'feedback_reply',
+      targetType: 'feedback',
+      targetId: feedbackId,
+      before: null,
+      after: { replyId },
+      reason: null,
+    });
+
+    return res.status(201).json({
+      item: buildFeedbackReplyItem({
+        id: replyId,
+        feedback_id: feedbackId,
+        content,
+        admin_id: typeof admin.id === 'number' ? admin.id : null,
+        admin_username: admin.username || null,
+        created_at: now,
+      }),
     });
   });
 };

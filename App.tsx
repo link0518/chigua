@@ -10,6 +10,7 @@ import {
   AlertTriangle,
   Bell,
   BookOpen,
+  CheckCircle,
   Megaphone,
   Menu,
   MessageCircle,
@@ -17,6 +18,7 @@ import {
   Reply,
   Settings2,
   ThumbsUp,
+  Trash2,
   X,
   XCircle,
 } from 'lucide-react';
@@ -265,6 +267,12 @@ const App: React.FC = () => {
         return '你举报的内容已被判定为疑似谣言';
       case 'rumor_rejected':
         return '你提交的谣言举报已被驳回';
+      case 'feedback_reply':
+        return '管理员回复了你的留言';
+      case 'post_delete_request_approved':
+        return '你的帖子删除申请已通过';
+      case 'post_delete_request_rejected':
+        return '你的帖子删除申请已驳回';
       default:
         return '你有新提醒';
     }
@@ -283,6 +291,12 @@ const App: React.FC = () => {
         return <AlertTriangle className={className} />;
       case 'rumor_rejected':
         return <XCircle className={className} />;
+      case 'feedback_reply':
+        return <Reply className={className} />;
+      case 'post_delete_request_approved':
+        return <CheckCircle className={className} />;
+      case 'post_delete_request_rejected':
+        return <Trash2 className={className} />;
       default:
         return <Bell className={className} />;
     }
@@ -568,7 +582,7 @@ const App: React.FC = () => {
                                   {!item.readAt && <span className="h-2 w-2 rounded-full bg-red-500" />}
                                 </div>
                                 {item.preview && (
-                                  <div className={`text-xs text-pencil font-sans mt-1 break-words ${item.type === 'rumor_rejected' ? 'whitespace-pre-wrap line-clamp-4' : 'line-clamp-2'}`}>
+                                  <div className={`text-xs text-pencil font-sans mt-1 break-words ${['feedback_reply', 'post_delete_request_approved', 'post_delete_request_rejected'].includes(item.type) ? 'whitespace-pre-wrap' : item.type === 'rumor_rejected' ? 'whitespace-pre-wrap line-clamp-4' : 'line-clamp-2'}`}>
                                     “{item.preview}”
                                   </div>
                                 )}

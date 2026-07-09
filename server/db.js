@@ -198,6 +198,29 @@ CREATE TABLE IF NOT EXISTS feedback_messages (
   read_at INTEGER
 );
 
+CREATE TABLE IF NOT EXISTS feedback_replies (
+  id TEXT PRIMARY KEY,
+  feedback_id TEXT NOT NULL,
+  content TEXT NOT NULL,
+  admin_id INTEGER,
+  admin_username TEXT,
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS post_delete_requests (
+  id TEXT PRIMARY KEY,
+  post_id TEXT NOT NULL,
+  requester_fingerprint TEXT NOT NULL,
+  requester_ip TEXT,
+  reason TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  created_at INTEGER NOT NULL,
+  reviewed_at INTEGER,
+  reviewed_by INTEGER,
+  reviewed_by_username TEXT,
+  review_reason TEXT
+);
+
 CREATE TABLE IF NOT EXISTS notifications (
   id TEXT PRIMARY KEY,
   recipient_fingerprint TEXT NOT NULL,
@@ -567,6 +590,10 @@ const ensureIndexes = () => {
   CREATE INDEX IF NOT EXISTS idx_reports_comment_status_created_at ON reports(comment_id, status, created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_feedback_created_at ON feedback_messages(created_at);
   CREATE INDEX IF NOT EXISTS idx_feedback_read_at ON feedback_messages(read_at);
+  CREATE INDEX IF NOT EXISTS idx_feedback_replies_feedback_created_at ON feedback_replies(feedback_id, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_post_delete_requests_status_created_at ON post_delete_requests(status, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_post_delete_requests_post_status ON post_delete_requests(post_id, status);
+  CREATE INDEX IF NOT EXISTS idx_post_delete_requests_requester_created_at ON post_delete_requests(requester_fingerprint, created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_update_announcements_updated_at ON update_announcements(updated_at DESC);
   CREATE INDEX IF NOT EXISTS idx_wiki_entries_status_deleted_updated_at ON wiki_entries(status, deleted, updated_at DESC);
   CREATE INDEX IF NOT EXISTS idx_wiki_entries_slug ON wiki_entries(slug);

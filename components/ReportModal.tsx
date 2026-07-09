@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { AlertTriangle, Flag } from 'lucide-react';
+import { AlertTriangle, Flag, Trash2 } from 'lucide-react';
 
 import Modal from './Modal';
 import { SketchButton } from './SketchUI';
@@ -13,6 +13,8 @@ interface ReportModalProps {
   commentId?: string;
   targetType?: 'post' | 'comment';
   contentPreview?: string;
+  canRequestPostDeletion?: boolean;
+  onRequestPostDeletion?: () => void;
 }
 
 type ReportReasonOption = {
@@ -44,6 +46,8 @@ const ReportModal: React.FC<ReportModalProps> = ({
   commentId,
   targetType = 'post',
   contentPreview,
+  canRequestPostDeletion = false,
+  onRequestPostDeletion,
 }) => {
   const { reportPost, reportComment, showToast } = useApp();
   const [selectedReason, setSelectedReason] = useState<string>('');
@@ -131,6 +135,11 @@ const ReportModal: React.FC<ReportModalProps> = ({
     || (requiresEvidence && !evidence.trim())
     || isSubmitting;
 
+  const handleRequestPostDeletion = () => {
+    resetForm();
+    onRequestPostDeletion?.();
+  };
+
   return (
     <Modal
       isOpen={isOpen}
@@ -147,6 +156,20 @@ const ReportModal: React.FC<ReportModalProps> = ({
         {contentPreview && (
           <div className="rounded-lg border border-dashed border-ink bg-gray-50 p-3">
             <p className="line-clamp-2 font-sans text-sm text-pencil">"{contentPreview}"</p>
+          </div>
+        )}
+
+        {targetType === 'post' && canRequestPostDeletion && onRequestPostDeletion && (
+          <div className="rounded-lg border-2 border-red-200 bg-red-50/80 p-3">
+            <SketchButton
+              type="button"
+              variant="danger"
+              className="w-full flex items-center justify-center gap-2"
+              onClick={handleRequestPostDeletion}
+            >
+              <Trash2 className="h-4 w-4" />
+              申请删除帖子
+            </SketchButton>
           </div>
         )}
 

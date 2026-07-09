@@ -218,6 +218,80 @@ test('audit logs require super admin', async () => {
   db.close();
 });
 
+test('super admin can filter audit logs by category risk target time and reason', async () => {
+  const db = createAdminDb();
+  const now = Date.now();
+  const rows = [
+    [1, 'root', 'post_edit', 'post', 'p1', '修正文案', now - 1000],
+    [1, 'root', 'ban_ip', 'ip', '1.2.3.4', null, now - 2000],
+    [2, 'ops', 'settings_update', 'settings', 'site_settings', '调整限流', now - 3000],
+    [2, 'ops', 'wiki_revision_approve', 'wiki_revision', 'w1', '词条通过', now - 60 * 60 * 1000],
+    [1, 'root', 'post_delete_request_approve', 'post_delete_request', 'dr1', '用户申请删除', now - 4000],
+    [2, 'ops', 'feedback_reply', 'feedback', 'f1', null, now - 5000],
+  ];
+
+  const insert = db.prepare(`
+    INSERT INTO admin_audit_logs (admin_id, admin_username, action, target_type, target_id, reason, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `);
+  rows.forEach((row) => insert.run(...row));
+
+  const app = createApp();
+  registerAdminAuditRoutes(app, {
+    db,
+    requireAdmin: (_req, _res, next) => next(),
+    requireSuperAdmin: (_req, _res, next) => next(),
+    AUDIT_RETENTION_MS: 30 * 24 * 60 * 60 * 1000,
+  });
+
+  const filteredRes = await runHandlers(app.routes.get('GET /api/admin/audit-logs'), {
+    query: {
+      category: 'user_safety',
+      riskLevel: 'high',
+      targetType: 'ip',
+      adminUsername: 'root',
+      hasReason: 'false',
+      from: String(now - 10 * 1000),
+      to: String(now),
+    },
+  });
+
+  assert.equal(filteredRes.statusCode, 200);
+  assert.equal(filteredRes.payload.total, 1);
+  assert.equal(filteredRes.payload.items[0].action, 'ban_ip');
+
+  const reasonSearchRes = await runHandlers(app.routes.get('GET /api/admin/audit-logs'), {
+    query: { search: '调整限流' },
+  });
+
+  assert.equal(reasonSearchRes.statusCode, 200);
+  assert.equal(reasonSearchRes.payload.total, 1);
+  assert.equal(reasonSearchRes.payload.items[0].action, 'settings_update');
+
+  const deleteRequestAuditRes = await runHandlers(app.routes.get('GET /api/admin/audit-logs'), {
+    query: {
+      category: 'content_review',
+      riskLevel: 'high',
+      targetType: 'post_delete_request',
+      search: '用户申请删除',
+    },
+  });
+
+  assert.equal(deleteRequestAuditRes.statusCode, 200);
+  assert.equal(deleteRequestAuditRes.payload.total, 1);
+  assert.equal(deleteRequestAuditRes.payload.items[0].action, 'post_delete_request_approve');
+  assert.equal(deleteRequestAuditRes.payload.items[0].category, 'content_review');
+  assert.equal(deleteRequestAuditRes.payload.items[0].riskLevel, 'high');
+
+  const feedbackReplyAuditRes = await runHandlers(app.routes.get('GET /api/admin/audit-logs'), {
+    query: { category: 'feedback', targetType: 'feedback' },
+  });
+
+  assert.equal(feedbackReplyAuditRes.statusCode, 200);
+  assert.ok(feedbackReplyAuditRes.payload.items.some((item) => item.action === 'feedback_reply'));
+  db.close();
+});
+
 test('super admin creates admin user with permissions and audit log', async () => {
   const db = createAdminDb();
   const app = createApp();

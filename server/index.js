@@ -30,6 +30,7 @@ import { registerAdminSettingsRoutes } from './routes/admin/settings-routes.js';
 import { registerAdminPostsRoutes } from './routes/admin/posts-routes.js';
 import { registerAdminWikiRoutes } from './routes/admin/wiki-routes.js';
 import { registerAdminFeedbackRoutes } from './routes/admin/feedback-routes.js';
+import { registerAdminPostDeleteRequestsRoutes } from './routes/admin/post-delete-requests-routes.js';
 import { registerAdminBansRoutes } from './routes/admin/bans-routes.js';
 import { registerAdminAuditRoutes } from './routes/admin/audit-routes.js';
 import { registerAdminVocabularyRoutes } from './routes/admin/vocabulary-routes.js';
@@ -1158,6 +1159,8 @@ const mapPostRow = (row, isHot) => ({
   rumorStatusUpdatedAt: row.rumor_status === 'suspected' ? (row.rumor_status_updated_at || null) : null,
   viewerReaction: row.viewer_reaction || null,
   viewerFavorited: Boolean(row.viewer_favorited),
+  viewerIsAuthor: Boolean(row.viewer_is_author),
+  viewerDeleteRequestStatus: row.viewer_delete_request_status || null,
 });
 
 const mapCommentRow = (row) => {
@@ -1484,6 +1487,21 @@ registerAdminFeedbackRoutes(app, {
   resolveBanOptions,
   upsertBan,
   BAN_PERMISSIONS,
+  resolveStoredIdentityHash,
+  createNotification,
+  crypto,
+});
+
+registerAdminPostDeleteRequestsRoutes(app, {
+  db,
+  requireAdmin,
+  requireAdminCsrf,
+  requireAdminRead: contentReviewAdmin.read,
+  requireAdminManage: contentReviewAdmin.manage,
+  formatRelativeTime,
+  logAdminAction,
+  createNotification,
+  trimPreview,
   resolveStoredIdentityHash,
 });
 

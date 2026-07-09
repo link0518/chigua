@@ -5,6 +5,7 @@ import {
   EyeOff,
   Flag,
   MessageSquare,
+  Trash2,
 } from 'lucide-react';
 import {
   BarChart,
@@ -23,6 +24,7 @@ import type { Report } from '@/types';
 interface AdminOverviewViewProps {
   pendingReportCount: number;
   hiddenPendingCount: number;
+  deleteRequestPendingCount: number;
   wikiPendingCount: number;
   rumorPendingCount: number;
   feedbackUnreadCount: number;
@@ -36,6 +38,7 @@ interface AdminOverviewViewProps {
   visiblePendingReports: Report[];
   onOpenReports: () => void;
   onOpenHidden: () => void;
+  onOpenDeleteRequests: () => void;
   onOpenWiki: () => void;
   onOpenRumors: () => void;
   onOpenFeedback: () => void;
@@ -59,6 +62,7 @@ interface AdminOverviewViewProps {
 const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
   pendingReportCount,
   hiddenPendingCount,
+  deleteRequestPendingCount,
   wikiPendingCount,
   rumorPendingCount,
   feedbackUnreadCount,
@@ -72,6 +76,7 @@ const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
   visiblePendingReports,
   onOpenReports,
   onOpenHidden,
+  onOpenDeleteRequests,
   onOpenWiki,
   onOpenRumors,
   onOpenFeedback,
@@ -91,10 +96,11 @@ const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
   };
   const reportTodoCount = toDisplayCount(pendingReportCount);
   const hiddenTodoCount = toDisplayCount(hiddenPendingCount);
+  const deleteRequestTodoCount = toDisplayCount(deleteRequestPendingCount);
   const wikiTodoCount = toDisplayCount(wikiPendingCount);
   const rumorTodoCount = toDisplayCount(rumorPendingCount);
   const feedbackTodoCount = toDisplayCount(feedbackUnreadCount);
-  const totalTodoCount = reportTodoCount + hiddenTodoCount + wikiTodoCount + rumorTodoCount + feedbackTodoCount;
+  const totalTodoCount = reportTodoCount + hiddenTodoCount + deleteRequestTodoCount + wikiTodoCount + rumorTodoCount + feedbackTodoCount;
   const workItems = [
     {
       title: '举报',
@@ -111,6 +117,14 @@ const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({
       color: 'bg-yellow-100',
       visible: canReadContentReview,
       onClick: onOpenHidden,
+    },
+    {
+      title: '删除申请',
+      count: deleteRequestTodoCount,
+      icon: <Trash2 size={18} />,
+      color: 'bg-red-100',
+      visible: canReadContentReview,
+      onClick: onOpenDeleteRequests,
     },
     {
       title: '谣言',

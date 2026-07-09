@@ -28,6 +28,8 @@ export interface Post {
   rumorStatusUpdatedAt?: number | null;
   viewerReaction?: 'like' | 'dislike' | null;
   viewerFavorited?: boolean;
+  viewerIsAuthor?: boolean;
+  viewerDeleteRequestStatus?: 'pending' | null;
 }
 
 export type ReportReasonCode = 'privacy' | 'harassment' | 'spam' | 'misinformation' | 'rumor';
@@ -100,7 +102,15 @@ export interface CommentPostIdentity {
 
 export interface NotificationItem {
   id: string;
-  type: 'post_comment' | 'post_like' | 'comment_reply' | 'rumor_marked' | 'rumor_rejected';
+  type:
+    | 'post_comment'
+    | 'post_like'
+    | 'comment_reply'
+    | 'rumor_marked'
+    | 'rumor_rejected'
+    | 'feedback_reply'
+    | 'post_delete_request_approved'
+    | 'post_delete_request_rejected';
   postId?: string | null;
   commentId?: string | null;
   preview?: string | null;
@@ -254,6 +264,8 @@ export interface AdminAuditLog {
   action: string;
   targetType: string;
   targetId: string;
+  category?: string | null;
+  riskLevel?: 'normal' | 'high' | string | null;
   before?: string | null;
   after?: string | null;
   reason?: string | null;
@@ -281,6 +293,35 @@ export interface FeedbackMessage extends AdminIdentityInfo {
   qq?: string | null;
   createdAt: number;
   readAt?: number | null;
+  replies?: FeedbackReply[];
+}
+
+export interface FeedbackReply {
+  id: string;
+  feedbackId: string;
+  content: string;
+  adminId?: number | null;
+  adminUsername?: string | null;
+  createdAt: number;
+}
+
+export interface PostDeleteRequest extends AdminIdentityInfo {
+  id: string;
+  postId: string;
+  postContent: string;
+  postDeleted?: boolean;
+  postDeletedAt?: number | null;
+  postHidden?: boolean;
+  reason: string;
+  status: 'pending' | 'approved' | 'rejected';
+  createdAt: number;
+  timestamp?: string;
+  requesterFingerprint?: string | null;
+  requesterIp?: string | null;
+  reviewedAt?: number | null;
+  reviewedBy?: number | null;
+  reviewedByUsername?: string | null;
+  reviewReason?: string | null;
 }
 
 export interface UpdateAnnouncementItem {

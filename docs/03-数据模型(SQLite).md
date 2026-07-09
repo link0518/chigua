@@ -59,6 +59,24 @@
 - `report_fingerprints`：按 `post_id + fingerprint` 去重
 - `comment_report_fingerprints`：按 `comment_id + fingerprint` 去重
 
+### 1.4.1 post_delete_requests（帖子删除申请）
+
+用于保存发帖人提交的删帖申请和管理员审核结果：
+
+- `post_id`：申请删除的帖子
+- `requester_fingerprint` / `requester_ip`：申请人身份
+- `reason`：申请原因，必填
+- `status`：`pending` / `approved` / `rejected`
+- `created_at`：申请时间
+- `reviewed_at` / `reviewed_by` / `reviewed_by_username`：审核信息
+- `review_reason`：管理员处理说明，可为空
+
+关键规则：
+
+- 同一帖子同一时间只允许一条 `pending` 申请。
+- `pending` 期间帖子继续公开展示。
+- 审核通过后更新 `posts.deleted = 1` 和 `posts.deleted_at`，不物理删除帖子。
+
 ### 1.5 banned_*（封禁）
 
 - `banned_sessions`：按 session 封禁（较少用）
@@ -102,6 +120,20 @@ permissions 常见值（见服务端/前端映射）：
 
 - 通知写入时仍落单个 `recipient_fingerprint`
 - 读取/已读时会结合 `identity_aliases` 聚合同一身份下的多个哈希
+- 管理员留言回复和删帖申请审核会复用通知表，类型包括 `feedback_reply`、`post_delete_request_approved`、`post_delete_request_rejected`
+
+### 1.7.1 feedback_messages / feedback_replies（留言与回复）
+
+`feedback_messages` 保存前台留言内容、联系方式、提交身份和已读状态。
+
+`feedback_replies` 保存管理员对留言的回复历史：
+
+- `feedback_id`：关联留言
+- `content`：回复内容
+- `admin_id` / `admin_username`：回复管理员
+- `created_at`：回复时间
+
+同一留言可以有多条回复；回复不覆盖历史，并会向留言提交者发送 `feedback_reply` 通知。
 
 ### 1.8 announcements（公告）
 
@@ -157,6 +189,8 @@ permissions 常见值（见服务端/前端映射）：
 ### 2.1 帖子
 
 以 `deleted` 软删除为主，并维护 `deleted_at` 与计数字段；帖子相关联的一些表通过外键 `ON DELETE CASCADE` 可能在硬删时被级联清理（但“硬删帖子”是否存在取决于后台动作实现）。
+
+发帖人申请删除不会立即修改 `posts.deleted`；只有管理员在删除申请队列中审核通过后才执行软删除。
 
 ### 2.2 评论
 

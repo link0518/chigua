@@ -20,6 +20,7 @@ interface AdminFeedbackViewProps {
   onFeedbackStatusChange: (status: AdminFeedbackStatus) => void;
   onFeedbackPageChange: (page: number) => void;
   onFeedbackRead: (feedbackId: string) => void;
+  onOpenFeedbackReply: (message: FeedbackMessage) => void;
   onOpenFeedbackAction: AdminFeedbackActionHandler;
 }
 
@@ -36,6 +37,7 @@ const AdminFeedbackView: React.FC<AdminFeedbackViewProps> = ({
   onFeedbackStatusChange,
   onFeedbackPageChange,
   onFeedbackRead,
+  onOpenFeedbackReply,
   onOpenFeedbackAction,
 }) => (
   <section>
@@ -90,8 +92,31 @@ const AdminFeedbackView: React.FC<AdminFeedbackViewProps> = ({
                   {message.qq && <span>QQ：{message.qq}</span>}
                   {renderIdentity(message)}
                 </div>
+                {message.replies?.length ? (
+                  <div className="mt-4 rounded-lg border border-dashed border-ink/30 bg-gray-50 p-3">
+                    <p className="mb-2 text-[11px] font-bold text-pencil font-sans">回复历史</p>
+                    <div className="flex flex-col gap-2">
+                      {message.replies.map((reply) => (
+                        <div key={reply.id} className="rounded-md border border-gray-200 bg-white p-3">
+                          <div className="mb-1 flex flex-wrap items-center gap-2 text-[11px] text-pencil font-sans">
+                            <span className="font-bold text-ink">{reply.adminUsername || '管理员'}</span>
+                            <span>{formatTimestamp(reply.createdAt)}</span>
+                          </div>
+                          <p className="whitespace-pre-wrap break-words text-sm text-ink font-sans">{reply.content}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
               </div>
               {canManage && <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 min-w-fit mt-2 md:mt-0 font-sans">
+                <SketchButton
+                  variant="primary"
+                  className="h-10 px-3 text-xs flex items-center gap-1 text-white"
+                  onClick={() => onOpenFeedbackReply(message)}
+                >
+                  回复
+                </SketchButton>
                 {!message.readAt && (
                   <SketchButton
                     variant="secondary"
