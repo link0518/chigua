@@ -136,6 +136,12 @@ test('企业微信推送内容不包含留言ID、所属帖子和内容ID', asyn
     contentSnippet: '谣言待审摘要',
     evidence: '与公开公告不一致',
   });
+  await service.notifyPostDeleteRequest({
+    postId: 'delete-secret-post-id',
+    requestId: 'delete-secret-request-id',
+    contentSnippet: '删除申请内容摘要',
+    reason: '涉及个人隐私',
+  });
 
   const sentText = bodies.map((body) => body.markdown.content).join('\n');
   assert.ok(!sentText.includes('留言ID'));
@@ -146,6 +152,8 @@ test('企业微信推送内容不包含留言ID、所属帖子和内容ID', asyn
   assert.ok(!sentText.includes('post-secret-id'));
   assert.ok(!sentText.includes('rumor-secret-id'));
   assert.ok(!sentText.includes('rumor-post-secret-id'));
+  assert.ok(!sentText.includes('delete-secret-post-id'));
+  assert.ok(!sentText.includes('delete-secret-request-id'));
 });
 
 test('企业微信谣言待审提醒包含类型、举报数量与举报依据', async () => {
@@ -205,4 +213,34 @@ test('企业微信瓜条待审提醒包含类型、名称、标签和摘要', as
   assert.match(sentText, /#藏剑山庄 #庄主/);
   assert.match(sentText, /内容摘要：心剑一成/);
   assert.match(sentText, /\[打开后台\]\(https:\/\/example\.com\/tiancai\)/);
+});
+
+test('企业微信删除申请待审提醒包含类型、原因和摘要', async () => {
+  const bodies = [];
+  const service = createWecomWebhookService({
+    getConfig: () => ({ enabled: true, url: VALID_URL }),
+    fetchImpl: async (_url, options) => {
+      bodies.push(JSON.parse(options.body));
+      return { ok: true, status: 200, json: async () => ({ errcode: 0 }) };
+    },
+    siteUrl: 'https://example.com',
+  });
+
+  const result = await service.notifyPostDeleteRequest({
+    postId: 'secret-post-id',
+    requestId: 'secret-request-id',
+    contentSnippet: '这是一条待删除帖子摘要',
+    reason: '内容涉及个人隐私',
+    createdAt: Date.UTC(2024, 0, 1, 0, 0, 0),
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(bodies.length, 1);
+  const sentText = bodies[0].markdown.content;
+  assert.match(sentText, /删除申请待审核/);
+  assert.match(sentText, /删除原因：内容涉及个人隐私/);
+  assert.match(sentText, /内容摘要：这是一条待删除帖子摘要/);
+  assert.match(sentText, /\[打开后台\]\(https:\/\/example\.com\/tiancai\)/);
+  assert.ok(!sentText.includes('secret-post-id'));
+  assert.ok(!sentText.includes('secret-request-id'));
 });

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Flag, Gavel, BarChart2, Bell, Search, Trash2, Ban, Eye, EyeOff, LayoutDashboard, LogOut, CheckCircle, XCircle, FileText, Pencil, RotateCcw, Shield, ClipboardList, MessageSquare, Menu, X, Settings, BookOpen, AlertTriangle, UserCog } from 'lucide-react';
+import { Flag, Gavel, BarChart2, Bell, Search, Trash2, Ban, Eye, EyeOff, LayoutDashboard, LogOut, CheckCircle, XCircle, FileText, Pencil, RotateCcw, Shield, ClipboardList, MessageSquare, Menu, X, Settings, BookOpen, AlertTriangle, UserCog, Store } from 'lucide-react';
 import { SketchButton, Badge } from './SketchUI';
 import { AdminAuditLog, AdminComment, AdminHiddenItem, AdminPermissionDefinitions, AdminPermissions, AdminUserAccount, AdminPost, FeedbackMessage, PostDeleteRequest, Report, UpdateAnnouncementItem } from '../types';
 import { useApp } from '../store/AppContext';
@@ -25,6 +25,7 @@ import AdminReportsView from '@/features/admin/views/AdminReportsView';
 import AdminPublishCenterView from '@/features/admin/views/AdminPublishCenterView';
 import AdminSystemSettingsView from '@/features/admin/views/AdminSystemSettingsView';
 import AdminUsersView from '@/features/admin/views/AdminUsersView';
+import AdminShopView from '@/features/admin/views/AdminShopView';
 import { hasPermission } from '@/features/admin/permissions';
 import type { AdminPostDeleteRequestAction, AdminPostDeleteRequestStatus, ReportAction } from '@/features/admin/types';
 import AdminAuditDetailModal from '@/features/admin/components/AdminAuditDetailModal';
@@ -52,7 +53,7 @@ import AdminModerationDrawer, {
 } from '@/features/admin/components/AdminModerationDrawer';
 import AdminActionDrawer from '@/features/admin/components/AdminActionDrawer';
 
-type AdminView = 'overview' | 'reports' | 'processed' | 'posts' | 'hidden' | 'deleteRequests' | 'bans' | 'audit' | 'feedback' | 'announcement' | 'settings' | 'wiki' | 'rumors' | 'adminUsers';
+type AdminView = 'overview' | 'reports' | 'processed' | 'posts' | 'hidden' | 'deleteRequests' | 'bans' | 'audit' | 'feedback' | 'announcement' | 'settings' | 'shop' | 'wiki' | 'rumors' | 'adminUsers';
 type PostStatusFilter = 'all' | 'active' | 'hidden' | 'deleted';
 type PostSort = 'time' | 'hot' | 'reports';
 type HiddenTypeFilter = 'all' | 'post' | 'comment';
@@ -2456,6 +2457,7 @@ const AdminDashboard: React.FC = () => {
         title: '系统',
         items: [
           { view: 'settings', icon: <Settings size={18} />, label: '系统设置', visible: canReadSettings },
+          { view: 'shop', icon: <Store size={18} />, label: '商城管理', visible: canReadSettings },
           { view: 'adminUsers', icon: <UserCog size={18} />, label: '管理员管理', visible: isSuperAdmin },
         ],
       },
@@ -2601,6 +2603,7 @@ const AdminDashboard: React.FC = () => {
               {currentView === 'deleteRequests' && <><Trash2 /> 删除申请</>}
               {currentView === 'announcement' && <><Bell /> 公告发布</>}
               {currentView === 'settings' && <><Settings /> 系统设置</>}
+              {currentView === 'shop' && <><Store /> 商城管理</>}
               {currentView === 'wiki' && <><BookOpen /> 瓜条审核</>}
               {currentView === 'rumors' && <><AlertTriangle /> 谣言审核</>}
               {currentView === 'feedback' && <><MessageSquare /> 留言管理</>}
@@ -3167,6 +3170,13 @@ const AdminDashboard: React.FC = () => {
                 onUpdateAnnouncementTextChange={setUpdateAnnouncementText}
                 onUpdateAnnouncementSubmit={handleUpdateAnnouncementSubmit}
                 onUpdateAnnouncementDelete={handleUpdateAnnouncementDelete}
+              />
+            )}
+
+            {currentView === 'shop' && (
+              <AdminShopView
+                showToast={showToast}
+                canManage={canManageSettings}
               />
             )}
 

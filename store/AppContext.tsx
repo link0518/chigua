@@ -55,6 +55,8 @@ interface AppSettings {
   cnyThemeEnabled: boolean;
   cnyThemeAutoActive: boolean;
   cnyThemeActive: boolean;
+  /** 商城总开关，默认关闭 */
+  shopEnabled: boolean;
 }
 
 interface AppState {
@@ -158,6 +160,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       cnyThemeEnabled: false,
       cnyThemeAutoActive: false,
       cnyThemeActive: false,
+      shopEnabled: false,
     },
   });
 
@@ -343,6 +346,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             (typeof data?.cnyThemeEnabled === 'boolean' ? data.cnyThemeEnabled : prev.settings.cnyThemeEnabled)
             && (typeof data?.cnyThemeAutoActive === 'boolean' ? data.cnyThemeAutoActive : prev.settings.cnyThemeAutoActive)
           ),
+        shopEnabled: typeof data?.shopEnabled === 'boolean'
+          ? data.shopEnabled
+          : prev.settings.shopEnabled,
       },
     }));
   }, []);

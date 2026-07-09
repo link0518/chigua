@@ -42,6 +42,8 @@ const labels = {
   wikiCreate: '\u65b0\u5efa\u74dc\u6761',
   wikiEdit: '\u7f16\u8f91\u74dc\u6761',
   rumorPending: '\u8c23\u8a00\u5f85\u5ba1\u6838',
+  postDeleteRequestPending: '删除申请待审核',
+  deleteReason: '删除原因',
   wikiName: '\u74dc\u6761\u540d',
   tags: '\u6807\u7b7e',
   comment: '\u8bc4\u8bba',
@@ -288,6 +290,15 @@ export const createWecomWebhookService = ({
     return sendConfiguredMarkdown(lines.join('\n'), 'rumor_pending');
   };
 
+  const notifyPostDeleteRequest = (payload = {}) => sendConfiguredMarkdown([
+    `**${labels.title}**`,
+    `> ${labels.type}\uff1a${labels.postDeleteRequestPending}`,
+    `> ${labels.time}\uff1a${escapeMarkdownText(formatTime(payload.createdAt))}`,
+    `> ${labels.deleteReason}\uff1a${escapeMarkdownText(truncateText(payload.reason, 100)) || labels.empty}`,
+    `> ${labels.snippet}\uff1a${escapeMarkdownText(truncateText(payload.contentSnippet)) || labels.empty}`,
+    `> ${labels.adminEntry}\uff1a${adminLink}`,
+  ].join('\n'), 'post_delete_request');
+
   const sendTestMessage = async ({ url } = {}) => {
     const config = getCurrentConfig();
     const targetUrl = text(url) || config.url;
@@ -311,6 +322,7 @@ export const createWecomWebhookService = ({
     notifyHiddenContent,
     notifyWikiRevision,
     notifyRumorPending,
+    notifyPostDeleteRequest,
     sendTestMessage,
   };
 };

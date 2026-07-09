@@ -33,7 +33,9 @@ const createDb = () => {
       comments_count INTEGER NOT NULL DEFAULT 0,
       views_count INTEGER NOT NULL DEFAULT 0,
       comment_identity_enabled INTEGER NOT NULL DEFAULT 0,
-      comment_identity_guest_seq INTEGER NOT NULL DEFAULT 0
+      comment_identity_guest_seq INTEGER NOT NULL DEFAULT 0,
+      author_frame_id TEXT,
+      author_name_style_id TEXT
     );
 
     CREATE TABLE post_delete_requests (
@@ -142,6 +144,7 @@ const seedPost = (db, overrides = {}) => {
 const registerPublicHarness = (options = {}) => {
   const db = options.db || createDb();
   const app = createApp();
+  const webhookCalls = [];
   registerPublicPostsRoutes(app, {
     db,
     hotScoreSql: '0',
@@ -175,8 +178,16 @@ const registerPublicHarness = (options = {}) => {
     trimPreview: (value) => String(value || '').slice(0, 120),
     crypto,
     getDefaultPostTags: () => [],
+    getEquippedFrameIdForIdentity: () => null,
+    getEquippedNameStyleIdForIdentity: () => null,
+    wecomWebhookService: options.wecomWebhookService || {
+      notifyPostDeleteRequest: (payload) => {
+        webhookCalls.push(payload);
+        return Promise.resolve({ ok: true });
+      },
+    },
   });
-  return { db, routes: app.routes };
+  return { db, routes: app.routes, webhookCalls };
 };
 
 const registerAdminHarness = (db) => {
@@ -199,7 +210,7 @@ const registerAdminHarness = (db) => {
 };
 
 test('post author can submit delete request while post remains visible', async () => {
-  const { db, routes } = registerPublicHarness();
+  const { db, routes, webhookCalls } = registerPublicHarness();
   seedPost(db);
 
   const res = await runHandlers(routes.get('POST /api/posts/:id/delete-requests'), {
@@ -211,6 +222,29 @@ test('post author can submit delete request while post remains visible', async (
   assert.equal(res.payload.item.postId, 'post-1');
   assert.equal(res.payload.item.status, 'pending');
   assert.equal(db.prepare('SELECT deleted FROM posts WHERE id = ?').get('post-1').deleted, 0);
+  assert.equal(db.prepare('SELECT COUNT(1) AS count FROM post_delete_requests').get().count, 1);
+  assert.equal(webhookCalls.length, 1);
+  assert.equal(webhookCalls[0].postId, 'post-1');
+  assert.equal(webhookCalls[0].reason, '我想删除自己发布的内容');
+  assert.equal(webhookCalls[0].contentSnippet, '这是一条帖子');
+  db.close();
+});
+
+test('delete request webhook failure does not block submit response', async () => {
+  const { db, routes } = registerPublicHarness({
+    wecomWebhookService: {
+      notifyPostDeleteRequest: () => Promise.reject(new Error('webhook failed')),
+    },
+  });
+  seedPost(db);
+
+  const res = await runHandlers(routes.get('POST /api/posts/:id/delete-requests'), {
+    params: { id: 'post-1' },
+    body: { reason: 'webhook 失败也要提交成功' },
+  });
+
+  assert.equal(res.statusCode, 201);
+  assert.equal(res.payload.item.status, 'pending');
   assert.equal(db.prepare('SELECT COUNT(1) AS count FROM post_delete_requests').get().count, 1);
   db.close();
 });

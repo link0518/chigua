@@ -20,6 +20,8 @@ import type { Post } from '../types';
 import CommentModal from './CommentModal';
 import DeveloperMiniCard from './DeveloperMiniCard';
 import HomePostGridCard from './HomePostGridCard';
+import NicknameFrameCard from './NicknameFrameCard';
+import { useFrameRegistryVersion } from './nicknameFrames';
 import MarkdownRenderer from './MarkdownRenderer';
 import Modal from './Modal';
 import ReportModal from './ReportModal';
@@ -74,6 +76,8 @@ const parseHomeLocation = () => {
 };
 
 const HomeView: React.FC = () => {
+  // frames 异步加载完成后需重渲染，才能显示帖子 authorFrameId
+  useFrameRegistryVersion();
   const {
     state,
     getHomePosts,
@@ -835,6 +839,14 @@ const HomeView: React.FC = () => {
               <div className="flex items-center gap-3">
                 {currentPost.author === 'admin' ? (
                   <DeveloperMiniCard timestamp={currentPost.timestamp} size="md" />
+                ) : (currentPost.authorFrameId || currentPost.authorNameStyleId) ? (
+                  <NicknameFrameCard
+                    frameId={currentPost.authorFrameId}
+                    nameStyleId={currentPost.authorNameStyleId}
+                    username="匿名用户"
+                    timestamp={currentPost.timestamp}
+                    size="md"
+                  />
                 ) : (
                   <>
                     <div className="flex size-10 items-center justify-center rounded-full border-2 border-black bg-gray-200 shadow-sm">

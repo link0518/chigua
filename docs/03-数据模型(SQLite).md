@@ -29,6 +29,40 @@
 - `session_id`：用于一些行为识别
 - `likes_count` / `dislikes_count` / `comments_count` / `views_count`：计数冗余字段
 - `ip`、`fingerprint`：风控/审计用途（字段由迁移确保存在）
+- `author_frame_id`：发帖时快照的昵称框 id（仅新帖写入；不随之后装备变更回溯）
+- `author_name_style_id`：发帖时快照的炫彩昵称样式 id（仅新帖写入）
+
+### 1.2.1 user_cosmetics（访客装扮/瓜子）
+
+按客户端身份键（通常为 fingerprint）存储：
+
+- `identity_key`：主键
+- `coins`：瓜子余额
+- `owned_frames_json`：已拥有框 id 列表
+- `equipped_frame_id`：当前装备的框 id
+- `owned_name_styles_json`：已拥有炫彩昵称 id 列表
+- `equipped_name_style_id`：当前装备的炫彩昵称 id
+- `last_daily_claim_date`：每日瓜子领取日期键
+
+### 1.2.2 nickname_frames（头像框商品与渲染包）
+
+后台可管理的头像框表（`server/frame-service.js` 初始化并 seed 内置三框）：
+
+- `id`：稳定主键（发帖快照与库存引用；禁止改 id）
+- `name` / `price` / `rarity` / `status` / `sort` / `grant_on_register`
+- `status`：`on_sale`（在售）/ `off_sale`（下架不可再买，已拥有可继续装备）/ `hidden`（隐藏，不可装备，历史展示降级）
+- `package_json`：Frame Package schemaVersion 2 原文（frame + render + preview）
+- `theme_css`：消毒后的 CSS（供 Shadow DOM 渲染）
+- `package_revision`：导入更新时递增
+
+渲染约定：固定插槽 DOM（`.fg-root` / `.fg-shell` / `.fg-avatar` / `.fg-name` 等）+ 受控 CSS 动效；禁止 JS。
+
+### 1.2.3 name_styles（炫彩昵称商品）
+
+- `id`：稳定主键（快照引用）
+- `name` / `price` / `rarity` / `status` / `sort` / `description`
+- `color_r` / `color_g` / `color_b`：RGB 0～255，前台按色渲染流光昵称
+- seed：`vip-red`（红色昵称，207,19,34）
 
 ### 1.3 comments（评论）
 
@@ -41,6 +75,7 @@
 - `content`、`author`、`created_at`
 - `deleted` / `deleted_at`：软删除
 - `ip`、`fingerprint`
+- `author_name_style_id`：评论时快照的炫彩昵称样式 id（回复/楼中楼同样写入）
 
 ### 1.4 reports（举报）
 

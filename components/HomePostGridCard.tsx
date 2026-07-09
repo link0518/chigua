@@ -13,6 +13,8 @@ import {
 
 import type { Post } from '../types';
 import DeveloperMiniCard from './DeveloperMiniCard';
+import NicknameFrameCard from './NicknameFrameCard';
+import { useFrameRegistryVersion } from './nicknameFrames';
 
 const MARKDOWN_IMAGE_RE = /!\[[^\]]*]\([^)]+\)/g;
 const MARKDOWN_LINK_RE = /\[([^\]]+)\]\([^)]+\)/g;
@@ -66,6 +68,7 @@ const HomePostGridCard: React.FC<HomePostGridCardProps> = ({
   onReport,
   onTagClick,
 }) => {
+  useFrameRegistryVersion();
   const previewText = buildPreviewText(post.content);
   const isDeveloperPost = post.author === 'admin';
   const isRumor = post.rumorStatus === 'suspected';
@@ -80,6 +83,14 @@ const HomePostGridCard: React.FC<HomePostGridCardProps> = ({
             <div className="min-w-0">
               {isDeveloperPost ? (
                 <DeveloperMiniCard timestamp={post.timestamp} size="sm" />
+              ) : (post.authorFrameId || post.authorNameStyleId) ? (
+                <NicknameFrameCard
+                  frameId={post.authorFrameId}
+                  nameStyleId={post.authorNameStyleId}
+                  username="匿名用户"
+                  timestamp={post.timestamp}
+                  size="sm"
+                />
               ) : (
                 <div className="inline-flex max-w-full items-center gap-2 rounded-full border-2 border-black bg-[#f4efe2] px-3 py-2 text-pencil shadow-[2px_2px_0_0_rgba(0,0,0,0.12)]">
                   <div className="flex size-8 shrink-0 items-center justify-center rounded-full border-2 border-black bg-white">

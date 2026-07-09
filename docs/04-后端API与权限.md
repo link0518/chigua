@@ -85,11 +85,28 @@
 - `POST /api/posts`：发帖（通常需要 turnstile 校验）
 - `GET /api/posts/:id`：帖子详情
 - `POST /api/posts/:id/delete-requests`：发帖人提交删除申请，需填写原因；待审核期间帖子继续公开
+- 若后台已启用企业微信 Webhook，提交删除申请成功后会异步推送待审核提醒；推送失败不影响接口返回
 - `POST /api/posts/:id/like`：点赞
 - `POST /api/posts/:id/dislike`：点踩
 - `POST /api/posts/:id/favorite`：收藏/取消收藏
 - `GET /api/favorites`：我的收藏列表
 - `POST /api/posts/:id/view`：浏览计数/去重
+- 发帖成功时，若身份已装备有效昵称框，则将 `author_frame_id` 写入该帖快照；列表/详情对所有访客返回该字段（旧帖无快照则为空）
+
+商城 / 头像框：
+
+- `GET /api/me/shop`：瓜子余额、已拥有/装备、在售目录（含 render CSS）（需指纹）
+- `POST /api/me/shop/claim-daily`：每日领取瓜子（默认 10）
+- `POST /api/me/shop/redeem`：兑换在售框
+- `POST /api/me/shop/equip`：装备/卸下已拥有框（`off_sale` 仍可装备；`hidden` 无效）
+- `POST /api/me/shop/name-styles/redeem`：兑换炫彩昵称（如红色昵称）
+- `POST /api/me/shop/name-styles/equip`：装备/卸下炫彩昵称
+- `GET /api/me/shop` 另返回 `nameStyles`（含 `color` RGB / `colorCss` / `colorHex`）与 `equippedNameStyleId`
+- 发帖/评论时将当前装备的炫彩昵称写入 `author_name_style_id` 快照（发帖与回复均生效）
+- `GET /api/frames`：公开渲染目录（`on_sale` + `off_sale`，用于帖子展示）
+- `GET /api/frames/:id`：单个框渲染数据
+- `GET /api/name-styles`：公开炫彩昵称目录（含 RGB，供帖子/评论着色）
+- `GET /api/name-styles/:id`：单个炫彩昵称
 
 评论：
 
@@ -109,6 +126,29 @@
 ## 4. 管理员 API（需登录）
 
 管理员鉴权主要通过 `requireAdmin` 中间件，业务模块再按 `read` / `manage` 校验，常见敏感操作还会额外要求 `requireAdminCsrf`。
+
+商城管理（复用 `settings` 模块权限；后台 UI 入口为「商城管理」）：
+
+头像框：
+
+- `GET /api/admin/nickname-frames`：列表（含 hidden）（`settings:read`）
+- `POST /api/admin/nickname-frames/validate`：校验 Frame Package JSON（`settings:read`）
+- `POST /api/admin/nickname-frames/import`：导入/创建或 upsert 覆盖（`settings:manage` + CSRF）
+- `PATCH /api/admin/nickname-frames/:id`：改价/改名/状态/排序（`settings:manage` + CSRF）
+- `GET /api/admin/nickname-frames/:id/export`：导出框包 JSON（`settings:read`）
+
+炫彩昵称（RGB）：
+
+- `GET /api/admin/name-styles`：列表（`settings:read`）
+- `POST /api/admin/name-styles`：直接添加（`settings:manage` + CSRF），body 含 `id,name,price,color:{r,g,b}` 或 `color:"#RRGGBB"` / `"r,g,b"`
+- `PATCH /api/admin/name-styles/:id`：改价/改名/状态/RGB（`settings:manage` + CSRF）
+
+框包格式（schemaVersion 2）要点：
+
+- `frame`：id / name / price / rarity / status / sort / grantOnRegister
+- `render`：`engine=css-slots-v1`、`html=default-v1`、`css`（可含 @keyframes 动效）、可选 assets data URL
+- 服务端消毒 CSS：禁止 `@import`、外链 `url(http...)`、`expression`、`position:fixed`、JS 相关语法
+- 支持粘贴 JSON 或上传 `.json` 文件（前端读文本后走 import）
 
 举报处置：
 

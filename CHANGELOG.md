@@ -2,6 +2,18 @@
 
 ### Added
 
+- 商城商品支持 **阶梯定价**（如 `10/1天`、`70/7天`、`300/永久`）：商品 `price_tiers` JSON，前台按档位兑换/续期。涉及 `shop-inventory.js`、`frame-service`、`name-style-service`、`UserMeModal`。
+- 后台阶梯定价改为可视化编辑器（瓜子 + 时长预设/自定义 + 增删档 + 预览 chips）；前台改为分段档位卡 + 主价位摘要。涉及 `PriceTiersEditor`、`ShopPriceTiers`。
+- 商城管理增加 **商城总开关**（`shop_enabled`，默认关闭）：关闭时前台「我的」无商城入口，相关 `/api/me/shop*` 返回 403。涉及 `site-settings.js`、`AdminShopView`、`AppContext`。
+- 商城商品支持 **价格 + 有效期（天）**（如 10 瓜子 / 1 天）；到期自动卸下装备并恢复默认头像框/昵称颜色，限时可续期。涉及 `duration_days`、库存 `{id,expiresAt}`、`shop-inventory.js`。
+- 商城新增栏目「炫彩昵称」：可兑换「红色昵称」（`vip-red`，80 瓜子）；装备后**新发帖与新评论/回复**快照生效，他人可见。
+- 后台「商城管理」同步增加「炫彩昵称」Tab：支持用 **RGB / 取色器** 直接添加与改色；数据表 `name_styles`；公开 `GET /api/name-styles`。涉及 `server/name-style-service.js`、`AdminNameStylesView`、`ColorfulName` 动态着色。
+- 商城新增史诗头像框「极光棱镜」（`aurora-prism`，180 瓜子）：旋转棱镜描边、流光扫过、星点闪烁与渐变昵称动效。
+- 后台侧栏将头像框并入 **商城管理** 入口（`AdminShopView`），头像框为初期商品线，便于后续扩展其它商城商品。
+- 新增头像框后台管理与 Frame Package（schemaVersion 2）导入：支持粘贴 JSON / 导入 `.json` 文件，CSS 动效经消毒后由 Shadow DOM `FrameRuntime` 渲染；后台可改价、上下架、排序、导出。涉及 `server/frame-package.js`、`server/frame-service.js`、`server/routes/admin/nickname-frames-routes.js`、`features/admin/views/AdminNicknameFramesView.tsx`、`components/FrameRuntime.tsx`。
+- 新增表 `nickname_frames` 与访客 `user_cosmetics` 商城链路；公开 `GET /api/frames`、`/api/me/shop*`；发帖快照 `posts.author_frame_id`（仅新帖生效，他人可见）。涉及 `server/db.js`、`server/routes/public/shop-routes.js`、`server/routes/public/frames-routes.js`、前台「我的」商城。
+- 新增服务端回归测试 `server/tests/frame-package.test.js`、`server/tests/frame-post-snapshot.test.js`。
+
 - 新增独立角色 Wiki：前台提供 `/wiki` 角色画廊和 `/wiki/:slug` 详情页，采用 Nordic Wiki 视觉，不继承主站手绘风格；瓜条只保留名字、记录叙述和 tags。
 - 新增 Wiki 投稿和编辑审核链路：用户提交新瓜条或编辑已有瓜条后进入后台审核，通过后才公开，拒绝不影响当前公开内容。
 - 新增后台 `Wiki 审核` 模块，支持待审核、已通过、已拒绝和瓜条管理，并对通过、拒绝、删除、恢复、管理员编辑写入审计日志。

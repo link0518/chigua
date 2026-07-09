@@ -20,6 +20,16 @@ import { registerPublicPostsRoutes } from './routes/public/posts-routes.js';
 import { registerPublicCommentsRoutes } from './routes/public/comments-routes.js';
 import { registerPublicReportsRoutes } from './routes/public/reports-routes.js';
 import { registerPublicSystemRoutes } from './routes/public/system-routes.js';
+import { registerPublicShopRoutes } from './routes/public/shop-routes.js';
+import { registerPublicFramesRoutes } from './routes/public/frames-routes.js';
+import { registerAdminNicknameFramesRoutes } from './routes/admin/nickname-frames-routes.js';
+import { initFrameService, getEquippedFrameIdIfValid } from './frame-service.js';
+import {
+  getEquippedNameStyleIdIfValid,
+  initNameStyleService,
+} from './name-style-catalog.js';
+import { registerAdminNameStylesRoutes } from './routes/admin/name-styles-routes.js';
+import { registerPublicNameStylesRoutes } from './routes/public/name-styles-routes.js';
 import { registerPublicUploadRoutes } from './routes/public/upload-routes.js';
 import { registerPublicWikiRoutes } from './routes/public/wiki-routes.js';
 import { registerAdminAuthRoutes } from './routes/admin/auth-routes.js';
@@ -58,6 +68,8 @@ import {
 } from './db.js';
 
 initializeRuntimeEnv();
+initFrameService(db);
+initNameStyleService(db);
 
 const {
   port: PORT,
@@ -84,10 +96,12 @@ const httpServer = http.createServer(app);
 const {
   getTurnstileEnabled,
   getCnyThemeEnabled,
+  getShopEnabled,
   getDefaultPostTags,
   buildSettingsResponse,
   setTurnstileEnabled,
   setCnyThemeEnabled,
+  setShopEnabled,
   setDefaultPostTags,
   getRateLimits,
   getRateLimitConfig,
@@ -1141,6 +1155,31 @@ const parseTags = (tags) => {
   }
 };
 
+/** 读取当前装备的昵称框（仅用于发帖时快照，不用于历史帖子实时覆盖） */
+const getEquippedFrameIdForIdentity = (identityKey) => {
+  const key = String(identityKey || '').trim();
+  if (!key) {
+    return null;
+  }
+  const row = db
+    .prepare('SELECT equipped_frame_id FROM user_cosmetics WHERE identity_key = ? LIMIT 1')
+    .get(key);
+  // 非 hidden 的框可快照（含 off_sale）
+  return getEquippedFrameIdIfValid(row?.equipped_frame_id || null);
+};
+
+/** 读取当前装备的炫彩昵称（发帖/回复快照） */
+const getEquippedNameStyleIdForIdentity = (identityKey) => {
+  const key = String(identityKey || '').trim();
+  if (!key) {
+    return null;
+  }
+  const row = db
+    .prepare('SELECT equipped_name_style_id FROM user_cosmetics WHERE identity_key = ? LIMIT 1')
+    .get(key);
+  return getEquippedNameStyleIdIfValid(row?.equipped_name_style_id || null);
+};
+
 const mapPostRow = (row, isHot) => ({
   id: row.id,
   content: row.content,
@@ -1161,6 +1200,9 @@ const mapPostRow = (row, isHot) => ({
   viewerFavorited: Boolean(row.viewer_favorited),
   viewerIsAuthor: Boolean(row.viewer_is_author),
   viewerDeleteRequestStatus: row.viewer_delete_request_status || null,
+  // 仅使用发帖时写入的快照，旧帖/未快照帖不显示框
+  authorFrameId: row.author_frame_id || null,
+  authorNameStyleId: row.author_name_style_id || null,
 });
 
 const mapCommentRow = (row) => {
@@ -1201,6 +1243,9 @@ const mapCommentRow = (row) => {
     rumorStatusUpdatedAt: rumorStatus ? (row.rumor_status_updated_at || null) : null,
     likes: Number(row.likes_count || 0),
     viewerLiked: Boolean(row.viewer_liked),
+    // 昵称框仅作用于发帖快照，评论不展示
+    authorFrameId: null,
+    authorNameStyleId: row.author_name_style_id || null,
   };
 };
 
@@ -1301,6 +1346,15 @@ registerPublicSystemRoutes(app, {
   wecomWebhookService,
 });
 
+registerPublicShopRoutes(app, {
+  db,
+  requireFingerprint,
+  formatDateKey,
+  getShopEnabled,
+});
+
+registerPublicFramesRoutes(app);
+registerPublicNameStylesRoutes(app);
 
 registerPublicUploadRoutes(app, {
   parseImageBody: express.raw({ type: ['image/png', 'image/jpeg', 'image/gif', 'image/webp'], limit: '5mb' }),
@@ -1353,6 +1407,8 @@ registerPublicPostsRoutes(app, {
   containsSensitiveWord,
   requireFingerprint,
   enforceRateLimit,
+  getEquippedFrameIdForIdentity,
+  getEquippedNameStyleIdForIdentity,
   getClientIp,
   verifyTurnstile,
   incrementDailyStat,
@@ -1362,6 +1418,7 @@ registerPublicPostsRoutes(app, {
   trimPreview,
   crypto,
   getDefaultPostTags,
+  wecomWebhookService,
 });
 
 registerPublicCommentsRoutes(app, {
@@ -1381,6 +1438,7 @@ registerPublicCommentsRoutes(app, {
   mapCommentRow,
   buildCommentTree,
   crypto,
+  getEquippedNameStyleIdForIdentity,
 });
 
 registerPublicWikiRoutes(app, {
@@ -1415,6 +1473,22 @@ const feedbackAdmin = requireAdminModule('feedback');
 const userSafetyAdmin = requireAdminModule('user_safety');
 const publishAdmin = requireAdminModule('publish');
 const settingsAdmin = requireAdminModule('settings');
+
+registerAdminNicknameFramesRoutes(app, {
+  requireAdmin,
+  requireAdminCsrf,
+  requireAdminRead: settingsAdmin.read,
+  requireAdminManage: settingsAdmin.manage,
+  logAdminAction,
+});
+
+registerAdminNameStylesRoutes(app, {
+  requireAdmin,
+  requireAdminCsrf,
+  requireAdminRead: settingsAdmin.read,
+  requireAdminManage: settingsAdmin.manage,
+  logAdminAction,
+});
 
 registerAdminReportsRoutes(app, {
   db,
@@ -1643,11 +1717,13 @@ registerAdminSettingsRoutes(app, {
   buildSettingsResponse,
   setTurnstileEnabled,
   setCnyThemeEnabled,
+  setShopEnabled,
   setDefaultPostTags,
   setRateLimits,
   setAutoHideReportThreshold,
   getTurnstileEnabled,
   getCnyThemeEnabled,
+  getShopEnabled,
   getDefaultPostTags,
   getRateLimits,
   getAutoHideReportThreshold,

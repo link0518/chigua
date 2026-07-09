@@ -30,6 +30,10 @@ export interface Post {
   viewerFavorited?: boolean;
   viewerIsAuthor?: boolean;
   viewerDeleteRequestStatus?: 'pending' | null;
+  /** 作者装备的昵称框 id */
+  authorFrameId?: string | null;
+  /** 发帖快照：炫彩昵称样式 id */
+  authorNameStyleId?: string | null;
 }
 
 export type ReportReasonCode = 'privacy' | 'harassment' | 'spam' | 'misinformation' | 'rumor';
@@ -92,6 +96,10 @@ export interface Comment {
   rumorStatusUpdatedAt?: number | null;
   likes?: number;
   viewerLiked?: boolean;
+  /** 评论者装备的昵称框 id */
+  authorFrameId?: string | null;
+  /** 评论快照：炫彩昵称样式 id */
+  authorNameStyleId?: string | null;
 }
 
 export interface CommentPostIdentity {

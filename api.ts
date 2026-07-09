@@ -64,6 +64,11 @@ const shouldAttachFingerprint = (path: string, options: RequestInit) => {
     return true;
   }
 
+  // 个人中心 / 商城等本机身份接口
+  if (cleanPath.startsWith('/me')) {
+    return true;
+  }
+
   return false;
 };
 
@@ -162,6 +167,53 @@ export const api = {
   readNotifications: () => apiFetch('/notifications/read', { method: 'POST' }),
   getStreak7Status: () => apiFetch('/easter-eggs/streak7'),
   markStreak7Seen: () => apiFetch('/easter-eggs/streak7/seen', { method: 'POST' }),
+  getMeShop: () => apiFetch('/me/shop'),
+  claimMeShopDaily: () => apiFetch('/me/shop/claim-daily', { method: 'POST' }),
+  redeemMeShopFrame: (frameId: string, tierId?: string) => apiFetch('/me/shop/redeem', {
+    method: 'POST',
+    body: JSON.stringify({ frameId, ...(tierId ? { tierId } : {}) }),
+  }),
+  equipMeShopFrame: (frameId: string | null) => apiFetch('/me/shop/equip', {
+    method: 'POST',
+    body: JSON.stringify({ frameId }),
+  }),
+  redeemMeShopNameStyle: (styleId: string, tierId?: string) => apiFetch('/me/shop/name-styles/redeem', {
+    method: 'POST',
+    body: JSON.stringify({ styleId, ...(tierId ? { tierId } : {}) }),
+  }),
+  equipMeShopNameStyle: (styleId: string | null) => apiFetch('/me/shop/name-styles/equip', {
+    method: 'POST',
+    body: JSON.stringify({ styleId }),
+  }),
+  getNameStyles: () => apiFetch('/name-styles'),
+  getAdminNameStyles: () => apiFetch('/admin/name-styles'),
+  createAdminNameStyle: (payload: Record<string, unknown>) => apiFetch('/admin/name-styles', {
+    method: 'POST',
+    body: JSON.stringify(payload || {}),
+  }),
+  patchAdminNameStyle: (id: string, patch: Record<string, unknown>) => apiFetch(`/admin/name-styles/${encodeURIComponent(String(id || ''))}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch || {}),
+  }),
+  getFrames: () => apiFetch('/frames'),
+  getFrame: (id: string) => apiFetch(`/frames/${encodeURIComponent(String(id || ''))}`),
+  getAdminNicknameFrames: () => apiFetch('/admin/nickname-frames'),
+  validateAdminNicknameFramePackage: (payload: unknown) => apiFetch('/admin/nickname-frames/validate', {
+    method: 'POST',
+    body: JSON.stringify(typeof payload === 'string' ? { package: payload } : { package: payload }),
+  }),
+  importAdminNicknameFramePackage: (payload: unknown, mode: 'create' | 'upsert' = 'create') => apiFetch('/admin/nickname-frames/import', {
+    method: 'POST',
+    body: JSON.stringify({
+      mode,
+      ...(typeof payload === 'string' ? { fileText: payload } : { package: payload }),
+    }),
+  }),
+  patchAdminNicknameFrame: (id: string, patch: Record<string, unknown>) => apiFetch(`/admin/nickname-frames/${encodeURIComponent(String(id || ''))}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch || {}),
+  }),
+  exportAdminNicknameFrame: (id: string) => apiFetch(`/admin/nickname-frames/${encodeURIComponent(String(id || ''))}/export`),
   createFeedback: (content, email, wechat = '', qq = '', turnstileToken) => apiFetch('/feedback', {
     method: 'POST',
     body: JSON.stringify({ content, email, wechat, qq, turnstileToken }),
@@ -285,6 +337,7 @@ export const api = {
   updateAdminSettings: (settings: {
     turnstileEnabled?: boolean;
     cnyThemeEnabled?: boolean;
+    shopEnabled?: boolean;
     defaultPostTags?: string[];
     rateLimits?: Partial<Record<'post' | 'comment' | 'report' | 'feedback' | 'wiki' | 'upload', { limit?: number; windowMs?: number }>>;
     autoHideReportThreshold?: number;

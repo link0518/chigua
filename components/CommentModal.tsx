@@ -12,6 +12,7 @@ import CommentInputModal from './CommentInputModal';
 import { useInsertAtCursor } from './useInsertAtCursor';
 import { isImageUploadFile, uploadImageAsMarkdown } from './imageUpload';
 import { AUTO_HIDDEN_EVENT, HIDDEN_COMMENT_PLACEHOLDER, type AutoHiddenEventDetail } from '../store/contentVisibility';
+import ColorfulName from './ColorfulName';
 
 interface CommentModalProps {
   isOpen: boolean;
@@ -867,20 +868,34 @@ const CommentModal: React.FC<CommentModalProps> = ({
 
                 return (
                   <div key={item.id} data-comment-id={item.id} className={depth === 0 ? 'group px-3 pt-2' : 'group px-2.5 pt-1'}>
-                    <div className="flex items-center justify-between text-[12px] text-gray-500 font-sans">
-                      <div className="min-w-0 flex items-center gap-2 overflow-hidden whitespace-nowrap">
-                        <span className="text-[12px] font-mono text-gray-500">{threadLabel}楼</span>
-                        <span className="text-gray-800">{getCommentIdentityLabel(item)}</span>
-                        {isDeleted && <span className="text-[11px] text-gray-400">已处理</span>}
-                        {isHidden && <span className="text-[11px] text-orange-500">已隐藏</span>}
+                    <div className="flex flex-nowrap items-center justify-between gap-2 text-[12px] text-gray-500 font-sans">
+                      <div className="flex min-w-0 flex-1 flex-nowrap items-center gap-1.5 overflow-hidden">
+                        {/* 楼层 + 身份锁同一行，避免 ColorfulName / 窄屏把「楼主」挤下去 */}
+                        <span className="inline-flex min-w-0 max-w-full flex-nowrap items-baseline gap-1.5">
+                          <span className="shrink-0 font-mono text-[12px] text-gray-500">
+                            {threadLabel}楼
+                          </span>
+                          <ColorfulName
+                            styleId={item.authorNameStyleId}
+                            className="min-w-0 truncate text-[12px] font-sans text-gray-800"
+                          >
+                            {getCommentIdentityLabel(item)}
+                          </ColorfulName>
+                        </span>
+                        {isDeleted && <span className="shrink-0 text-[11px] text-gray-400">已处理</span>}
+                        {isHidden && <span className="shrink-0 text-[11px] text-orange-500">已隐藏</span>}
                         {replyLabel && (
-                          <span className="text-[11px] text-gray-500 sm:inline hidden">回复 {replyLabel}楼</span>
+                          <span className="hidden shrink-0 text-[11px] text-gray-500 sm:inline">
+                            回复 {replyLabel}楼
+                          </span>
                         )}
                         {replyLabel && (
-                          <span className="text-[11px] text-gray-500 sm:hidden inline font-mono">↪{replyLabel}</span>
+                          <span className="inline shrink-0 font-mono text-[11px] text-gray-500 sm:hidden">
+                            ↪{replyLabel}
+                          </span>
                         )}
                       </div>
-                      <div className="flex items-center gap-2 flex-shrink-0 whitespace-nowrap">
+                      <div className="flex shrink-0 flex-nowrap items-center gap-2 whitespace-nowrap">
                         <span className="text-gray-400" title={item.timestamp}>
                           <span className="sm:inline hidden">{item.timestamp}</span>
                           <span className="sm:hidden inline">{formatCompactTime(item.createdAt) || item.timestamp}</span>

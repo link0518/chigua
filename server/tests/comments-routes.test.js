@@ -35,7 +35,8 @@ const createDb = () => {
       rumor_status_updated_at INTEGER,
       post_identity_key TEXT,
       post_identity_label TEXT,
-      post_identity_role TEXT
+      post_identity_role TEXT,
+      author_name_style_id TEXT
     );
 
     CREATE TABLE comment_likes (

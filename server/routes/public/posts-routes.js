@@ -23,6 +23,9 @@ export const registerPublicPostsRoutes = (app, deps) => {
     trimPreview,
     crypto,
     getDefaultPostTags,
+    getEquippedFrameIdForIdentity,
+    getEquippedNameStyleIdForIdentity,
+    wecomWebhookService,
   } = deps;
 
   const MAX_POST_TAGS = 2;
@@ -209,6 +212,14 @@ export const registerPublicPostsRoutes = (app, deps) => {
         `
       )
       .get(postId, ...favoriteMatch.params);
+  };
+
+  const notifyPostDeleteRequestPending = (payload = {}) => {
+    try {
+      void Promise.resolve(wecomWebhookService?.notifyPostDeleteRequest?.(payload)).catch(() => { });
+    } catch {
+      // Webhook 提醒失败不能影响发帖人提交删除申请。
+    }
   };
 
 app.get('/api/posts/home', (req, res) => {
@@ -465,6 +476,13 @@ app.post('/api/posts', async (req, res) => {
 
   const now = Date.now();
   const postId = crypto.randomUUID();
+  // 发帖时快照当前装备的昵称框 / 炫彩昵称；仅本帖生效，不影响历史帖
+  const authorFrameId = typeof getEquippedFrameIdForIdentity === 'function'
+    ? getEquippedFrameIdForIdentity(fingerprint)
+    : null;
+  const authorNameStyleId = typeof getEquippedNameStyleIdForIdentity === 'function'
+    ? getEquippedNameStyleIdForIdentity(fingerprint)
+    : null;
 
   db.prepare(
     `
@@ -478,11 +496,26 @@ app.post('/api/posts', async (req, res) => {
       ip,
       fingerprint,
       comment_identity_enabled,
-      comment_identity_guest_seq
+      comment_identity_guest_seq,
+      author_frame_id,
+      author_name_style_id
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `
-  ).run(postId, content, '匿名', JSON.stringify(tags), now, req.sessionID, clientIp, fingerprint, 1, 0);
+  ).run(
+    postId,
+    content,
+    '匿名',
+    JSON.stringify(tags),
+    now,
+    req.sessionID,
+    clientIp,
+    fingerprint,
+    1,
+    0,
+    authorFrameId,
+    authorNameStyleId
+  );
 
   incrementDailyStat(formatDateKey(), 'posts', 1);
 
@@ -567,7 +600,7 @@ app.post('/api/posts/:id/delete-requests', (req, res) => {
   const post = db
     .prepare(
       `
-      SELECT id, fingerprint, deleted, hidden
+      SELECT id, content, fingerprint, deleted, hidden
       FROM posts
       WHERE id = ?
       `
@@ -619,6 +652,14 @@ app.post('/api/posts/:id/delete-requests', (req, res) => {
     ) VALUES (?, ?, ?, ?, ?, 'pending', ?)
     `
   ).run(requestId, postId, requesterFingerprint, getClientIp(req) || null, reason, now);
+
+  notifyPostDeleteRequestPending({
+    postId,
+    requestId,
+    contentSnippet: post.content,
+    reason,
+    createdAt: now,
+  });
 
   return res.status(201).json({
     item: {

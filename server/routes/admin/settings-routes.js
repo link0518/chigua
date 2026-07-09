@@ -7,12 +7,14 @@ export const registerAdminSettingsRoutes = (app, deps) => {
     buildSettingsResponse,
     setTurnstileEnabled,
     setCnyThemeEnabled,
+    setShopEnabled,
     setDefaultPostTags,
     setRateLimits,
     setAutoHideReportThreshold,
     setWecomWebhookConfig,
     getTurnstileEnabled,
     getCnyThemeEnabled,
+    getShopEnabled,
     getDefaultPostTags,
     getRateLimits,
     getAutoHideReportThreshold,
@@ -36,6 +38,7 @@ export const registerAdminSettingsRoutes = (app, deps) => {
   app.post('/api/admin/settings', requireAdmin, requireAdminCsrf, requireAdminManage, (req, res) => {
     const rawTurnstileEnabled = req.body?.turnstileEnabled;
     const rawCnyThemeEnabled = req.body?.cnyThemeEnabled;
+    const rawShopEnabled = req.body?.shopEnabled;
     const hasDefaultPostTags = Object.prototype.hasOwnProperty.call(req.body || {}, 'defaultPostTags');
     const rawDefaultPostTags = req.body?.defaultPostTags;
     const hasRateLimits = Object.prototype.hasOwnProperty.call(req.body || {}, 'rateLimits');
@@ -47,6 +50,7 @@ export const registerAdminSettingsRoutes = (app, deps) => {
     if (
       typeof rawTurnstileEnabled !== 'boolean'
       && typeof rawCnyThemeEnabled !== 'boolean'
+      && typeof rawShopEnabled !== 'boolean'
       && !hasDefaultPostTags
       && !hasRateLimits
       && !hasAutoHideReportThreshold
@@ -86,6 +90,7 @@ export const registerAdminSettingsRoutes = (app, deps) => {
     const before = {
       turnstileEnabled: getTurnstileEnabled(),
       cnyThemeEnabled: getCnyThemeEnabled(),
+      shopEnabled: getShopEnabled ? getShopEnabled() : false,
       defaultPostTags: getDefaultPostTags(),
       rateLimits: getRateLimits(),
       autoHideReportThreshold: getAutoHideReportThreshold(),
@@ -96,6 +101,9 @@ export const registerAdminSettingsRoutes = (app, deps) => {
     }
     if (typeof rawCnyThemeEnabled === 'boolean') {
       setCnyThemeEnabled(rawCnyThemeEnabled);
+    }
+    if (typeof rawShopEnabled === 'boolean' && typeof setShopEnabled === 'function') {
+      setShopEnabled(rawShopEnabled);
     }
     if (hasDefaultPostTags) {
       setDefaultPostTags(rawDefaultPostTags);
@@ -116,6 +124,7 @@ export const registerAdminSettingsRoutes = (app, deps) => {
     const after = {
       turnstileEnabled: getTurnstileEnabled(),
       cnyThemeEnabled: getCnyThemeEnabled(),
+      shopEnabled: getShopEnabled ? getShopEnabled() : false,
       defaultPostTags: getDefaultPostTags(),
       rateLimits: getRateLimits(),
       autoHideReportThreshold: getAutoHideReportThreshold(),

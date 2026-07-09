@@ -3,6 +3,7 @@ import { maskWecomWebhookUrl, normalizeWecomWebhookUrl } from './services/wecom-
 
 const SETTINGS_KEY_TURNSTILE_ENABLED = 'turnstile_enabled';
 const SETTINGS_KEY_CNY_THEME_ENABLED = 'cny_theme_enabled';
+const SETTINGS_KEY_SHOP_ENABLED = 'shop_enabled';
 const SETTINGS_KEY_DEFAULT_POST_TAGS = 'default_post_tags';
 const SETTINGS_KEY_RATE_LIMITS = 'rate_limits';
 const SETTINGS_KEY_WECOM_WEBHOOK = 'wecom_webhook';
@@ -209,6 +210,16 @@ export const createSiteSettingsService = ({ db, turnstileSecretKey }) => {
     return String(stored).trim() === '1';
   };
 
+  /** 商城总开关，默认关闭 */
+  const resolveShopEnabled = () => {
+    const stored = getSetting(SETTINGS_KEY_SHOP_ENABLED);
+    if (stored === null || stored === undefined) {
+      upsertSetting(SETTINGS_KEY_SHOP_ENABLED, '0');
+      return false;
+    }
+    return String(stored).trim() === '1';
+  };
+
   const resolveDefaultPostTags = () => {
     const stored = getSetting(SETTINGS_KEY_DEFAULT_POST_TAGS);
     if (stored === null || stored === undefined) {
@@ -283,6 +294,7 @@ export const createSiteSettingsService = ({ db, turnstileSecretKey }) => {
 
   let turnstileEnabled = resolveTurnstileEnabled();
   let cnyThemeEnabled = resolveCnyThemeEnabled();
+  let shopEnabled = resolveShopEnabled();
   let defaultPostTags = resolveDefaultPostTags();
   let rateLimits = resolveRateLimits();
   let autoHideReportThreshold = resolveAutoHideReportThreshold();
@@ -296,6 +308,11 @@ export const createSiteSettingsService = ({ db, turnstileSecretKey }) => {
   const setCnyThemeEnabled = (enabled) => {
     cnyThemeEnabled = Boolean(enabled);
     upsertSetting(SETTINGS_KEY_CNY_THEME_ENABLED, cnyThemeEnabled ? '1' : '0');
+  };
+
+  const setShopEnabled = (enabled) => {
+    shopEnabled = Boolean(enabled);
+    upsertSetting(SETTINGS_KEY_SHOP_ENABLED, shopEnabled ? '1' : '0');
   };
 
   const setDefaultPostTags = (tags) => {
@@ -337,6 +354,7 @@ export const createSiteSettingsService = ({ db, turnstileSecretKey }) => {
 
   const getTurnstileEnabled = () => turnstileEnabled;
   const getCnyThemeEnabled = () => cnyThemeEnabled;
+  const getShopEnabled = () => shopEnabled;
   const getDefaultPostTags = () => [...defaultPostTags];
   const getRateLimits = () => sanitizeRateLimits(rateLimits);
   const getAutoHideReportThreshold = () => autoHideReportThreshold;
@@ -357,6 +375,7 @@ export const createSiteSettingsService = ({ db, turnstileSecretKey }) => {
     return {
       turnstileEnabled,
       cnyThemeEnabled,
+      shopEnabled,
       defaultPostTags: getDefaultPostTags(),
       cnyThemeAutoActive,
       cnyThemeActive: cnyThemeEnabled && cnyThemeAutoActive,
@@ -366,6 +385,7 @@ export const createSiteSettingsService = ({ db, turnstileSecretKey }) => {
   return {
     getTurnstileEnabled,
     getCnyThemeEnabled,
+    getShopEnabled,
     getDefaultPostTags,
     getRateLimits,
     getRateLimitConfig,
@@ -376,6 +396,7 @@ export const createSiteSettingsService = ({ db, turnstileSecretKey }) => {
     buildSettingsResponse,
     setTurnstileEnabled,
     setCnyThemeEnabled,
+    setShopEnabled,
     setDefaultPostTags,
     setRateLimits,
     setAutoHideReportThreshold,

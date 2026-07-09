@@ -6,6 +6,8 @@ import { useApp } from '../store/AppContext';
 import ReportModal from './ReportModal';
 import MarkdownRenderer from './MarkdownRenderer';
 import DeveloperMiniCard from './DeveloperMiniCard';
+import NicknameFrameCard from './NicknameFrameCard';
+import { useFrameRegistryVersion } from './nicknameFrames';
 import { postMatchesHiddenFilters } from '../store/hiddenPostTags';
 import { buildPostPath, buildPostShareUrl, copyTextToClipboard } from './clipboard';
 
@@ -26,6 +28,7 @@ const PostItem: React.FC<{
   isDisliked: boolean;
   isFavorited: boolean;
 }> = ({ post, rank, onLike, onDislike, onFavorite, onComment, onShare, onReport, onTagClick, isLiked, isDisliked, isFavorited }) => {
+  useFrameRegistryVersion();
   const isDeveloperPost = post.author === 'admin';
   return (
     <div className={`relative group ${rank ? 'mb-10' : 'mb-6'} z-0`}>
@@ -64,6 +67,14 @@ const PostItem: React.FC<{
         <div className="flex items-center gap-2 mb-4 text-sm text-pencil">
           {isDeveloperPost ? (
             <DeveloperMiniCard size="sm" timestamp={post.timestamp} />
+          ) : (post.authorFrameId || post.authorNameStyleId) ? (
+            <NicknameFrameCard
+              frameId={post.authorFrameId}
+              nameStyleId={post.authorNameStyleId}
+              username="匿名用户"
+              timestamp={post.timestamp}
+              size="sm"
+            />
           ) : (
             <>
               <UserX className="w-4 h-4" />

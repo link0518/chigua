@@ -358,6 +358,15 @@ CREATE TABLE IF NOT EXISTS identity_aliases (
   UNIQUE (canonical_hash, legacy_fingerprint_hash)
 );
 
+CREATE TABLE IF NOT EXISTS user_cosmetics (
+  identity_key TEXT PRIMARY KEY,
+  coins INTEGER NOT NULL DEFAULT 0,
+  owned_frames_json TEXT NOT NULL DEFAULT '[]',
+  equipped_frame_id TEXT,
+  last_daily_claim_date TEXT,
+  updated_at INTEGER NOT NULL
+);
+
 `);
 
 const ensureColumn = (table, column, definition) => {
@@ -380,7 +389,19 @@ ensureColumn('posts', 'rumor_status', 'TEXT');
 ensureColumn('posts', 'rumor_status_updated_at', 'INTEGER');
 ensureColumn('posts', 'comment_identity_enabled', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('posts', 'comment_identity_guest_seq', 'INTEGER NOT NULL DEFAULT 0');
+// 发帖时快照的昵称框（仅新帖生效，不随装备变更回溯）
+ensureColumn('posts', 'author_frame_id', 'TEXT');
+// 发帖时快照的炫彩昵称样式（发帖/回复均写入）
+ensureColumn('posts', 'author_name_style_id', 'TEXT');
 ensureColumn('comments', 'fingerprint', 'TEXT');
+ensureColumn('comments', 'author_name_style_id', 'TEXT');
+ensureColumn('user_cosmetics', 'owned_name_styles_json', "TEXT NOT NULL DEFAULT '[]'");
+ensureColumn('user_cosmetics', 'equipped_name_style_id', 'TEXT');
+// 商品有效期（天）：0=永久；阶梯定价 JSON
+ensureColumn('nickname_frames', 'duration_days', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('name_styles', 'duration_days', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('nickname_frames', 'price_tiers', "TEXT NOT NULL DEFAULT '[]'");
+ensureColumn('name_styles', 'price_tiers', "TEXT NOT NULL DEFAULT '[]'");
 ensureColumn('comments', 'parent_id', 'TEXT');
 ensureColumn('comments', 'reply_to_id', 'TEXT');
 ensureColumn('comments', 'deleted', 'INTEGER NOT NULL DEFAULT 0');

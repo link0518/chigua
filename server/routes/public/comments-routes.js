@@ -1,4 +1,5 @@
 import { buildIdentityMatch } from '../../sql-utils.js';
+import { getEquippedNameStyleIdIfValid } from '../../name-style-catalog.js';
 
 export const registerPublicCommentsRoutes = (app, deps) => {
   const {
@@ -17,7 +18,23 @@ export const registerPublicCommentsRoutes = (app, deps) => {
     mapCommentRow,
     buildCommentTree,
     crypto,
+    getEquippedNameStyleIdForIdentity,
   } = deps;
+
+  const resolveNameStyleForFingerprint = (fingerprint) => {
+    if (typeof getEquippedNameStyleIdForIdentity === 'function') {
+      return getEquippedNameStyleIdForIdentity(fingerprint);
+    }
+    try {
+      const row = db
+        .prepare('SELECT equipped_name_style_id FROM user_cosmetics WHERE identity_key = ? LIMIT 1')
+        .get(fingerprint);
+      return getEquippedNameStyleIdIfValid(row?.equipped_name_style_id || null);
+    } catch {
+      // 测试夹具可能无 user_cosmetics 表
+      return null;
+    }
+  };
 
 
   const buildViewerLikedSelect = (identityHashes) => {
@@ -141,6 +158,8 @@ export const registerPublicCommentsRoutes = (app, deps) => {
       }
     }
 
+    const authorNameStyleId = resolveNameStyleForFingerprint(fingerprint);
+
     db.prepare(
       `
       INSERT INTO comments (
@@ -155,9 +174,10 @@ export const registerPublicCommentsRoutes = (app, deps) => {
         ip,
         post_identity_key,
         post_identity_label,
-        post_identity_role
+        post_identity_role,
+        author_name_style_id
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `
     ).run(
       commentId,
@@ -171,11 +191,12 @@ export const registerPublicCommentsRoutes = (app, deps) => {
       clientIp || null,
       postIdentity?.key || null,
       postIdentity?.label || null,
-      postIdentity?.role || null
+      postIdentity?.role || null,
+      authorNameStyleId
     );
 
     db.prepare('UPDATE posts SET comments_count = comments_count + 1 WHERE id = ?').run(postId);
-    return postIdentity;
+    return { postIdentity, authorNameStyleId };
   });
 
   app.get('/api/posts/:id/comments', (req, res) => {
@@ -376,7 +397,7 @@ export const registerPublicCommentsRoutes = (app, deps) => {
     const finalReplyToId = replyToId || parentId || null;
     const actorIdentityHashes = getIdentityLookupHashes(req, res);
 
-    const postIdentity = createCommentWithPostIdentity({
+    const { postIdentity, authorNameStyleId } = createCommentWithPostIdentity({
       commentId,
       postId,
       postFingerprint: post.fingerprint,
@@ -438,9 +459,11 @@ export const registerPublicCommentsRoutes = (app, deps) => {
       created_at: now,
       likes_count: 0,
       viewer_liked: 0,
+      fingerprint,
       post_identity_key: postIdentity?.key || null,
       post_identity_label: postIdentity?.label || null,
       post_identity_role: postIdentity?.role || null,
+      author_name_style_id: authorNameStyleId,
     });
 
     return res.status(201).json({ comment });
