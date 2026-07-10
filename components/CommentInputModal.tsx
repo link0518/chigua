@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Image, Send, Smile } from 'lucide-react';
 import Modal from './Modal';
 import { SketchButton } from './SketchUI';
@@ -135,7 +136,8 @@ const CommentInputModal: React.FC<CommentInputModalProps> = ({
     await onSubmit(trimmed);
   };
 
-  return (
+  // 脱离评论底部面板的堆叠上下文，避免移动端导航栏盖住输入弹窗。
+  return createPortal(
     <Modal
       isOpen={isOpen}
       onClose={onClose}
@@ -261,7 +263,8 @@ const CommentInputModal: React.FC<CommentInputModalProps> = ({
           </div>
         </div>
       </form>
-    </Modal>
+    </Modal>,
+    document.body
   );
 };
 
