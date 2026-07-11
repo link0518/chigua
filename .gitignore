@@ -25,6 +25,8 @@ CLAUDE.md
 .trellis
 .superpowers
 .worktrees/
+docs/superpowers/specs/2026-07-10-user-uiux-redesign-design.md
+.codex-ui-audit-desktop-loaded.png
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
