@@ -17,10 +17,10 @@ const SiteFooter: React.FC<SiteFooterProps> = ({ isCnyTheme = false }) => {
           : 'border-ink/15 bg-paper/90'
       }`}
     >
-      <div className="mx-auto flex max-w-3xl flex-col items-center gap-1.5 px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] text-center sm:flex-row sm:justify-between sm:gap-3 sm:text-left">
-        <div className="flex items-center gap-2">
+      <div className="mx-auto flex max-w-3xl flex-nowrap items-center justify-center gap-x-1.5 px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] text-[10px] leading-none sm:justify-between sm:gap-3 sm:text-[11px] sm:text-left">
+        <div className="flex min-w-0 flex-nowrap items-center gap-1.5 sm:gap-2">
           <span
-            className={`inline-flex size-5 items-center justify-center rounded-full border text-[10px] font-bold leading-none ${
+            className={`inline-flex size-5 shrink-0 items-center justify-center rounded-full border text-[10px] font-bold leading-none ${
               isCnyTheme
                 ? 'border-cny-gold bg-cny-red text-cny-gold'
                 : 'border-ink/70 bg-white text-ink'
@@ -28,27 +28,29 @@ const SiteFooter: React.FC<SiteFooterProps> = ({ isCnyTheme = false }) => {
           >
             {isCnyTheme ? '福' : '瓜'}
           </span>
-          <span className={`text-xs font-bold ${isCnyTheme ? 'text-cny-dark-red' : 'text-ink'}`}>
+          <span className={`whitespace-nowrap text-xs font-bold ${isCnyTheme ? 'text-cny-dark-red' : 'text-ink'}`}>
             JX3 瓜田
           </span>
-          <span className={`hidden text-[11px] sm:inline ${muted}`}>
+          <span className={`hidden whitespace-nowrap sm:inline ${muted}`}>
             · 纯匿名 · 理性吃瓜
           </span>
         </div>
 
-        <p className={`inline-flex flex-wrap items-center justify-center gap-x-1.5 text-[11px] ${muted}`}>
+        <span className={`opacity-40 sm:hidden ${muted}`}>·</span>
+
+        <p className={`inline-flex flex-nowrap items-center gap-x-1.5 whitespace-nowrap ${muted}`}>
           <span>© {year}</span>
-          <span className="opacity-40">·</span>
-          <span>用户投稿不代表本站立场</span>
+          <span className="hidden opacity-40 sm:inline">·</span>
+          <span className="hidden sm:inline">用户投稿不代表本站立场</span>
           <span className="opacity-40">·</span>
           <span className="inline-flex items-center gap-0.5">
-            Made with
+            <span className="hidden sm:inline">Made with</span>
             <Heart
-              className={`h-3 w-3 ${
+              className={`h-3 w-3 shrink-0 ${
                 isCnyTheme ? 'fill-cny-red text-cny-red' : 'fill-alert text-alert'
               }`}
             />
-            by
+            <span className="hidden sm:inline">by</span>
             <span className={`font-bold ${isCnyTheme ? 'text-cny-dark-red' : 'text-ink'}`}>闰土</span>
           </span>
         </p>
