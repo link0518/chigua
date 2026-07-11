@@ -35,6 +35,7 @@ import { getPathForView, resolveViewFromPath } from '@/features/app/routing';
 import { useAccessStatus } from '@/features/app/hooks/useAccessStatus';
 import { useStreakCelebration } from '@/features/app/hooks/useStreakCelebration';
 import WikiLoadingScreen from './components/wiki/WikiLoadingScreen';
+import SiteFooter from './components/SiteFooter';
 
 const syncDocumentThemeClass = (className: string, enabled: boolean) => {
   document.documentElement.classList.toggle(className, enabled);
@@ -768,20 +769,8 @@ const App: React.FC = () => {
         onNavigate={navigate}
       />
 
-      {/* Footer only for non-admin */}
-      {showSiteChrome && (
-        <footer className={`w-full py-4 mt-auto transition-all ${isCnyTheme ? 'border-t border-[#FFE0B2] bg-[#FFF8E1]' : 'border-t-2 border-black bg-paper/90'}`}>
-          <div className="max-w-3xl mx-auto px-4">
-            <div className={`flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-xs font-sans ${isCnyTheme ? 'text-[#8D6E63]' : 'text-pencil'}`}>
-              <span>纯匿名</span>
-              <span>·</span>
-              <span>理性吃瓜</span>
-              <span>·</span>
-              <span>© 2026 JX3瓜田</span>
-            </div>
-          </div>
-        </footer>
-      )}
+      {/* Footer only for non-admin / non-wiki */}
+      {showSiteChrome && <SiteFooter isCnyTheme={isCnyTheme} />}
     </div>
   );
 };
