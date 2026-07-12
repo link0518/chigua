@@ -154,7 +154,6 @@ const HomeView: React.FC = () => {
     [commentPostId, currentPost, posts]
   );
   const effectiveViewMode: HomeViewMode = routePostId ? 'focus' : preferredViewMode;
-  const containerWidthClass = effectiveViewMode === 'grid' ? 'max-w-6xl' : 'max-w-3xl';
   const shouldShowBanner = window.location.hostname === '933211.xyz';
   const isLatestPost = boundedIndex === 0;
   const turnstileEnabled = state.settings.turnstileEnabled;
@@ -885,7 +884,7 @@ const HomeView: React.FC = () => {
             </div>
 
             {currentPost.tags?.length ? (
-              <div className="relative z-[1] mb-2 flex min-w-0 flex-wrap items-center gap-2">
+              <div className="relative z-[1] mb-2 mt-[10px] flex min-w-0 flex-wrap items-center gap-2">
                 {currentPost.tags.slice(0, 2).map((tag, index) => (
                   <button
                     type="button"
@@ -1028,7 +1027,7 @@ const HomeView: React.FC = () => {
 
   if (loading && posts.length === 0) {
     return (
-      <div className={`mx-auto flex min-h-[80vh] w-full ${containerWidthClass} flex-grow flex-col px-4 py-8`}>
+      <div className="mx-auto flex min-h-[80vh] w-full max-w-6xl flex-grow flex-col px-4 py-8">
         {renderModeHeader()}
         <div className="flex min-h-[55vh] flex-col items-center justify-center text-center">
           <span className="mb-4 block text-6xl">🗂️</span>
@@ -1041,7 +1040,7 @@ const HomeView: React.FC = () => {
 
   if (hiddenOnlyEmptyState) {
     return (
-      <div className={`mx-auto flex min-h-[80vh] w-full ${containerWidthClass} flex-grow flex-col px-4 py-8`}>
+      <div className="mx-auto flex min-h-[80vh] w-full max-w-6xl flex-grow flex-col px-4 py-8">
         {renderModeHeader()}
         <div className="flex min-h-[55vh] flex-col items-center justify-center text-center">
           <span className="mb-4 block text-6xl">??</span>
@@ -1066,7 +1065,7 @@ const HomeView: React.FC = () => {
 
   if (!currentPost && posts.length === 0) {
     return (
-      <div className={`mx-auto flex min-h-[80vh] w-full ${containerWidthClass} flex-grow flex-col px-4 py-8`}>
+      <div className="mx-auto flex min-h-[80vh] w-full max-w-6xl flex-grow flex-col px-4 py-8">
         {renderModeHeader()}
         <div className="flex min-h-[55vh] flex-col items-center justify-center text-center">
           <span className="mb-4 block text-6xl">📰</span>

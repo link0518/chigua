@@ -122,7 +122,7 @@ const HomePostGridCard: React.FC<HomePostGridCardProps> = ({
             </div>
           </div>
 
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <div className="mt-[6px] flex min-w-0 flex-wrap items-center gap-2">
             {(post.tags || []).slice(0, 2).map((tag, index) => (
               <button
                 type="button"
