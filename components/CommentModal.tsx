@@ -1011,14 +1011,14 @@ const CommentModal: React.FC<CommentModalProps> = ({
             </button>
           </div>
         )}
-        <div className="flex items-stretch gap-2">
+        <div className="flex w-full min-w-0 max-w-full items-stretch gap-2">
           <textarea
             ref={inlineTextareaRef}
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder="留下你的评论...（支持 Markdown / 表情包）"
+            placeholder="留下你的评论..."
             maxLength={MAX_LENGTH + 10}
-            className="flex-1 h-16 p-3 border-2 border-ink rounded-lg resize-none font-sans bg-white focus:outline-none focus:shadow-sketch-sm transition-shadow"
+            className="min-w-0 flex-1 h-16 p-3 border-2 border-ink rounded-lg resize-none font-sans bg-white focus:outline-none focus:shadow-sketch-sm transition-shadow"
             onFocus={() => {
               if (isMobile) {
                 openInputModal();
@@ -1043,13 +1043,13 @@ const CommentModal: React.FC<CommentModalProps> = ({
             type="button"
             onClick={handlePickUpload}
             disabled={uploading}
-            className="px-3 h-16 flex items-center justify-center border-2 border-ink rounded-lg bg-white hover:bg-highlight transition-colors shadow-sketch disabled:opacity-60"
+            className="shrink-0 px-3 h-16 flex items-center justify-center border-2 border-ink rounded-lg bg-white hover:bg-highlight transition-colors shadow-sketch disabled:opacity-60"
             aria-label="上传图片"
             title={uploading ? '正在上传...' : '上传图片'}
           >
             <Image className="w-4 h-4" />
           </button>
-          <div className="relative">
+          <div className="relative shrink-0">
             <button
               ref={memeButtonRef}
               type="button"
@@ -1072,7 +1072,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
           </div>
           <SketchButton
             type="submit"
-            className="px-3 h-16 flex items-center justify-center"
+            className="shrink-0 px-3 h-16 flex items-center justify-center"
             disabled={submitting}
             aria-label="发布评论"
           >

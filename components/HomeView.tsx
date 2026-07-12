@@ -831,6 +831,68 @@ const HomeView: React.FC = () => {
     </div>
   );
 
+  const renderLoadingSkeleton = () => {
+    const skeletonCard = (compact = false) => (
+      <div className="home-post-skeleton relative" aria-hidden="true">
+        <div className={`pastel-post-shadow absolute inset-0 border-2 border-black ${compact ? 'translate-x-1.5 translate-y-2 rounded-[28px] opacity-80' : 'translate-x-2 translate-y-3 rounded-lg doodle-border !rounded-lg'}`} />
+        <div className={`relative overflow-hidden border-2 border-ink bg-white shadow-paper ${compact ? 'min-h-[316px] rounded-[28px] p-4 sm:p-5' : 'rounded-lg p-8 doodle-border !rounded-lg'}`}>
+          <div className="home-post-skeleton__shine" />
+          <div className="relative flex items-center gap-3">
+            <span className="home-post-skeleton__block size-10 shrink-0 rounded-full" />
+            <div className="flex flex-1 flex-col gap-2">
+              <span className="home-post-skeleton__block h-4 w-24 rounded-sm" />
+              <span className="home-post-skeleton__block h-3 w-32 rounded-sm opacity-70" />
+            </div>
+            <span className="home-post-skeleton__block h-7 w-14 rounded-sm" />
+          </div>
+          <div className={`relative flex flex-col gap-3 ${compact ? 'mt-6' : 'mt-8'}`}>
+            <span className="home-post-skeleton__block h-4 w-full rounded-sm" />
+            <span className="home-post-skeleton__block h-4 w-[88%] rounded-sm" />
+            <span className="home-post-skeleton__block h-4 w-[62%] rounded-sm" />
+          </div>
+          <div className={`relative flex items-center justify-between border-t-2 border-dashed border-ink/20 ${compact ? 'mt-6 pt-4' : 'mt-8 pt-5'}`}>
+            <div className="flex gap-4">
+              <span className="home-post-skeleton__block size-6 rounded-full" />
+              <span className="home-post-skeleton__block size-6 rounded-full" />
+              <span className="home-post-skeleton__block size-6 rounded-full" />
+            </div>
+            <span className="home-post-skeleton__block h-4 w-20 rounded-sm" />
+          </div>
+        </div>
+      </div>
+    );
+
+    if (effectiveViewMode === 'grid') {
+      return (
+        <div role="status" aria-live="polite" aria-label="正在加载帖子">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:gap-5">
+            {[0, 1, 2, 3].map((item) => (
+              <React.Fragment key={item}>{skeletonCard(true)}</React.Fragment>
+            ))}
+          </div>
+          <div className="mt-6 flex justify-center">
+            <div className="flex h-[52px] items-center justify-center gap-3 px-6 text-pencil">
+              <span className="home-post-skeleton__dot" aria-hidden="true" />
+              <span className="font-hand text-base font-bold tracking-wide">正在翻瓜，马上就好</span>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="contents" role="status" aria-live="polite" aria-label="正在加载帖子">
+        <article className="relative my-auto w-full">
+          {skeletonCard()}
+        </article>
+        <div className="mx-auto mt-10 mb-4 flex min-h-[66px] w-full max-w-md items-center justify-center gap-3 text-pencil md:max-w-none">
+          <span className="home-post-skeleton__dot" aria-hidden="true" />
+          <span className="font-hand text-base font-bold tracking-wide sm:text-lg">正在翻瓜，马上就好</span>
+        </div>
+      </div>
+    );
+  };
+
   const renderFocusMode = () => {
     if (!currentPost) {
       return null;
@@ -1027,12 +1089,20 @@ const HomeView: React.FC = () => {
 
   if (loading && posts.length === 0) {
     return (
-      <div className="mx-auto flex min-h-[80vh] w-full max-w-6xl flex-grow flex-col px-4 py-8">
+      <div className={`relative mx-auto flex min-h-[80vh] w-full max-w-6xl flex-grow flex-col overflow-x-hidden px-4 py-6 ${effectiveViewMode === 'grid' ? 'pb-20' : 'pb-8'}`}>
+        {shouldShowBanner && effectiveViewMode === 'grid' && (
+          <div className="mb-4 w-full">
+            {bannerContent}
+          </div>
+        )}
+        {shouldShowBanner && effectiveViewMode !== 'grid' && (
+          <div className="mx-auto mb-4 w-full max-w-3xl">
+            {bannerContent}
+          </div>
+        )}
         {renderModeHeader()}
-        <div className="flex min-h-[55vh] flex-col items-center justify-center text-center">
-          <span className="mb-4 block text-6xl">🗂️</span>
-          <h2 className="font-display text-3xl text-ink">正在加载帖子...</h2>
-          <p className="mt-2 font-hand text-xl text-pencil">马上就能开始浏览</p>
+        <div className={effectiveViewMode === 'grid' ? 'w-full' : 'mx-auto flex w-full max-w-3xl flex-1 flex-col justify-center'}>
+          {renderLoadingSkeleton()}
         </div>
       </div>
     );

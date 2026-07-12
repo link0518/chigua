@@ -143,6 +143,54 @@ body.theme-wiki {
   background: #f4efe2;
 }
 
+/* 首页加载态复刻帖子结构，减少内容出现时的布局跳变。 */
+.home-post-skeleton {
+  --skeleton-base: #ece8dd;
+  --skeleton-highlight: rgba(255, 255, 255, 0.78);
+}
+
+.home-post-skeleton__block {
+  display: block;
+  background: var(--skeleton-base);
+}
+
+.home-post-skeleton__shine {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(
+    105deg,
+    transparent 28%,
+    var(--skeleton-highlight) 46%,
+    transparent 64%
+  );
+  transform: translateX(-120%);
+  animation: home-post-skeleton-shine 1.6s ease-in-out infinite;
+}
+
+.home-post-skeleton__dot {
+  width: 0.625rem;
+  height: 0.625rem;
+  border: 2px solid #2c2c2c;
+  border-radius: 999px;
+  background: #fff59d;
+  animation: home-post-skeleton-dot 1.2s ease-in-out infinite;
+}
+
+@keyframes home-post-skeleton-shine {
+  to {
+    transform: translateX(120%);
+  }
+}
+
+@keyframes home-post-skeleton-dot {
+  50% {
+    transform: scale(1.35);
+    opacity: 0.55;
+  }
+}
+
 .noticeboard-header.is-cny .noticeboard-header__texture {
   opacity: 0.34;
   background-image:
@@ -1765,7 +1813,9 @@ body.theme-wiki {
   .wiki-loading-scan::before,
   .wiki-loading-state svg,
   .wiki-row-enter,
-  .wiki-skeleton-card {
+  .wiki-skeleton-card,
+  .home-post-skeleton__shine,
+  .home-post-skeleton__dot {
     animation: none !important;
   }
 

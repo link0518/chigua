@@ -188,7 +188,7 @@ const CommentInputModal: React.FC<CommentInputModalProps> = ({
                 }
               }
             }}
-            placeholder="留下你的评论...（支持 Markdown / 表情包 / 粘贴图片）"
+            placeholder="留下你的评论..."
             maxLength={maxLength + 10}
             className="w-full flex-1 min-h-[72px] sm:min-h-[160px] p-3 border-2 border-ink rounded-lg resize-none font-sans bg-white focus:outline-none focus:shadow-sketch-sm transition-shadow"
           />
