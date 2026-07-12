@@ -10,12 +10,16 @@ import {
   AlertTriangle,
   Bell,
   BookOpen,
+  Bookmark,
   CheckCircle,
+  Clock3,
+  Flame,
   Megaphone,
   Menu,
   MessageCircle,
   Pencil,
   Reply,
+  Search,
   ThumbsUp,
   UserCircle,
   Trash2,
@@ -46,6 +50,7 @@ const App: React.FC = () => {
   const { loadSettings, state } = useApp();
   const [currentView, setCurrentView] = useState<ViewType>(() => resolveViewFromPath(window.location.pathname));
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [headerCompact, setHeaderCompact] = useState(() => window.scrollY > 36);
   const [announcementOpen, setAnnouncementOpen] = useState(false);
   const [userMeOpen, setUserMeOpen] = useState(false);
   const [announcementContent, setAnnouncementContent] = useState('');
@@ -61,8 +66,6 @@ const App: React.FC = () => {
   const isWikiView = currentView === ViewType.WIKI;
   const showSiteChrome = currentView !== ViewType.ADMIN && !isWikiView;
   const isCnyTheme = currentView !== ViewType.ADMIN && !isWikiView && state.settings.cnyThemeActive;
-  const showDesktopMeEntry = currentView !== ViewType.ADMIN && !isWikiView;
-  const showDesktopWikiEntry = currentView !== ViewType.ADMIN && !isWikiView;
   const { accessBlocked, accessExpiresAt, accessChecked } = useAccessStatus();
   const {
     streakCelebrationOpen,
@@ -77,6 +80,30 @@ const App: React.FC = () => {
     const timer = window.setTimeout(() => setBackgroundTasksReady(true), 15000);
     return () => {
       clearTimeout(timer);
+    };
+  }, []);
+
+  useEffect(() => {
+    let animationFrame: number | null = null;
+    const syncHeaderState = () => {
+      animationFrame = null;
+      // 收缩与展开使用不同阈值，避免短页面因顶栏高度变化在临界点反复切换。
+      setHeaderCompact((compact) => (compact ? window.scrollY > 8 : window.scrollY > 36));
+    };
+    const handleScroll = () => {
+      // 使用动画帧合并高频滚动事件，避免顶栏收缩时反复触发渲染。
+      if (animationFrame === null) {
+        animationFrame = window.requestAnimationFrame(syncHeaderState);
+      }
+    };
+
+    syncHeaderState();
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+      if (animationFrame !== null) {
+        window.cancelAnimationFrame(animationFrame);
+      }
     };
   }, []);
 
@@ -435,15 +462,31 @@ const App: React.FC = () => {
     };
   }, [notificationsOpen]);
 
-  const NavItem: React.FC<{ view: ViewType; label: string; active?: boolean }> = ({ view, label, active }) => (
+  const SideNavItem: React.FC<{
+    label: string;
+    icon: React.ReactNode;
+    onClick: () => void;
+    active?: boolean;
+    dot?: boolean;
+  }> = ({ label, icon, onClick, active = false, dot = false }) => (
     <button
-      onClick={() => navigate(view)}
-      className={`relative transition-colors font-hand text-xl font-bold ${isCnyTheme ? 'text-cny-gold hover:text-yellow-200' : 'hover:text-gray-600'} ${currentView === view || active
-        ? `after:absolute after:w-full after:h-0.5 after:bottom-0 after:left-0 after:scale-x-100 ${isCnyTheme ? 'after:bg-cny-gold' : 'after:bg-black'}`
-        : `after:absolute after:w-full after:h-0.5 after:bottom-0 after:left-0 after:scale-x-0 hover:after:scale-x-100 after:transition-transform ${isCnyTheme ? 'after:bg-cny-gold' : 'after:bg-black'}`
+      type="button"
+      onClick={onClick}
+      aria-current={active ? 'page' : undefined}
+      className={`doodle-side-nav-item group relative flex w-full items-center gap-3 px-3 py-3 text-left font-hand text-lg font-bold transition-all active:translate-x-px active:translate-y-px ${active
+        ? isCnyTheme
+          ? 'is-active border-cny-gold bg-cny-gold text-cny-dark-red shadow-sketch'
+          : 'is-active border-ink bg-highlight text-ink shadow-sketch'
+        : isCnyTheme
+          ? 'border-transparent text-cny-gold hover:bg-cny-red'
+          : 'border-transparent text-ink hover:bg-marker-blue/25'
         }`}
     >
-      {label}
+      <span className="relative flex size-8 shrink-0 items-center justify-center">
+        {icon}
+        {dot && <span className="absolute right-0 top-0 size-2.5 rounded-full border border-ink bg-red-500" />}
+      </span>
+      <span>{label}</span>
     </button>
   );
 
@@ -470,7 +513,7 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen-safe flex flex-col font-sans selection:bg-highlight selection:text-black relative overflow-x-hidden">
+    <div className="min-h-screen-safe flex flex-col font-sans selection:bg-highlight selection:text-black relative overflow-x-clip">
       {isCnyTheme && <FallingDecorations />}
       {isCnyTheme && (
         <>
@@ -491,98 +534,67 @@ const App: React.FC = () => {
         title={`连续登录 ${streakCelebrationDays} 天！`}
         subtitle="彩纸礼花送给你～"
       />
-      {showDesktopMeEntry && (
-        <button
-          type="button"
-          onClick={openUserMe}
-          className="fixed z-[55] hidden items-center gap-2 rounded-[20px] border-2 border-ink bg-white px-4 py-2 text-sm font-bold text-ink shadow-paper transition-all hover:-translate-y-0.5 hover:bg-highlight sm:flex"
-          style={{
-            top: 'calc(env(safe-area-inset-top, 0px) + 12px)',
-            right: 'calc(env(safe-area-inset-right, 0px) + 16px)',
-          }}
-        >
-          <span className="relative inline-flex items-center">
-            <UserCircle className="h-4 w-4" />
-            {updateAnnouncementUnread && (
-              <span className="absolute -top-1.5 -right-1.5 h-2.5 w-2.5 rounded-full bg-red-500 border border-ink" />
-            )}
-          </span>
-          <span>我的</span>
-        </button>
-      )}
-      {showDesktopWikiEntry && (
-        <button
-          type="button"
-          onClick={() => openViewInNewTab(ViewType.WIKI)}
-          className="fixed z-[55] hidden items-center gap-2 rounded-[20px] border-2 border-ink bg-white px-4 py-2 text-sm font-bold text-ink shadow-paper transition-all hover:-translate-y-0.5 hover:bg-highlight sm:flex"
-          style={{
-            top: 'calc(env(safe-area-inset-top, 0px) + 12px)',
-            left: 'calc(env(safe-area-inset-left, 0px) + 16px)',
-          }}
-        >
-          <BookOpen className="h-4 w-4" />
-          <span>瓜条</span>
-        </button>
-      )}
-      {/* Top Navigation */}
+      {/* 品牌区 */}
       {showSiteChrome && (
-        <header className={`sticky top-0 z-50 w-full border-b-2 px-4 md:px-6 py-3 shadow-[0_4px_0_0_rgba(0,0,0,0.1)] min-h-[96px] sm:min-h-[72px] bg-opacity-95 backdrop-blur-sm ${isCnyTheme ? 'border-cny-dark-red bg-gradient-to-r from-cny-dark-red via-cny-red to-cny-dark-red' : 'border-black bg-[#f9f7f1]'}`}>
+        <header className={`noticeboard-header ${headerCompact ? 'is-compact' : ''} ${isCnyTheme ? 'is-cny' : ''}`}>
           {isCnyTheme && <HeaderDecoration />}
-          <div className="absolute top-full left-0 w-full h-2 z-10 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAiIGhlaWdodD0iMTAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHBhdGggZD0iTTAgMTAgTTEwIDAgTDIwIDEwIiBmaWxsPSJub25lIiBzdHJva2U9IiMwMDAiIHN0cm9rZS13aWR0aD0iMSIvPjwvc3ZnPg==')] opacity-10"></div>
-          <div className="max-w-3xl mx-auto flex items-center justify-between gap-3 sm:gap-4 flex-nowrap relative z-10">
-            {/* Logo */}
-            <div
-              className="flex items-center gap-3 cursor-pointer group"
+          <span className="noticeboard-header__texture" aria-hidden="true" />
+          <span className="noticeboard-header__torn-edge" aria-hidden="true" />
+          <div className="noticeboard-header__inner">
+            <button
+              type="button"
+              className="noticeboard-header__brand group"
               onClick={() => navigate(ViewType.HOME)}
+              aria-label="返回 JX3瓜田首页"
             >
-              <div className={`size-10 sm:size-12 flex items-center justify-center rounded-full border-2 shadow-sketch group-hover:rotate-12 transition-transform duration-300 ${isCnyTheme ? 'border-cny-gold bg-cny-red' : 'border-black bg-alert'}`}>
-                <span className={`text-[22px] font-sans font-bold ${isCnyTheme ? 'text-cny-gold' : 'text-black'}`}>{isCnyTheme ? '福' : '瓜'}</span>
-              </div>
-              <h1 className={`text-2xl sm:text-3xl font-display font-bold tracking-widest relative leading-none sm:leading-tight ${isCnyTheme ? 'text-cny-gold' : 'text-black'}`}>
-                <span className="block sm:inline">JX3</span>
-                <span className="block sm:inline">瓜田</span>
-                <span className={`absolute -bottom-1 left-0 w-full h-[6px] -rotate-1 rounded-full ${isCnyTheme ? 'bg-cny-gold/50' : 'bg-marker-green/50'}`}></span>
-              </h1>
-            </div>
+              <span className="noticeboard-header__seal" aria-hidden="true">
+                <span>{isCnyTheme ? '福' : '瓜'}</span>
+              </span>
+              <span className="noticeboard-header__brand-copy">
+                <span className="noticeboard-header__title">
+                  <span className="noticeboard-header__title-line">JX3</span>
+                  <span className="noticeboard-header__title-line">瓜田</span>
+                  <span className="noticeboard-header__marker" aria-hidden="true" />
+                </span>
+                <span className="noticeboard-header__tagline">
+                  江湖那么大，总有新鲜事
+                </span>
+              </span>
+            </button>
 
-            <div className="flex items-center gap-2 sm:gap-6">
-              {/* Desktop Nav */}
-              <nav className="hidden sm:flex gap-6">
-                <NavItem view={ViewType.HOME} label="最新" />
-                <NavItem view={ViewType.FEED} label="热门" />
-                <NavItem view={ViewType.SEARCH} label="搜索" />
-                <NavItem view={ViewType.FAVORITES} label="收藏" />
-              </nav>
-
-              {/* Action Button */}
+            <div className="noticeboard-header__actions">
               <button
+                type="button"
                 onClick={() => navigate(ViewType.SUBMISSION)}
-                className={`flex items-center justify-center rounded-full px-3 py-2 sm:px-5 sm:py-2.5 transition-all shadow-sketch active:shadow-sketch-active active:translate-x-[2px] active:translate-y-[2px] transform rotate-1 hover:-rotate-1 ${isCnyTheme ? 'bg-cny-gold text-cny-dark-red border-2 border-cny-gold hover:bg-[#ffe56d]' : 'bg-black text-white hover:bg-ink/90'}`}
+                className="noticeboard-header__submit"
               >
-                <span className="flex items-center gap-2 font-sans text-base sm:text-lg font-semibold whitespace-nowrap">
-                  <Pencil className="w-5 h-5 shrink-0" />
+                <span className="flex items-center gap-2 whitespace-nowrap">
+                  <Pencil className="size-5 shrink-0" />
                   <span className="leading-none">投稿</span>
                 </span>
               </button>
 
               <div className="relative" ref={notificationRef}>
                 <button
+                  type="button"
                   onClick={() => setNotificationsOpen((prev) => !prev)}
-                  className={`flex items-center justify-center rounded-full px-2.5 py-2 sm:px-3 sm:py-2.5 border-2 transition-all shadow-sketch active:shadow-sketch-active active:translate-x-[2px] active:translate-y-[2px] ${isCnyTheme ? 'border-cny-gold bg-cny-paper text-cny-dark-red hover:bg-cny-gold/20' : 'border-ink bg-white hover:bg-highlight'}`}
+                  className="noticeboard-header__icon-button inline-flex"
                   aria-label="提醒"
                   title="提醒"
+                  aria-expanded={notificationsOpen}
+                  aria-haspopup="dialog"
                 >
                   <span className="relative flex items-center">
-                    <Bell className="w-5 h-5" />
+                    <Bell className="size-5" />
                     {notificationsUnread > 0 && (
-                      <span className="absolute -top-2 -right-2 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
+                      <span className="noticeboard-header__count-badge">
                         {notificationsUnread > 99 ? '99+' : notificationsUnread}
                       </span>
                     )}
                   </span>
                 </button>
                 {notificationsOpen && (
-                  <div className="absolute right-0 mt-3 w-80 max-w-[80vw] bg-white border-2 border-ink rounded-lg shadow-sketch-sm p-4 z-50">
+                  <div className="absolute right-0 mt-3 w-80 max-w-[80vw] bg-paper-card border-2 border-ink rounded-lg shadow-sketch-sm p-4 z-50">
                     <div className="flex items-center justify-between mb-3">
                       <span className="font-hand font-bold text-base">提醒</span>
                       <span className="text-xs text-pencil font-sans">
@@ -628,35 +640,38 @@ const App: React.FC = () => {
               </div>
 
               <button
+                type="button"
                 onClick={openAnnouncement}
-                className={`hidden sm:flex items-center justify-center rounded-full px-2.5 py-2 sm:px-3 sm:py-2.5 border-2 transition-all shadow-sketch active:shadow-sketch-active active:translate-x-[2px] active:translate-y-[2px] ${isCnyTheme ? 'border-cny-gold bg-cny-paper text-cny-dark-red hover:bg-cny-gold/20' : 'border-ink bg-white hover:bg-highlight'}`}
+                className="noticeboard-header__icon-button hidden sm:inline-flex"
                 aria-label="公告"
                 title="公告"
               >
                 <span className="relative flex items-center">
-                  <Megaphone className="w-5 h-5" />
+                  <Megaphone className="size-5" />
                   {announcementUnread && (
-                    <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-red-500" />
+                    <span className="noticeboard-header__unread-tape" />
                   )}
                 </span>
               </button>
 
-              {/* Mobile Menu Toggle (Simplified) */}
+              {/* 移动端菜单入口 */}
               <button
-                className={`sm:hidden ml-2 relative ${isCnyTheme ? 'text-cny-gold' : ''}`}
+                type="button"
+                className="noticeboard-header__menu inline-flex min-[1880px]:hidden"
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                aria-label="打开菜单"
+                aria-label={mobileMenuOpen ? '关闭菜单' : '打开菜单'}
+                aria-expanded={mobileMenuOpen}
               >
                 {mobileMenuOpen ? <X /> : <Menu />}
                 {(announcementUnread || updateAnnouncementUnread || notificationsUnread > 0) && (
-                  <span className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-red-500 border-2 border-ink" />
+                  <span className="noticeboard-header__menu-tape" />
                 )}
               </button>
             </div>
           </div>
           {/* Mobile Nav Dropdown */}
           {mobileMenuOpen && (
-            <div className={`sm:hidden absolute top-full left-0 w-full border-b-2 shadow-xl p-4 flex flex-col gap-3 animate-in slide-in-from-top-2 z-50 ${isCnyTheme ? 'bg-cny-paper border-cny-dark-red' : 'bg-paper border-ink'}`}>
+            <div className={`noticeboard-header__mobile-panel min-[1880px]:hidden ${isCnyTheme ? 'is-cny' : ''}`}>
               <MobileNavItem
                 label="我的"
                 dot={updateAnnouncementUnread}
@@ -710,7 +725,55 @@ const App: React.FC = () => {
         </header>
       )}
 
-      {/* Main Content Area */}
+      {showSiteChrome && (
+        <aside className={`doodle-side-nav fixed left-[10vw] z-40 hidden w-[176px] border-2 px-3 pb-3 pt-7 shadow-paper min-[1880px]:block ${isCnyTheme ? 'border-cny-gold bg-cny-paper/95' : 'is-pastel border-ink'}`}>
+          <span className={`doodle-side-nav-title ${isCnyTheme ? 'border-cny-gold bg-cny-red text-cny-gold' : 'border-ink bg-alert text-ink'}`}>
+            瓜田导航
+          </span>
+          <nav aria-label="主导航" className="flex flex-col gap-2">
+            <SideNavItem
+              label="最新"
+              icon={<Clock3 className="size-5" />}
+              active={currentView === ViewType.HOME}
+              onClick={() => navigate(ViewType.HOME)}
+            />
+            <SideNavItem
+              label="热门"
+              icon={<Flame className="size-5" />}
+              active={currentView === ViewType.FEED}
+              onClick={() => navigate(ViewType.FEED)}
+            />
+            <SideNavItem
+              label="搜索"
+              icon={<Search className="size-5" />}
+              active={currentView === ViewType.SEARCH}
+              onClick={() => navigate(ViewType.SEARCH)}
+            />
+            <SideNavItem
+              label="收藏"
+              icon={<Bookmark className="size-5" />}
+              active={currentView === ViewType.FAVORITES}
+              onClick={() => navigate(ViewType.FAVORITES)}
+            />
+            <div className={`doodle-side-nav-divider my-1.5 ${isCnyTheme ? 'text-cny-dark-red/45' : 'text-ink/35'}`} aria-hidden="true">
+              - - - - - -
+            </div>
+            <SideNavItem
+              label="瓜条"
+              icon={<BookOpen className="size-5" />}
+              onClick={() => openViewInNewTab(ViewType.WIKI)}
+            />
+            <SideNavItem
+              label="我的"
+              icon={<UserCircle className="size-5" />}
+              dot={updateAnnouncementUnread}
+              onClick={openUserMe}
+            />
+          </nav>
+        </aside>
+      )}
+
+      {/* 主内容区保持原有宽度与居中方式 */}
       <div className={`flex-grow flex flex-col ${currentView === ViewType.ADMIN ? 'h-screen' : ''}`}>
         <React.Suspense
           fallback={(

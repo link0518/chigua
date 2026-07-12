@@ -2,13 +2,14 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
   Bell,
+  Bookmark,
   ChevronRight,
   Coins,
   Frame,
+  Megaphone,
   ShieldOff,
-  Settings2,
-  Star,
-  Store,
+  ShoppingBag,
+  SlidersHorizontal,
   X,
 } from 'lucide-react';
 
@@ -35,7 +36,7 @@ import {
   type NicknameFrameRarity,
 } from './nicknameFrames';
 import ShopPriceTiers, { ShopPriceSummary, type ShopPriceTier } from './ShopPriceTiers';
-import { SketchButton } from './SketchUI';
+import { SketchButton, roughBorderClass, roughBorderClassSm } from './SketchUI';
 
 // 后续扩展：在 MePanelId 追加 id，在 menu 配置加菜单，在 panel switch 注册渲染
 type MePanelId = 'home' | 'settings' | 'updateAnnouncements' | 'shop';
@@ -149,7 +150,7 @@ interface ShopState {
 const formatAnnouncementTime = (value: number) => new Date(value).toLocaleString('zh-CN');
 
 // ---------------------------------------------------------------------------
-// 共享 UI 片段
+// 共享 UI 片段（对齐全站 sketch / 便签风）
 // ---------------------------------------------------------------------------
 
 const SectionCard: React.FC<{
@@ -158,10 +159,16 @@ const SectionCard: React.FC<{
   title?: string;
   action?: React.ReactNode;
 }> = ({ children, className = '', title, action }) => (
-  <section className={`overflow-hidden rounded-2xl border-2 border-ink/10 bg-white shadow-[0_8px_24px_-16px_rgba(15,23,42,0.35)] ${className}`}>
+  <section
+    className={`overflow-hidden border-2 border-ink bg-white shadow-sketch ${roughBorderClassSm} ${className}`}
+  >
     {(title || action) && (
-      <div className="flex items-center justify-between gap-3 border-b border-ink/8 bg-[#fbfaf6] px-4 py-3 sm:px-5">
-        {title ? <h3 className="font-sans text-sm font-bold text-ink">{title}</h3> : <span />}
+      <div className="flex items-center justify-between gap-3 border-b-2 border-dashed border-ink/20 bg-[#fbf7ef] px-4 py-3 sm:px-5">
+        {title ? (
+          <h3 className="font-hand text-base font-bold tracking-wide text-ink">{title}</h3>
+        ) : (
+          <span />
+        )}
         {action}
       </div>
     )}
@@ -180,16 +187,31 @@ const StatPill: React.FC<{
     <Comp
       type={onClick ? 'button' : undefined}
       onClick={onClick}
-      className={`flex min-w-0 flex-1 flex-col items-center gap-1 rounded-2xl border-2 border-white/40 bg-white/75 px-2 py-3 text-center shadow-sm backdrop-blur-sm transition-all ${
-        onClick ? 'hover:-translate-y-0.5 hover:bg-white active:translate-y-0' : ''
+      className={`flex min-w-0 flex-1 flex-col items-center gap-1 border-2 border-ink bg-white px-2 py-3 text-center shadow-sketch transition-all ${roughBorderClassSm} ${
+        onClick ? 'hover:-translate-y-0.5 hover:bg-highlight active:translate-y-0 active:shadow-sketch-active' : ''
       }`}
     >
-      <span className="inline-flex items-center justify-center text-ink/70">{icon}</span>
-      <span className="font-sans text-lg font-black tabular-nums text-ink sm:text-xl">{value}</span>
-      <span className="text-[11px] font-medium text-pencil">{label}</span>
+      <span className="inline-flex items-center justify-center text-ink">{icon}</span>
+      <span className="font-hand text-xl font-bold tabular-nums leading-none text-ink sm:text-2xl">{value}</span>
+      <span className="font-hand text-xs font-bold text-pencil">{label}</span>
     </Comp>
   );
 };
+
+const SketchIconBtn: React.FC<{
+  onClick: () => void;
+  label: string;
+  children: React.ReactNode;
+}> = ({ onClick, label, children }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    aria-label={label}
+    className="inline-flex size-10 items-center justify-center rounded-full border-2 border-ink bg-white text-ink shadow-sketch transition-all hover:-translate-y-0.5 hover:bg-highlight active:translate-y-0 active:shadow-sketch-active"
+  >
+    {children}
+  </button>
+);
 
 // ---------------------------------------------------------------------------
 // SettingsPanel
@@ -388,7 +410,7 @@ const UpdateAnnouncementsPanel: React.FC<{
     return (
       <div className="space-y-3">
         {[0, 1, 2].map((i) => (
-          <div key={i} className="animate-pulse rounded-2xl border-2 border-ink/10 bg-white p-5">
+          <div key={i} className={`animate-pulse border-2 border-ink bg-white p-5 shadow-sketch ${roughBorderClassSm}`}>
             <div className="mb-3 h-3 w-32 rounded bg-gray-200" />
             <div className="mb-2 h-3 w-full rounded bg-gray-100" />
             <div className="h-3 w-4/5 rounded bg-gray-100" />
@@ -400,23 +422,23 @@ const UpdateAnnouncementsPanel: React.FC<{
 
   if (items.length === 0) {
     return (
-      <div className="rounded-2xl border-2 border-dashed border-ink/15 bg-[#fcfbf7] px-6 py-16 text-center">
+      <div className={`border-2 border-dashed border-ink/30 bg-white px-6 py-16 text-center shadow-sketch ${roughBorderClassSm}`}>
         <Bell className="mx-auto mb-3 h-8 w-8 text-pencil/50" />
-        <p className="font-hand text-lg text-pencil">暂无更新公告</p>
+        <p className="font-hand text-lg font-bold text-pencil">暂无更新公告</p>
       </div>
     );
   }
 
   return (
     <div className="relative space-y-0">
-      <div className="absolute bottom-4 left-[1.15rem] top-4 w-px bg-ink/10 sm:left-[1.35rem]" />
+      <div className="absolute bottom-4 left-[1.15rem] top-4 w-px bg-ink/15 sm:left-[1.35rem]" />
       {items.map((item, index) => (
         <article key={item.id} className="relative flex gap-3 pb-4 last:pb-0 sm:gap-4">
-          <div className="relative z-[1] mt-5 flex size-5 shrink-0 items-center justify-center rounded-full border-2 border-ink bg-highlight shadow-sm sm:size-6">
+          <div className="relative z-[1] mt-5 flex size-5 shrink-0 items-center justify-center rounded-full border-2 border-ink bg-highlight shadow-sketch sm:size-6">
             <span className="text-[10px] font-bold text-ink">{items.length - index}</span>
           </div>
-          <div className="min-w-0 flex-1 rounded-2xl border-2 border-ink/10 bg-white p-4 shadow-[0_6px_18px_-14px_rgba(15,23,42,0.4)] sm:p-5">
-            <div className="mb-3 text-xs font-medium text-pencil">
+          <div className={`min-w-0 flex-1 border-2 border-ink bg-white p-4 shadow-sketch sm:p-5 ${roughBorderClassSm}`}>
+            <div className="mb-3 font-hand text-xs font-bold text-pencil">
               更新时间 · {formatAnnouncementTime(item.updatedAt)}
             </div>
             <MarkdownRenderer content={item.content} className="text-sm text-ink" />
@@ -779,9 +801,24 @@ const HomePanel: React.FC<{
   shopBusy: boolean;
 }> = ({ equippedFrameId, equippedNameStyleId, shop, hiddenCount, sections, onMenuClick, onClaimDaily, shopBusy }) => (
   <div className="space-y-4 sm:space-y-5">
-    {/* 当前装扮预览 */}
-    <section className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      <div className="inline-flex max-w-full self-start rounded-2xl border-2 border-ink bg-white p-3 shadow-sketch">
+    {/* 装扮便签 */}
+    <section className={`relative border-2 border-ink bg-white p-4 shadow-sketch sm:p-5 ${roughBorderClass}`}>
+      <div className="pointer-events-none absolute left-1/2 top-0 h-5 w-24 -translate-x-1/2 -translate-y-1/2 rotate-[-2deg] border border-ink/25 bg-highlight/90" aria-hidden />
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <p className="font-hand text-sm font-bold tracking-wide text-pencil">当前装扮</p>
+        {shop?.canClaimDaily && (
+          <button
+            type="button"
+            disabled={shopBusy}
+            onClick={onClaimDaily}
+            className={`inline-flex items-center justify-center gap-1.5 border-2 border-ink bg-highlight px-3 py-1.5 font-hand text-sm font-bold text-ink shadow-sketch transition-all hover:-translate-y-0.5 active:translate-y-0 active:shadow-sketch-active disabled:opacity-50 ${roughBorderClassSm}`}
+          >
+            <Coins className="h-4 w-4" />
+            领取 +{shop.dailyClaimCoins}
+          </button>
+        )}
+      </div>
+      <div className="inline-flex max-w-full rounded-xl border-2 border-dashed border-ink/25 bg-[#fbf7ef] p-3">
         <AnonymousAuthorPreview
           frameId={equippedFrameId}
           nameStyleId={equippedNameStyleId}
@@ -789,55 +826,32 @@ const HomePanel: React.FC<{
           timestamp="刚刚"
         />
       </div>
-      {shop?.canClaimDaily && (
-        <button
-          type="button"
-          disabled={shopBusy}
-          onClick={onClaimDaily}
-          className="inline-flex items-center justify-center gap-2 self-start rounded-full border-2 border-ink bg-highlight px-4 py-2.5 text-sm font-bold text-ink shadow-sketch transition-all hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 sm:self-auto"
-        >
-          <Coins className="h-4 w-4" />
-          领取 +{shop.dailyClaimCoins}
-        </button>
-      )}
     </section>
 
-    {/* 数据条：商城开启时展示瓜子/装扮 */}
-    <div className={`grid gap-2 sm:gap-3 ${shop ? 'grid-cols-3' : 'grid-cols-1'}`}>
+    {/* 数据条 */}
+    <div className={`grid gap-2.5 sm:gap-3 ${shop ? 'grid-cols-3' : 'grid-cols-1'}`}>
       {shop && (
         <>
-          <StatPill
-            icon={<Coins className="h-4 w-4" />}
-            label="瓜子"
-            value={shop.coins}
-          />
-          <StatPill
-            icon={<Frame className="h-4 w-4" />}
-            label="昵称框"
-            value={shop.ownedFrameIds.length}
-          />
+          <StatPill icon={<Coins className="h-4 w-4" />} label="瓜子" value={shop.coins} />
+          <StatPill icon={<Frame className="h-4 w-4" />} label="昵称框" value={shop.ownedFrameIds.length} />
         </>
       )}
-      <StatPill
-        icon={<ShieldOff className="h-4 w-4" />}
-        label="已屏蔽"
-        value={hiddenCount}
-      />
+      <StatPill icon={<ShieldOff className="h-4 w-4" />} label="已屏蔽" value={hiddenCount} />
     </div>
 
-    {/* 菜单 */}
-    <SectionCard>
-      <div className="divide-y divide-ink/8">
+    {/* 菜单：对齐左栏 doodle nav 气质 */}
+    <SectionCard title="快捷入口">
+      <div className="flex flex-col gap-2 p-3 sm:p-4">
         {sections.flatMap((section) => section.items).map((item) => (
           <button
             key={item.id}
             type="button"
             onClick={() => onMenuClick(item)}
-            className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-[#faf7ef] active:bg-[#f3efe4] sm:gap-4 sm:px-5 sm:py-4"
+            className={`group flex w-full items-center gap-3 border-2 border-ink bg-white px-3 py-3 text-left shadow-sketch transition-all hover:-translate-y-0.5 hover:bg-highlight/60 active:translate-y-0 active:shadow-sketch-active sm:gap-3.5 sm:px-4 ${roughBorderClassSm}`}
           >
             <span
-              className={`relative inline-flex size-11 shrink-0 items-center justify-center rounded-2xl border-2 border-ink/10 text-ink shadow-sm sm:size-12 ${
-                item.accent || 'bg-gradient-to-br from-white to-[#f3efe4]'
+              className={`relative inline-flex size-10 shrink-0 items-center justify-center border-2 border-ink text-ink sm:size-11 ${roughBorderClassSm} ${
+                item.accent || 'bg-[#fbf7ef]'
               }`}
             >
               {item.icon}
@@ -845,10 +859,10 @@ const HomePanel: React.FC<{
                 <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border border-ink bg-red-500" />
               )}
             </span>
-            <span className="min-w-0 flex-1 font-sans text-[15px] font-bold text-ink sm:text-base">
+            <span className="min-w-0 flex-1 font-hand text-lg font-bold leading-none text-ink">
               {item.label}
             </span>
-            <ChevronRight className="h-5 w-5 shrink-0 text-pencil/70" />
+            <ChevronRight className="h-5 w-5 shrink-0 text-ink/50 transition-transform group-hover:translate-x-0.5" />
           </button>
         ))}
       </div>
@@ -885,33 +899,33 @@ const UserMeModal: React.FC<UserMeModalProps> = ({
         items.push({
           id: 'shop',
           label: '商城',
-          icon: <Store className="h-5 w-5" />,
+          icon: <ShoppingBag className="h-5 w-5" strokeWidth={2.25} />,
           action: { type: 'panel', panel: 'shop' },
-          accent: 'bg-gradient-to-br from-amber-50 to-lime-100',
+          accent: 'bg-marker-orange/65',
         });
       }
       items.push(
         {
           id: 'favorites',
           label: '收藏',
-          icon: <Star className="h-5 w-5" />,
+          icon: <Bookmark className="h-5 w-5" strokeWidth={2.25} />,
           action: { type: 'navigate', view: ViewType.FAVORITES },
-          accent: 'bg-gradient-to-br from-yellow-50 to-orange-50',
+          accent: 'bg-highlight/80',
         },
         {
           id: 'settings',
           label: '设置',
-          icon: <Settings2 className="h-5 w-5" />,
+          icon: <SlidersHorizontal className="h-5 w-5" strokeWidth={2.25} />,
           action: { type: 'panel', panel: 'settings' },
-          accent: 'bg-gradient-to-br from-slate-50 to-sky-50',
+          accent: 'bg-marker-blue/60',
         },
         {
           id: 'updateAnnouncements',
           label: '更新公告',
-          icon: <Bell className="h-5 w-5" />,
+          icon: <Megaphone className="h-5 w-5" strokeWidth={2.25} />,
           action: { type: 'panel', panel: 'updateAnnouncements' },
           showDot: updateAnnouncementsUnread,
-          accent: 'bg-gradient-to-br from-violet-50 to-fuchsia-50',
+          accent: 'bg-marker-purple/55',
         },
       );
       return [{ id: 'main', title: '', items }];
@@ -1146,23 +1160,27 @@ const UserMeModal: React.FC<UserMeModalProps> = ({
       showCloseButton={false}
       title={undefined}
       overlayClassName="!items-stretch !justify-stretch !p-0 sm:!items-center sm:!justify-center sm:!p-4 md:!p-6"
-      panelClassName="!max-w-none sm:!max-w-2xl lg:!max-w-3xl !w-full !h-[100dvh] sm:!h-auto sm:!max-h-[min(92vh,880px)] !rounded-none sm:!rounded-[28px] !border-0 sm:!border-2 !p-0 !shadow-none sm:!shadow-sketch-lg overflow-hidden flex flex-col bg-[#f6f3ea]"
+      panelClassName="!max-w-none sm:!max-w-2xl lg:!max-w-3xl !w-full !h-[100dvh] sm:!h-auto sm:!max-h-[min(92vh,880px)] !rounded-none sm:!rounded-[255px_15px_225px_15px/15px_225px_15px_255px] !border-0 sm:!border-2 !border-ink !p-0 !shadow-none sm:!shadow-sketch-lg overflow-hidden flex flex-col bg-[#f9f7f1]"
     >
-      {/* 顶栏：移动端像 App 页，桌面像面板头 */}
-      <header className="sticky top-0 z-20 flex shrink-0 items-center gap-2 border-b-2 border-ink/10 bg-[#f6f3ea]/95 px-3 py-3 backdrop-blur-md sm:px-5 sm:py-3.5"
+      {/* 顶栏：手绘便签头 */}
+      <header
+        className="relative z-20 flex shrink-0 items-center gap-2 border-b-2 border-dashed border-ink/25 bg-[#f9f7f1]/95 px-3 py-3 backdrop-blur-md sm:px-5 sm:py-3.5"
         style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top, 0px))' }}
       >
+        {/* 桌面胶带装饰 */}
+        <div
+          className="pointer-events-none absolute left-1/2 top-0 hidden h-5 w-28 -translate-x-1/2 -translate-y-1/2 rotate-[-2deg] border border-ink/30 bg-highlight/90 sm:block"
+          aria-hidden
+        />
+
         {panel !== 'home' ? (
-          <button
-            type="button"
-            onClick={goHome}
-            className="inline-flex size-10 items-center justify-center rounded-full border-2 border-ink/15 bg-white text-ink transition-all hover:bg-highlight active:scale-95"
-            aria-label="返回我的"
-          >
+          <SketchIconBtn onClick={goHome} label="返回我的">
             <ArrowLeft className="h-5 w-5" />
-          </button>
+          </SketchIconBtn>
         ) : (
-          <div className="size-10" aria-hidden />
+          <div className="flex size-10 items-center justify-center" aria-hidden>
+            <span className="inline-block h-2.5 w-2.5 rounded-full bg-highlight ring-2 ring-ink" />
+          </div>
         )}
 
         <div className="min-w-0 flex-1 text-center">
@@ -1171,20 +1189,21 @@ const UserMeModal: React.FC<UserMeModalProps> = ({
           </h2>
         </div>
 
-        <button
-          type="button"
-          onClick={onClose}
-          className="inline-flex size-10 items-center justify-center rounded-full border-2 border-ink/15 bg-white text-ink transition-all hover:bg-highlight active:scale-95"
-          aria-label="关闭"
-        >
+        <SketchIconBtn onClick={onClose} label="关闭">
           <X className="h-5 w-5" />
-        </button>
+        </SketchIconBtn>
       </header>
 
       {/* 可滚动内容区 */}
       <div
         className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-4 sm:px-5 sm:py-5"
-        style={{ paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom, 0px))' }}
+        style={{
+          paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom, 0px))',
+          backgroundImage:
+            'linear-gradient(#e8e4d8 1px, transparent 1px), linear-gradient(90deg, #e8e4d8 1px, transparent 1px)',
+          backgroundSize: '20px 20px',
+          backgroundPosition: '-1px -1px',
+        }}
       >
         {renderPanel()}
       </div>

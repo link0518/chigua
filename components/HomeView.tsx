@@ -6,7 +6,9 @@ import {
   ArrowUp,
   ArrowUpRight,
   Flag,
+  LayoutGrid,
   MessageCircle,
+  Rows3,
   Share2,
   Star,
   ThumbsDown,
@@ -773,8 +775,8 @@ const HomeView: React.FC = () => {
 
   const bannerContent = (
     <div className="relative overflow-hidden rounded-lg border-2 border-ink bg-[linear-gradient(90deg,rgba(255,245,157,0.75),rgba(129,212,250,0.35),rgba(255,245,157,0.75))] shadow-sketch doodle-border !rounded-lg">
-      <div className="absolute -right-10 -top-6 h-44 w-44 rotate-12 rounded-full border border-ink/20 bg-white/25" />
-      <div className="absolute -bottom-10 -left-8 h-48 w-48 -rotate-6 rounded-full border border-ink/20 bg-white/20" />
+      <div className="absolute -right-10 -top-6 h-44 w-44 rotate-12 rounded-full border border-ink/10 bg-marker-green/20" />
+      <div className="absolute -bottom-10 -left-8 h-48 w-48 -rotate-6 rounded-full border border-ink/10 bg-highlight/40" />
       <div className="relative flex items-start gap-3 px-4 py-3">
         <Zap className="mt-0.5 h-[22px] w-[22px] text-ink" />
         <div className="min-w-0 flex-1">
@@ -799,24 +801,31 @@ const HomeView: React.FC = () => {
   );
 
   const renderModeHeader = () => (
-    <div className="mb-4 flex justify-end">
-      <div className="inline-flex items-center gap-1 rounded-full border-2 border-ink bg-white/90 p-1.5 shadow-sketch backdrop-blur-sm">
+    <div className="mx-auto mb-5 flex w-full max-w-6xl justify-center sm:justify-end">
+      <div className="relative inline-flex items-stretch border-2 border-ink bg-white p-1 shadow-sketch doodle-border !rounded-lg">
+        <span className="absolute -top-3 left-3 rotate-[-2deg] border border-ink bg-alert px-2 py-0.5 font-hand text-[11px] font-bold leading-none text-ink">
+          浏览方式
+        </span>
         <button
           type="button"
           onClick={() => handleModeSwitch('focus')}
-          className={`rounded-full px-4 py-2 text-sm font-bold transition-all ${effectiveViewMode === 'focus'
-            ? 'bg-ink text-white shadow-[0_6px_14px_-10px_rgba(15,23,42,0.9)]'
-            : 'bg-transparent text-slate-600 hover:bg-highlight hover:text-ink'}`}
+          aria-pressed={effectiveViewMode === 'focus'}
+          className={`inline-flex min-w-[88px] items-center justify-center gap-2 border-r border-dashed border-ink/30 px-3 pb-2 pt-2.5 font-hand text-sm font-bold transition-colors sm:min-w-[96px] sm:px-4 ${effectiveViewMode === 'focus'
+            ? 'bg-highlight text-ink'
+            : 'bg-white text-pencil hover:bg-marker-blue/30 hover:text-ink'}`}
         >
+          <Rows3 className="h-[18px] w-[18px]" strokeWidth={2.25} />
           单帖
         </button>
         <button
           type="button"
           onClick={() => handleModeSwitch('grid')}
-          className={`rounded-full px-4 py-2 text-sm font-bold transition-all ${effectiveViewMode === 'grid'
-            ? 'bg-ink text-white shadow-[0_6px_14px_-10px_rgba(15,23,42,0.9)]'
-            : 'bg-transparent text-slate-600 hover:bg-highlight hover:text-ink'}`}
+          aria-pressed={effectiveViewMode === 'grid'}
+          className={`inline-flex min-w-[88px] items-center justify-center gap-2 px-3 pb-2 pt-2.5 font-hand text-sm font-bold transition-colors sm:min-w-[96px] sm:px-4 ${effectiveViewMode === 'grid'
+            ? 'bg-highlight text-ink'
+            : 'bg-white text-pencil hover:bg-marker-blue/30 hover:text-ink'}`}
         >
+          <LayoutGrid className="h-[18px] w-[18px]" strokeWidth={2.25} />
           列表
         </button>
       </div>
@@ -832,9 +841,9 @@ const HomeView: React.FC = () => {
     return (
       <>
         <article className={`group relative my-auto w-full transition-all duration-200 ${animate ? 'translate-x-10 opacity-0' : 'translate-x-0 opacity-100'}`}>
-          <div className="absolute inset-0 translate-x-2 translate-y-3 rounded-lg bg-gray-200 opacity-100 transition-opacity doodle-border !rounded-lg" />
+          <div className="pastel-post-shadow absolute inset-0 translate-x-2 translate-y-3 rounded-lg opacity-100 transition-opacity doodle-border !rounded-lg" />
           <div className="tape-mask" />
-          <div className={`relative flex flex-col overflow-hidden rounded-lg border-2 bg-white p-8 shadow-paper transition-transform duration-200 hover:-translate-y-1 doodle-border !rounded-lg ${isRumor ? 'border-red-300' : 'border-black'}`}>
+          <div className={`pastel-post-card relative flex flex-col overflow-hidden rounded-lg border-2 p-8 shadow-paper transition-transform duration-200 hover:-translate-y-1 doodle-border !rounded-lg ${isRumor ? 'border-red-300' : 'border-black'}`}>
             <div className="relative z-[1] mb-2 flex items-start justify-between gap-3">
               <div className="flex items-center gap-3">
                 {currentPost.author === 'admin' ? (
@@ -849,12 +858,12 @@ const HomeView: React.FC = () => {
                   />
                 ) : (
                   <>
-                    <div className="flex size-10 items-center justify-center rounded-full border-2 border-black bg-gray-200 shadow-sm">
+                    <div className="flex size-10 items-center justify-center rounded-full border-2 border-black bg-paper-shadow shadow-sm">
                       <UserX className="h-5 w-5 text-pencil" />
                     </div>
                     <div className="flex flex-col">
                       <span className="font-hand text-xl font-bold text-pencil">匿名用户</span>
-                      <span className="font-mono text-xs text-gray-400">{currentPost.timestamp}</span>
+                      <span className="font-mono text-xs text-pencil/70">{currentPost.timestamp}</span>
                     </div>
                   </>
                 )}
@@ -912,7 +921,7 @@ const HomeView: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => handleLike(currentPost.id)}
-                  className={`flex items-center gap-1.5 transition-colors ${isLiked(currentPost.id) ? 'text-blue-600' : 'hover:text-ink'}`}
+                  className={`flex items-center gap-1.5 transition-colors ${isLiked(currentPost.id) ? 'text-leaf-dark' : 'hover:text-ink'}`}
                 >
                   <ThumbsUp className="h-[22px] w-[22px]" fill={isLiked(currentPost.id) ? 'currentColor' : 'none'} />
                   <span className="font-hand text-base font-bold">{currentPost.likes}</span>
@@ -920,7 +929,7 @@ const HomeView: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => handleDislike(currentPost.id)}
-                  className={`flex items-center gap-1.5 transition-colors ${isDisliked(currentPost.id) ? 'text-red-600' : 'hover:text-ink'}`}
+                  className={`flex items-center gap-1.5 transition-colors ${isDisliked(currentPost.id) ? 'text-melon-deep' : 'hover:text-ink'}`}
                 >
                   <ThumbsDown className="h-[22px] w-[22px]" fill={isDisliked(currentPost.id) ? 'currentColor' : 'none'} />
                   <span className="font-hand text-base font-bold">{currentPost.dislikes}</span>
@@ -930,7 +939,7 @@ const HomeView: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => toggleCommentModal(currentPost.id)}
-                  className={`flex items-center gap-1.5 transition-colors ${isCommentModalActiveForPost(currentPost.id) ? 'text-blue-600' : 'hover:text-blue-600'}`}
+                  className={`flex items-center gap-1.5 transition-colors ${isCommentModalActiveForPost(currentPost.id) ? 'text-leaf-dark' : 'hover:text-leaf-dark'}`}
                 >
                   <MessageCircle className="h-[22px] w-[22px]" />
                   <span className="font-hand text-base font-bold">{currentPost.comments}</span>
@@ -938,7 +947,7 @@ const HomeView: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => copyShareLink(currentPost.id)}
-                  className="flex items-center gap-1.5 transition-colors hover:text-blue-600"
+                  className="flex items-center gap-1.5 transition-colors hover:text-leaf-dark"
                 >
                   <Share2 className="h-[22px] w-[22px]" />
                   <span className="font-hand text-base font-bold">分享</span>
@@ -946,7 +955,7 @@ const HomeView: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => openReportModal(currentPost)}
-                  className="flex items-center gap-1 border-l-2 border-dotted border-gray-200 pl-2 text-gray-400 transition-colors hover:text-red-600"
+                  className="flex items-center gap-1 border-l-2 border-dotted border-paper-rule pl-2 text-pencil/70 transition-colors hover:text-melon-deep"
                 >
                   <Flag className="h-5 w-5" />
                   <span className="font-hand pt-0.5 text-sm font-bold">举报</span>
@@ -1069,7 +1078,7 @@ const HomeView: React.FC = () => {
   }
 
   return (
-    <div className={`relative mx-auto flex min-h-[80vh] w-full ${containerWidthClass} flex-grow flex-col overflow-x-hidden px-4 py-6 ${effectiveViewMode === 'grid' ? 'pb-20' : 'justify-center pb-8'}`}>
+    <div className={`relative mx-auto flex min-h-[80vh] w-full max-w-6xl flex-grow flex-col overflow-x-hidden px-4 py-6 ${effectiveViewMode === 'grid' ? 'pb-20' : 'pb-8'}`}>
       {showMascot && (
         <>
           <div
@@ -1115,13 +1124,15 @@ const HomeView: React.FC = () => {
         </div>
       )}
       {shouldShowBanner && effectiveViewMode !== 'grid' && isLatestPost && (
-        <div className="mb-4 w-full">
+        <div className="mx-auto mb-4 w-full max-w-3xl">
           {bannerContent}
         </div>
       )}
 
       {renderModeHeader()}
-      {effectiveViewMode === 'grid' ? renderGridMode() : renderFocusMode()}
+      <div className={effectiveViewMode === 'grid' ? 'w-full' : 'mx-auto flex w-full max-w-3xl flex-1 flex-col justify-center'}>
+        {effectiveViewMode === 'grid' ? renderGridMode() : renderFocusMode()}
+      </div>
 
       {effectiveViewMode === 'grid' && showGridBackToTop && (
         <button
@@ -1173,13 +1184,15 @@ const HomeView: React.FC = () => {
       </Modal>
 
       {commentModalOpen && commentTargetPost && (
-        <CommentModal
-          isOpen={commentModalOpen}
-          onClose={closeCommentModal}
-          postId={commentTargetPost.id}
-          contentPreview={commentTargetPost.content}
-          focusCommentId={focusCommentId}
-        />
+        <div className="mx-auto w-full max-w-3xl">
+          <CommentModal
+            isOpen={commentModalOpen}
+            onClose={closeCommentModal}
+            postId={commentTargetPost.id}
+            contentPreview={commentTargetPost.content}
+            focusCommentId={focusCommentId}
+          />
+        </div>
       )}
 
       <Modal isOpen={feedbackOpen} onClose={closeFeedbackModal} title="给开发者留言">

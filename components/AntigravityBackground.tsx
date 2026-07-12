@@ -9,11 +9,11 @@ interface AntigravityBackgroundProps {
 
 // Theme palette from tailwind.config.cjs
 const COLORS = [
-    '#fca5a5', // alert (pink)
-    '#81d4fa', // marker-blue
-    '#a5d6a7', // marker-green
-    '#ce93d8', // marker-purple
-    '#ffcc80', // marker-orange
+    '#fca5a5',
+    '#81d4fa',
+    '#a5d6a7',
+    '#ce93d8',
+    '#ffcc80',
 ];
 
 interface Particle {
@@ -67,9 +67,9 @@ const AntigravityBackground: React.FC<AntigravityBackgroundProps> = ({
             return {
                 x: Math.random() * width,
                 y: randomY ? Math.random() * height : height + 20, // Start just below screen if not random
-                size: Math.random() * 3 + 1, // Increased size slightly for aesthetic bubbles
+                size: Math.random() * 3 + 1, // 恢复原版粒子尺寸，避免小粒子在方格背景上不可见。
                 speedY: (Math.random() * 0.5 + 0.2) * speed, // Uplift speed
-                opacity: Math.random() * 0.4 + 0.1, // Lower blending opacity
+                opacity: Math.random() * 0.4 + 0.1, // 恢复原版透明度范围，不额外增加粒子数量。
                 pulseSpeed: Math.random() * 0.02 + 0.01,
                 pulseOffset: Math.random() * Math.PI * 2,
                 color: COLORS[Math.floor(Math.random() * COLORS.length)],

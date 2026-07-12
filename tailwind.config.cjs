@@ -13,15 +13,22 @@ module.exports = {
     extend: {
       colors: {
         paper: '#f9f7f1',
+        'paper-card': '#ffffff',
+        'paper-soft': '#fcfbf7',
+        'paper-shadow': '#f4efe2',
+        'paper-rule': '#e5e7eb',
         ink: '#2c2c2c',
         'border-ink': '#000000',
         pencil: '#555555',
         highlight: '#fff59d',
         alert: '#fca5a5',
+        'melon-deep': '#dc2626',
         'marker-blue': '#81d4fa',
         'marker-green': '#a5d6a7',
+        'leaf-dark': '#2563eb',
         'marker-purple': '#ce93d8',
         'marker-orange': '#ffcc80',
+        'marker-yellow': '#fff59d',
         'cny-red': '#D32F2F',
         'cny-dark-red': '#B71C1C',
         'cny-gold': '#FFD700',
@@ -57,7 +64,7 @@ module.exports = {
         body: ['"Work Sans"', '"Noto Sans SC"', 'sans-serif'],
         label: ['"Work Sans"', '"Noto Sans SC"', 'sans-serif'],
       },
-      boxShadow: {
+        boxShadow: {
         sketch: '2px 2px 0px 0px #000000',
         'sketch-lg': '4px 4px 0px 0px #000000',
         'sketch-hover': '3px 3px 0px 0px #000000',

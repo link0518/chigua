@@ -75,9 +75,9 @@ const HomePostGridCard: React.FC<HomePostGridCardProps> = ({
 
   return (
     <article className="group relative h-full">
-      <div className="pointer-events-none absolute inset-0 translate-x-1.5 translate-y-2 rounded-[28px] border-2 border-black bg-gray-200 opacity-80 transition-all duration-200 group-hover:translate-y-3" />
+      <div className="pastel-post-shadow pointer-events-none absolute inset-0 translate-x-1.5 translate-y-2 rounded-[28px] border-2 border-black opacity-80 transition-all duration-200 group-hover:translate-y-3" />
 
-      <div className={`relative flex h-full flex-col overflow-hidden rounded-[28px] border-2 border-black bg-white p-4 shadow-paper transition-transform duration-200 hover:-translate-y-1 sm:p-5 ${isRumor ? 'border-red-300' : ''}`}>
+      <div className={`pastel-post-card relative flex h-full flex-col overflow-hidden rounded-[28px] border-2 border-black p-4 shadow-paper transition-transform duration-200 hover:-translate-y-1 sm:p-5 ${isRumor ? 'border-red-300' : ''}`}>
         <div className="relative z-[1] flex h-full flex-col gap-4">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
@@ -93,12 +93,12 @@ const HomePostGridCard: React.FC<HomePostGridCardProps> = ({
                 />
               ) : (
                 <div className="inline-flex max-w-full items-center gap-2 rounded-full border-2 border-black bg-[#f4efe2] px-3 py-2 text-pencil shadow-[2px_2px_0_0_rgba(0,0,0,0.12)]">
-                  <div className="flex size-8 shrink-0 items-center justify-center rounded-full border-2 border-black bg-white">
+                  <div className="flex size-8 shrink-0 items-center justify-center rounded-full border-2 border-black bg-paper-card">
                     <UserX className="h-4 w-4 text-pencil" />
                   </div>
                   <div className="min-w-0">
                     <div className="font-hand text-sm font-bold text-ink">匿名用户</div>
-                    <div className="truncate text-[11px] text-gray-500">{post.timestamp}</div>
+                    <div className="truncate text-[11px] text-pencil/70">{post.timestamp}</div>
                   </div>
                 </div>
               )}
@@ -113,7 +113,7 @@ const HomePostGridCard: React.FC<HomePostGridCardProps> = ({
               <button
                 type="button"
                 onClick={onFavorite}
-                className={`inline-flex h-10 w-10 items-center justify-center rounded-full border-2 border-ink transition-all shadow-sketch active:translate-x-[2px] active:translate-y-[2px] active:shadow-sketch-active ${isFavorited ? 'bg-marker-yellow text-ink hover:bg-marker-yellow/90' : 'bg-white text-ink hover:bg-highlight'}`}
+                className={`inline-flex h-10 w-10 items-center justify-center rounded-full border-2 border-ink transition-all shadow-sketch active:translate-x-[2px] active:translate-y-[2px] active:shadow-sketch-active ${isFavorited ? 'bg-marker-yellow text-ink hover:bg-marker-yellow/90' : 'bg-paper-card text-ink hover:bg-highlight'}`}
                 title={isFavorited ? '取消收藏' : '收藏'}
                 aria-label={isFavorited ? '取消收藏' : '收藏'}
               >
@@ -151,7 +151,7 @@ const HomePostGridCard: React.FC<HomePostGridCardProps> = ({
           <button
             type="button"
             onClick={onOpen}
-            className={`flex flex-1 flex-col rounded-[20px] border-2 border-dashed p-4 text-left transition-all hover:bg-white ${isRumor ? 'border-red-200 bg-red-50/40 hover:border-red-300' : 'border-black/20 bg-[#fcfbf7] hover:border-black/35'}`}
+            className={`flex flex-1 flex-col rounded-[20px] border-2 border-dashed p-4 text-left transition-all hover:bg-paper-card ${isRumor ? 'border-red-200 bg-red-50/40 hover:border-red-300' : 'border-black/20 bg-paper-soft hover:border-black/35'}`}
           >
             <div className="mb-3 flex items-center justify-between gap-2 text-[11px] font-bold tracking-[0.18em] text-pencil/70">
               <span>点击查看详情</span>
@@ -167,7 +167,7 @@ const HomePostGridCard: React.FC<HomePostGridCardProps> = ({
               <button
                 type="button"
                 onClick={onLike}
-                className={`inline-flex items-center gap-1.5 transition-colors ${isLiked ? 'text-blue-600' : 'hover:text-ink'}`}
+                className={`inline-flex items-center gap-1.5 transition-colors ${isLiked ? 'text-leaf-dark' : 'hover:text-ink'}`}
               >
                 <ThumbsUp className="h-4 w-4" fill={isLiked ? 'currentColor' : 'none'} />
                 <span>{formatCompactCount(post.likes)}</span>
@@ -175,7 +175,7 @@ const HomePostGridCard: React.FC<HomePostGridCardProps> = ({
               <button
                 type="button"
                 onClick={onDislike}
-                className={`inline-flex items-center gap-1.5 transition-colors ${isDisliked ? 'text-red-600' : 'hover:text-ink'}`}
+                className={`inline-flex items-center gap-1.5 transition-colors ${isDisliked ? 'text-melon-deep' : 'hover:text-ink'}`}
               >
                 <ThumbsDown className="h-4 w-4" fill={isDisliked ? 'currentColor' : 'none'} />
                 <span>{formatCompactCount(post.dislikes)}</span>
@@ -193,7 +193,7 @@ const HomePostGridCard: React.FC<HomePostGridCardProps> = ({
               <button
                 type="button"
                 onClick={onShare}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-ink/20 bg-white text-pencil transition-colors hover:text-ink"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-ink/20 bg-paper-card text-pencil transition-colors hover:text-ink"
                 aria-label="分享帖子"
                 title="分享帖子"
               >
@@ -202,7 +202,7 @@ const HomePostGridCard: React.FC<HomePostGridCardProps> = ({
               <button
                 type="button"
                 onClick={onReport}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-ink/20 bg-white text-gray-400 transition-colors hover:text-red-600"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-ink/20 bg-paper-card text-pencil/70 transition-colors hover:text-melon-deep"
                 aria-label="举报帖子"
                 title="举报帖子"
               >
