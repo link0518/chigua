@@ -193,6 +193,19 @@ const loadImageElement = (src: string) => new Promise<HTMLImageElement>((resolve
   image.src = src;
 });
 
+const getExportNodeSize = (node: HTMLElement) => {
+  const bounds = node.getBoundingClientRect();
+  const computed = window.getComputedStyle(node);
+  const horizontalBorder = parseFloat(computed.borderLeftWidth) + parseFloat(computed.borderRightWidth);
+  const verticalBorder = parseFloat(computed.borderTopWidth) + parseFloat(computed.borderBottomWidth);
+
+  // scrollWidth/scrollHeight 不含边框，直接作为画布尺寸会裁掉右侧和底部边线。
+  return {
+    width: Math.ceil(Math.max(bounds.width, node.scrollWidth + horizontalBorder)),
+    height: Math.ceil(Math.max(bounds.height, node.scrollHeight + verticalBorder)),
+  };
+};
+
 export const saveWikiEntryCardImage = async (entry: WikiEntry, node: HTMLElement) => {
   if ('fonts' in document) {
     await document.fonts.ready;
@@ -202,8 +215,7 @@ export const saveWikiEntryCardImage = async (entry: WikiEntry, node: HTMLElement
   const clonedNode = cloneNodeWithInlineStyles(node);
   await embedCloneImages(node, clonedNode);
 
-  const width = Math.ceil(node.scrollWidth);
-  const height = Math.ceil(node.scrollHeight);
+  const { width, height } = getExportNodeSize(node);
   if (!width || !height) {
     throw new Error('导出区域为空，无法保存图片');
   }

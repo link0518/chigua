@@ -31,23 +31,40 @@ const WikiEntryNarrativeCard: React.FC<{
   entry: WikiEntry;
   mode?: 'detail' | 'export';
 }> = ({ entry, mode = 'detail' }) => (
-  <div className={mode === 'export' ? 'space-y-10' : 'mx-auto max-w-4xl space-y-5 md:space-y-6'}>
+  <div className={mode === 'export' ? '' : 'mx-auto max-w-4xl space-y-5 md:space-y-6'}>
     <header className={mode === 'export'
-      ? 'border-b border-kumo-line pb-8'
+      ? ''
       : 'wiki-entry-cover wiki-surface-soft rounded-2xl border border-kumo-line bg-kumo-base p-5 shadow-sm md:p-8'}
     >
-      <div className="flex flex-wrap items-center gap-2">
-        <Badge variant="secondary">公开档案</Badge>
-        <Badge variant="outline">第 {entry.versionNumber} 版</Badge>
-        {entry.updatedAt ? <Badge variant="secondary">更新于 {formatDateTime(entry.updatedAt)}</Badge> : null}
-      </div>
+      {mode === 'export' ? (
+        <div className="flex items-start justify-between gap-8 border-b border-kumo-line pb-6">
+          <div>
+            <div className="text-lg font-semibold tracking-[0.16em] text-kumo-strong">JX3 瓜田</div>
+            <div className="mt-2 whitespace-nowrap text-sm tracking-[0.12em] text-kumo-subtle">
+              公开档案 · 第 {entry.versionNumber} 版
+            </div>
+          </div>
+          {entry.updatedAt ? (
+            <div className="pt-1 text-right text-sm tabular-nums text-kumo-subtle">
+              <div className="text-xs tracking-[0.12em]">最后更新</div>
+              <div className="mt-2 font-medium text-kumo-default">{formatDateTime(entry.updatedAt)}</div>
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="secondary">公开档案</Badge>
+          <Badge variant="outline">第 {entry.versionNumber} 版</Badge>
+          {entry.updatedAt ? <Badge variant="secondary">更新于 {formatDateTime(entry.updatedAt)}</Badge> : null}
+        </div>
+      )}
       <h1 className={mode === 'export'
-        ? 'mt-4 text-5xl font-semibold leading-tight text-kumo-strong'
+        ? 'mt-10 text-5xl font-semibold leading-tight tracking-[-0.04em] text-kumo-strong'
         : 'mt-5 max-w-3xl text-4xl font-semibold leading-tight text-kumo-strong md:mt-6 md:text-5xl'}
       >
         {entry.name}
       </h1>
-      <div className="mt-6 flex flex-wrap gap-2">
+      <div className={mode === 'export' ? 'mt-5 flex flex-wrap gap-2' : 'mt-6 flex flex-wrap gap-2'}>
         {entry.tags.length === 0 ? (
           <Badge variant="outline">暂无标签</Badge>
         ) : entry.tags.map((tag) => (
@@ -59,7 +76,7 @@ const WikiEntryNarrativeCard: React.FC<{
     </header>
 
     <section className={mode === 'export'
-      ? ''
+      ? 'mt-9 border-t border-kumo-line pt-9'
       : 'wiki-reading-card rounded-2xl border border-kumo-line bg-kumo-base p-5 shadow-sm md:p-8'}
       aria-label="档案正文"
     >
@@ -193,17 +210,23 @@ const WikiEntryActionButtons: React.FC<WikiEntryActionButtonsProps> = ({
 
 const WikiEntryExportCard = React.forwardRef<HTMLDivElement, { entry: WikiEntry }>(({ entry }, ref) => (
   <div className="pointer-events-none fixed inset-x-0 top-0 z-[-1] flex justify-center opacity-0" aria-hidden="true">
-    <div className="w-[1080px] bg-kumo-overlay px-12 py-12">
-      <div ref={ref} className="rounded-2xl border border-kumo-line bg-kumo-base px-16 py-16 shadow-2xl">
+    <div ref={ref} className="w-[1080px] shrink-0 bg-kumo-overlay p-10">
+      <div className="overflow-hidden rounded-3xl border border-kumo-line bg-kumo-base px-14 py-12 shadow-xl">
         <WikiEntryNarrativeCard entry={entry} mode="export" />
-        <div className="mt-12 border-t border-kumo-line pt-6 text-center">
-          <div className="text-sm font-semibold tracking-[0.18em] text-kumo-subtle">
-            吃瓜到 JX3 瓜田
+        <footer className="mt-10 flex items-end justify-between gap-8 border-t border-kumo-line pt-6">
+          <div>
+            <div className="text-sm font-semibold tracking-[0.14em] text-kumo-default">
+              档案快照
+            </div>
+            <div className="mt-2 text-xs leading-5 text-kumo-subtle">
+              内容来自公开瓜条，由用户共同整理
+            </div>
           </div>
-          <div className="mt-2 text-xs font-semibold tracking-[0.16em] text-kumo-subtle">
-            jx3gua.com · 公开档案第 {entry.versionNumber} 版
+          <div className="shrink-0 text-right">
+            <div className="text-sm font-semibold tracking-[0.12em] text-kumo-strong">jx3gua.com</div>
+            <div className="mt-2 text-xs tracking-[0.1em] text-kumo-subtle">吃瓜到 JX3 瓜田</div>
           </div>
-        </div>
+        </footer>
       </div>
     </div>
   </div>
