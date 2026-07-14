@@ -108,6 +108,12 @@ export interface CommentPostIdentity {
   role: 'op' | 'guest';
 }
 
+/** 搜索结果按帖子聚合，命中的评论仅返回当前页所需的预览。 */
+export interface SearchPost extends Post {
+  matchedComments?: Comment[];
+  matchedCommentCount?: number;
+}
+
 export interface NotificationItem {
   id: string;
   type:

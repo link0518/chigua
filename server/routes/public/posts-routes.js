@@ -5,6 +5,7 @@ export const registerPublicPostsRoutes = (app, deps) => {
     db,
     hotScoreSql,
     mapPostRow,
+    mapCommentRow,
     checkBanFor,
     formatDateKey,
     trackDailyVisit,
@@ -387,17 +388,45 @@ app.get('/api/posts/search', (req, res) => {
   }
 
   // 标签/关键字搜索：把 LIKE 的通配符当作字面量，避免用户输入 %/_ 导致意外匹配。
+  // 评论通过 EXISTS 参与帖子筛选，保证分页单位仍然是帖子，不会因多条评论重复结果。
   const conditions = ['posts.deleted = 0', 'posts.hidden = 0'];
   const params = [];
+  let commentKeyword = '';
   if (keywordRaw) {
     const keyword = `%${escapeLike(keywordRaw)}%`;
+    commentKeyword = keyword;
     const keywordAsTag = normalizeTag(keywordRaw);
     if (keywordAsTag) {
-      conditions.push("(posts.content LIKE ? ESCAPE '\\' OR posts.tags LIKE ? ESCAPE '\\')");
-      params.push(keyword, buildJsonTagLikePattern(keywordAsTag));
+      conditions.push(`
+        (
+          posts.content LIKE ? ESCAPE '\\'
+          OR posts.tags LIKE ? ESCAPE '\\'
+          OR EXISTS (
+            SELECT 1
+            FROM comments
+            WHERE comments.post_id = posts.id
+              AND comments.deleted = 0
+              AND comments.hidden = 0
+              AND comments.content LIKE ? ESCAPE '\\'
+          )
+        )
+      `);
+      params.push(keyword, buildJsonTagLikePattern(keywordAsTag), keyword);
     } else {
-      conditions.push("posts.content LIKE ? ESCAPE '\\'");
-      params.push(keyword);
+      conditions.push(`
+        (
+          posts.content LIKE ? ESCAPE '\\'
+          OR EXISTS (
+            SELECT 1
+            FROM comments
+            WHERE comments.post_id = posts.id
+              AND comments.deleted = 0
+              AND comments.hidden = 0
+              AND comments.content LIKE ? ESCAPE '\\'
+          )
+        )
+      `);
+      params.push(keyword, keyword);
     }
   }
   if (tag) {
@@ -435,7 +464,52 @@ app.get('/api/posts/search', (req, res) => {
     )
     .all(...viewerSelect.params, ...viewerAuthorSelect.params, ...params, limit, offset);
 
-  const items = rows.map((row) => mapPostRow(row, row.hot_score >= 20));
+  const matchedCommentsByPost = new Map();
+  const matchedCommentCounts = new Map();
+  if (commentKeyword && rows.length > 0) {
+    const postIds = rows.map((row) => row.id);
+    const placeholders = postIds.map(() => '?').join(',');
+    const commentRows = db
+      .prepare(
+        `
+          SELECT *
+          FROM (
+            SELECT comments.*,
+              COUNT(1) OVER (PARTITION BY comments.post_id) AS matched_comment_count,
+              ROW_NUMBER() OVER (
+                PARTITION BY comments.post_id
+                ORDER BY comments.created_at DESC, comments.id DESC
+              ) AS matched_comment_rank
+            FROM comments
+            WHERE comments.post_id IN (${placeholders})
+              AND comments.deleted = 0
+              AND comments.hidden = 0
+              AND comments.content LIKE ? ESCAPE '\\'
+          ) matched_comments
+          WHERE matched_comment_rank <= 3
+          ORDER BY created_at DESC, id DESC
+        `
+      )
+      .all(...postIds, commentKeyword);
+
+    commentRows.forEach((row) => {
+      if (!matchedCommentsByPost.has(row.post_id)) {
+        matchedCommentsByPost.set(row.post_id, []);
+      }
+      matchedCommentsByPost.get(row.post_id).push(mapCommentRow(row));
+      matchedCommentCounts.set(row.post_id, Number(row.matched_comment_count || 0));
+    });
+  }
+
+  const items = rows.map((row) => ({
+    ...mapPostRow(row, row.hot_score >= 20),
+    ...(keywordRaw
+      ? {
+        matchedComments: matchedCommentsByPost.get(row.id) || [],
+        matchedCommentCount: matchedCommentCounts.get(row.id) || 0,
+      }
+      : {}),
+  }));
   return res.json({ items, total, page, limit });
 });
 

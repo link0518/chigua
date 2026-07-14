@@ -1378,6 +1378,7 @@ registerPublicPostsRoutes(app, {
   db,
   hotScoreSql,
   mapPostRow,
+  mapCommentRow,
   checkBanFor,
   formatDateKey,
   trackDailyVisit,

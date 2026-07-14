@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Search, Star } from 'lucide-react';
 import { api } from '../api';
-import type { Post } from '../types';
+import type { SearchPost } from '../types';
 import { useApp } from '../store/AppContext';
 import { SketchButton, Badge } from './SketchUI';
 import { buildPostPath } from './clipboard';
+import ColorfulName from './ColorfulName';
 
 const PAGE_SIZE = 20;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -133,6 +134,32 @@ const readSearchStateFromLocation = () => {
   };
 };
 
+const getHighlightedText = (text: string, keyword: string) => {
+  const normalized = keyword.trim();
+  if (!normalized) {
+    return text;
+  }
+  const escaped = normalized.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const regex = new RegExp(escaped, 'gi');
+  const parts = text.split(regex);
+  const matches = text.match(regex) || [];
+  if (parts.length === 1) {
+    return text;
+  }
+  return (
+    <>
+      {parts.map((part, index) => (
+        <React.Fragment key={`${part}-${index}`}>
+          {part}
+          {index < matches.length && (
+            <mark className="rounded-sm bg-highlight/70 px-0.5 text-inherit">{matches[index]}</mark>
+          )}
+        </React.Fragment>
+      ))}
+    </>
+  );
+};
+
 const SearchView: React.FC = () => {
   const { showToast, isFavorited, toggleFavoritePost } = useApp();
   const [keyword, setKeyword] = useState('');
@@ -143,7 +170,7 @@ const SearchView: React.FC = () => {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [page, setPage] = useState(1);
-  const [items, setItems] = useState<Post[]>([]);
+  const [items, setItems] = useState<SearchPost[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
 
@@ -159,8 +186,8 @@ const SearchView: React.FC = () => {
     ? minDateString(addDaysToDateInput(startDateInput, MAX_DATE_RANGE_DAYS - 1), todayString)
     : todayString;
 
-  const openPost = (postId: string) => {
-    const targetPath = buildPostPath(postId);
+  const openPost = (postId: string, commentId?: string | null) => {
+    const targetPath = buildPostPath(postId, commentId);
     if (window.location.pathname + window.location.search !== targetPath) {
       window.history.pushState({}, '', targetPath);
       window.dispatchEvent(new PopStateEvent('popstate'));
@@ -307,11 +334,11 @@ const SearchView: React.FC = () => {
     <div className="max-w-2xl mx-auto min-w-0 px-4 pb-20 pt-6">
       <div className="text-center mb-10 relative">
         <h2 className="font-display text-4xl inline-block relative z-10">
-          搜索帖子
+          搜索帖子和评论
           <div className="absolute -bottom-2 left-0 w-full h-3 bg-highlight/60 -z-10 -rotate-1 skew-x-12"></div>
         </h2>
         <p className="mt-3 text-sm text-pencil font-sans">
-          支持关键词、标签和日期区间搜索，时间范围最多 30 天
+          关键词会同时搜索帖子正文和评论，时间范围最多 30 天
         </p>
 
         <div className="mt-6 flex justify-center">
@@ -401,7 +428,7 @@ const SearchView: React.FC = () => {
             {query ? `关键词“${query}” ` : ''}
             {tagFilter ? `标签 #${tagFilter} ` : ''}
             {hasDateRange ? `时间 ${startDate} 至 ${endDate} ` : ''}
-            · 共 {total} 条 · 第 {page} / {totalPages} 页
+            · 共 {total} 个帖子 · 第 {page} / {totalPages} 页
           </div>
         )}
       </div>
@@ -444,9 +471,48 @@ const SearchView: React.FC = () => {
                 className="w-full text-left"
               >
                 <div className="line-clamp-4 break-all text-base leading-relaxed text-ink font-sans">
-                  {post.content}
+                  {getHighlightedText(post.content, query)}
                 </div>
               </button>
+
+              {query && Number(post.matchedCommentCount || 0) > 0 && (
+                <div className="mt-4 rounded-lg border border-dashed border-ink/40 bg-highlight/10 p-3">
+                  <div className="mb-2 text-xs font-bold text-pencil font-sans">
+                    评论命中 {post.matchedCommentCount} 条
+                    {(post.matchedComments || []).length < Number(post.matchedCommentCount || 0)
+                      ? `，展示前 ${(post.matchedComments || []).length} 条`
+                      : ''}
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    {(post.matchedComments || []).map((comment) => {
+                      const authorLabel = comment.postIdentity?.label || comment.author || '匿名用户';
+                      return (
+                        <button
+                          type="button"
+                          key={comment.id}
+                          onClick={() => openPost(post.id, comment.id)}
+                          className="min-w-0 rounded-md border-l-2 border-ink/40 bg-white/70 px-3 py-2 text-left transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink"
+                          aria-label={`定位评论：${authorLabel}，${comment.content.slice(0, 60)}`}
+                        >
+                          <div className="mb-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-pencil font-sans">
+                            <ColorfulName
+                              styleId={comment.authorNameStyleId}
+                              className="max-w-full truncate font-bold text-ink"
+                            >
+                              {authorLabel}
+                            </ColorfulName>
+                            <span>{comment.timestamp}</span>
+                            <span className="font-bold text-ink">查看评论</span>
+                          </div>
+                          <div className="line-clamp-3 break-all text-sm leading-relaxed text-ink font-sans">
+                            {getHighlightedText(comment.content, query)}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-pencil font-sans">
                 <div className="flex min-w-0 flex-wrap items-center gap-2">
