@@ -24,11 +24,9 @@ import { registerPublicShopRoutes } from './routes/public/shop-routes.js';
 import { registerPublicFramesRoutes } from './routes/public/frames-routes.js';
 import { registerAdminShopRoutes } from './routes/admin/shop-routes.js';
 import { registerAdminNicknameFramesRoutes } from './routes/admin/nickname-frames-routes.js';
-import { initFrameService, getEquippedFrameIdIfValid } from './frame-service.js';
-import {
-  getEquippedNameStyleIdIfValid,
-  initNameStyleService,
-} from './name-style-catalog.js';
+import { initFrameService } from './frame-service.js';
+import { initNameStyleService } from './name-style-catalog.js';
+import { createEquippedCosmeticsService } from './equipped-cosmetics-service.js';
 import { registerAdminNameStylesRoutes } from './routes/admin/name-styles-routes.js';
 import { registerPublicNameStylesRoutes } from './routes/public/name-styles-routes.js';
 import { registerPublicUploadRoutes } from './routes/public/upload-routes.js';
@@ -71,6 +69,10 @@ import {
 initializeRuntimeEnv();
 initFrameService(db);
 initNameStyleService(db);
+const {
+  getEquippedFrameIdForIdentity,
+  getEquippedNameStyleIdForIdentity,
+} = createEquippedCosmeticsService(db);
 
 const {
   port: PORT,
@@ -1156,31 +1158,6 @@ const parseTags = (tags) => {
   } catch {
     return [];
   }
-};
-
-/** 读取当前装备的昵称框（仅用于发帖时快照，不用于历史帖子实时覆盖） */
-const getEquippedFrameIdForIdentity = (identityKey) => {
-  const key = String(identityKey || '').trim();
-  if (!key) {
-    return null;
-  }
-  const row = db
-    .prepare('SELECT equipped_frame_id FROM user_cosmetics WHERE identity_key = ? LIMIT 1')
-    .get(key);
-  // 非 hidden 的框可快照（含 off_sale）
-  return getEquippedFrameIdIfValid(row?.equipped_frame_id || null);
-};
-
-/** 读取当前装备的炫彩昵称（发帖/回复快照） */
-const getEquippedNameStyleIdForIdentity = (identityKey) => {
-  const key = String(identityKey || '').trim();
-  if (!key) {
-    return null;
-  }
-  const row = db
-    .prepare('SELECT equipped_name_style_id FROM user_cosmetics WHERE identity_key = ? LIMIT 1')
-    .get(key);
-  return getEquippedNameStyleIdIfValid(row?.equipped_name_style_id || null);
 };
 
 const mapPostRow = (row, isHot) => ({
