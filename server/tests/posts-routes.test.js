@@ -52,6 +52,8 @@ const createDb = () => {
       status TEXT,
       created_at INTEGER
     );
+
+    CREATE INDEX idx_comments_post_id ON comments(post_id);
   `);
   return db;
 };

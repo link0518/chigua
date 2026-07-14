@@ -388,27 +388,29 @@ app.get('/api/posts/search', (req, res) => {
   }
 
   // 标签/关键字搜索：把 LIKE 的通配符当作字面量，避免用户输入 %/_ 导致意外匹配。
-  // 评论通过 EXISTS 参与帖子筛选，保证分页单位仍然是帖子，不会因多条评论重复结果。
+  // 评论先聚合为命中的帖子 ID，避免对每条帖子重复扫描评论表。
   const conditions = ['posts.deleted = 0', 'posts.hidden = 0'];
   const params = [];
   let commentKeyword = '';
   if (keywordRaw) {
     const keyword = `%${escapeLike(keywordRaw)}%`;
     commentKeyword = keyword;
+    const commentMatchCondition = `
+      posts.id IN (
+        SELECT comments.post_id
+        FROM comments
+        WHERE comments.deleted = 0
+          AND comments.hidden = 0
+          AND comments.content LIKE ? ESCAPE '\\'
+      )
+    `;
     const keywordAsTag = normalizeTag(keywordRaw);
     if (keywordAsTag) {
       conditions.push(`
         (
           posts.content LIKE ? ESCAPE '\\'
           OR posts.tags LIKE ? ESCAPE '\\'
-          OR EXISTS (
-            SELECT 1
-            FROM comments
-            WHERE comments.post_id = posts.id
-              AND comments.deleted = 0
-              AND comments.hidden = 0
-              AND comments.content LIKE ? ESCAPE '\\'
-          )
+          OR ${commentMatchCondition}
         )
       `);
       params.push(keyword, buildJsonTagLikePattern(keywordAsTag), keyword);
@@ -416,14 +418,7 @@ app.get('/api/posts/search', (req, res) => {
       conditions.push(`
         (
           posts.content LIKE ? ESCAPE '\\'
-          OR EXISTS (
-            SELECT 1
-            FROM comments
-            WHERE comments.post_id = posts.id
-              AND comments.deleted = 0
-              AND comments.hidden = 0
-              AND comments.content LIKE ? ESCAPE '\\'
-          )
+          OR ${commentMatchCondition}
         )
       `);
       params.push(keyword, keyword);
@@ -480,7 +475,7 @@ app.get('/api/posts/search', (req, res) => {
                 PARTITION BY comments.post_id
                 ORDER BY comments.created_at DESC, comments.id DESC
               ) AS matched_comment_rank
-            FROM comments
+            FROM comments INDEXED BY idx_comments_post_id
             WHERE comments.post_id IN (${placeholders})
               AND comments.deleted = 0
               AND comments.hidden = 0
