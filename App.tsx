@@ -318,6 +318,8 @@ const App: React.FC = () => {
         return '你的评论收到新回复';
       case 'post_like':
         return '你的帖子收到新点赞';
+      case 'comment_like':
+        return '你的评论收到新点赞';
       case 'rumor_marked':
         return '你举报的内容已被判定为疑似谣言';
       case 'rumor_rejected':
@@ -341,6 +343,7 @@ const App: React.FC = () => {
       case 'comment_reply':
         return <Reply className={className} />;
       case 'post_like':
+      case 'comment_like':
         return <ThumbsUp className={className} />;
       case 'rumor_marked':
         return <AlertTriangle className={className} />;

@@ -44,6 +44,18 @@ const createDb = () => {
       fingerprint TEXT,
       created_at INTEGER
     );
+
+    CREATE TABLE notifications (
+      id TEXT PRIMARY KEY,
+      recipient_fingerprint TEXT NOT NULL,
+      type TEXT NOT NULL,
+      post_id TEXT,
+      comment_id TEXT,
+      preview TEXT,
+      actor_fingerprint TEXT,
+      created_at INTEGER NOT NULL,
+      read_at INTEGER
+    );
   `);
   return db;
 };
@@ -215,6 +227,10 @@ const registerGetCommentsRoute = (db, notifications, options = {}) => (
 
 const registerGetCommentThreadRoute = (db, notifications, options = {}) => (
   registerRoute('GET', '/api/posts/:id/comment-thread', db, notifications, options)
+);
+
+const registerCommentLikeRoute = (db, notifications, options = {}) => (
+  registerRoute('POST', '/api/comments/:id/like', db, notifications, options)
 );
 
 const insertPost = (db, {
@@ -597,5 +613,168 @@ test('旧帖下新评论不会分配帖内身份', async () => {
   assert.equal(row.post_identity_key, null);
   assert.equal(row.post_identity_label, null);
   assert.equal(row.post_identity_role, null);
+  db.close();
+});
+
+test('点赞他人评论时会向评论作者创建 comment_like 提醒', () => {
+  const db = createDb();
+  const notifications = [];
+  const createdAt = Date.UTC(2026, 6, 14, 18, 0, 0, 0);
+  insertPost(db, {
+    id: 'post-comment-like',
+    fingerprint: 'post-owner',
+    createdAt,
+  });
+  db.prepare(
+    `
+      INSERT INTO comments (
+        id, post_id, parent_id, reply_to_id, content, author, created_at, fingerprint, ip,
+        deleted, hidden
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)
+    `
+  ).run(
+    'comment-liked',
+    'post-comment-like',
+    null,
+    null,
+    '这是一条会收到点赞提醒的评论',
+    '匿名',
+    createdAt,
+    'comment-owner',
+    '127.0.0.1',
+  );
+
+  const handler = registerCommentLikeRoute(db, notifications, {
+    actorCanonicalHash: 'comment-liker',
+    requiredFingerprint: 'comment-liker',
+  });
+  const req = { params: { id: 'comment-liked' } };
+  const res = createResponse();
+
+  handler(req, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.payload.viewerLiked, true);
+  assert.equal(res.payload.likes, 1);
+  assert.equal(notifications.length, 1);
+  assert.deepEqual(notifications[0], {
+    recipientFingerprint: 'comment-owner',
+    type: 'comment_like',
+    postId: 'post-comment-like',
+    commentId: 'comment-liked',
+    preview: '这是一条会收到点赞提醒的评论',
+    actorIdentityContext: {
+      canonicalHash: 'comment-liker',
+      legacyFingerprintHash: '',
+      effectiveHash: 'comment-liker',
+      lookupHashes: ['comment-liker'],
+    },
+  });
+  db.close();
+});
+
+test('取消评论点赞时不会再次创建提醒', () => {
+  const db = createDb();
+  const notifications = [];
+  const createdAt = Date.UTC(2026, 6, 14, 18, 30, 0, 0);
+  insertPost(db, {
+    id: 'post-comment-unlike',
+    fingerprint: 'post-owner',
+    createdAt,
+  });
+  db.prepare(
+    `
+      INSERT INTO comments (
+        id, post_id, parent_id, reply_to_id, content, author, created_at, fingerprint, ip,
+        deleted, hidden
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)
+    `
+  ).run(
+    'comment-unliked',
+    'post-comment-unlike',
+    null,
+    null,
+    '取消点赞不应重复通知',
+    '匿名',
+    createdAt,
+    'comment-owner',
+    '127.0.0.1',
+  );
+  db.prepare('INSERT INTO comment_likes (comment_id, fingerprint, created_at) VALUES (?, ?, ?)')
+    .run('comment-unliked', 'comment-liker', createdAt + 1);
+
+  const handler = registerCommentLikeRoute(db, notifications, {
+    actorCanonicalHash: 'comment-liker',
+    requiredFingerprint: 'comment-liker',
+  });
+  const req = { params: { id: 'comment-unliked' } };
+  const res = createResponse();
+
+  handler(req, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.payload.viewerLiked, false);
+  assert.equal(res.payload.likes, 0);
+  assert.equal(notifications.length, 0);
+  db.close();
+});
+
+test('同一用户取消后再次点赞评论时不会重复创建提醒', () => {
+  const db = createDb();
+  const notifications = [];
+  const createdAt = Date.UTC(2026, 6, 14, 19, 0, 0, 0);
+  insertPost(db, {
+    id: 'post-comment-relike',
+    fingerprint: 'post-owner',
+    createdAt,
+  });
+  db.prepare(
+    `
+      INSERT INTO comments (
+        id, post_id, parent_id, reply_to_id, content, author, created_at, fingerprint, ip,
+        deleted, hidden
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)
+    `
+  ).run(
+    'comment-reliked',
+    'post-comment-relike',
+    null,
+    null,
+    '重复点赞只保留首次提醒',
+    '匿名',
+    createdAt,
+    'comment-owner',
+    '127.0.0.1',
+  );
+  db.prepare(
+    `
+      INSERT INTO notifications (
+        id, recipient_fingerprint, type, post_id, comment_id, preview, actor_fingerprint, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `
+  ).run(
+    'notification-first-like',
+    'comment-owner',
+    'comment_like',
+    'post-comment-relike',
+    'comment-reliked',
+    '重复点赞只保留首次提醒',
+    'comment-liker',
+    createdAt + 1,
+  );
+
+  const handler = registerCommentLikeRoute(db, notifications, {
+    actorCanonicalHash: 'comment-liker',
+    requiredFingerprint: 'comment-liker',
+  });
+  const req = { params: { id: 'comment-reliked' } };
+  const res = createResponse();
+
+  handler(req, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.payload.viewerLiked, true);
+  assert.equal(res.payload.likes, 1);
+  assert.equal(notifications.length, 0);
   db.close();
 });

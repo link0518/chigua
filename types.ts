@@ -119,6 +119,7 @@ export interface NotificationItem {
   type:
     | 'post_comment'
     | 'post_like'
+    | 'comment_like'
     | 'comment_reply'
     | 'rumor_marked'
     | 'rumor_rejected'

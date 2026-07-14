@@ -1,5 +1,6 @@
 import { buildIdentityMatch } from '../../sql-utils.js';
 import { getEquippedNameStyleIdIfValid } from '../../name-style-catalog.js';
+import { getNotificationActorHashes } from '../../notification-identity.js';
 
 export const registerPublicCommentsRoutes = (app, deps) => {
   const {
@@ -64,6 +65,36 @@ export const registerPublicCommentsRoutes = (app, deps) => {
         `
       )
       .get(commentId, ...match.params);
+  };
+
+  const hasExistingCommentLikeNotification = ({
+    recipientFingerprint,
+    commentId,
+    actorIdentityContext,
+  }) => {
+    const normalizedRecipient = String(recipientFingerprint || '').trim();
+    const normalizedCommentId = String(commentId || '').trim();
+    const actorMatch = buildIdentityMatch(
+      'actor_fingerprint',
+      getNotificationActorHashes(actorIdentityContext),
+    );
+    if (!normalizedRecipient || !normalizedCommentId || actorMatch.params.length === 0) {
+      return false;
+    }
+
+    return Boolean(
+      db.prepare(
+        `
+          SELECT 1
+          FROM notifications
+          WHERE recipient_fingerprint = ?
+            AND type = 'comment_like'
+            AND comment_id = ?
+            AND ${actorMatch.clause}
+          LIMIT 1
+        `
+      ).get(normalizedRecipient, normalizedCommentId, ...actorMatch.params)
+    );
   };
 
   const resolveIdentityKey = (value) => {
@@ -471,7 +502,7 @@ export const registerPublicCommentsRoutes = (app, deps) => {
 
   const toggleCommentLike = db.transaction((commentId, fingerprint, identityHashes) => {
     const comment = db.prepare(`
-      SELECT comments.id, comments.post_id
+      SELECT comments.id, comments.post_id, comments.fingerprint, comments.content
       FROM comments
       INNER JOIN posts ON posts.id = comments.post_id
       WHERE comments.id = ?
@@ -498,7 +529,19 @@ export const registerPublicCommentsRoutes = (app, deps) => {
     const likesRow = db.prepare('SELECT COUNT(1) AS count FROM comment_likes WHERE comment_id = ?').get(commentId);
     const likes = likesRow?.count ?? 0;
     const viewerLiked = !existing;
-    return { status: 200, data: { commentId, postId: comment.post_id, likes, viewerLiked } };
+    return {
+      status: 200,
+      data: { commentId, postId: comment.post_id, likes, viewerLiked },
+      notification: viewerLiked
+        ? {
+          recipientFingerprint: comment.fingerprint,
+          type: 'comment_like',
+          postId: comment.post_id,
+          commentId,
+          preview: trimPreview(comment.content),
+        }
+        : null,
+    };
   });
 
   app.post('/api/comments/:id/like', (req, res) => {
@@ -519,6 +562,20 @@ export const registerPublicCommentsRoutes = (app, deps) => {
     const result = toggleCommentLike(commentId, fingerprint, identityHashes);
     if (result.error) {
       return res.status(result.status || 400).json({ error: result.error });
+    }
+    const actorIdentityContext = getRequestIdentityContext(req, res);
+    if (
+      result.notification
+      && !hasExistingCommentLikeNotification({
+        recipientFingerprint: result.notification.recipientFingerprint,
+        commentId: result.notification.commentId,
+        actorIdentityContext,
+      })
+    ) {
+      createNotification({
+        ...result.notification,
+        actorIdentityContext,
+      });
     }
     return res.json(result.data);
   });
