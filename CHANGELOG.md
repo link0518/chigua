@@ -45,6 +45,7 @@
 
 ### Fixed
 
+- 修复前台与后台 Wiki 附件中部分 PNG 因非标准或缺失 MIME 被误判的问题，并支持在附件卡片内通过 `Ctrl+V` 粘贴图片。
 - 修复首页列表模式打开单帖后，“下一个瓜”错误回到最新帖的问题；详情链接会携带列表位置并在单帖页恢复原序列位置，涉及 `components/HomeView.tsx`、`components/clipboard.ts`。
 - Markdown 预览补齐单次回车换行解析，避免输入内容后必须连续两次回车才能在预览区换行；涉及 `components/MarkdownRenderer.tsx`。
 - 首页与热门支持按已屏蔽标签过滤帖子，并修正首页列表模式在首批结果全部被屏蔽时的继续加载行为；涉及 `components/HomeView.tsx`、`components/FeedView.tsx`。

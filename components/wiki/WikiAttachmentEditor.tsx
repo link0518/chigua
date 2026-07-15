@@ -14,6 +14,7 @@ import {
 import {
   getImageUploadValidationError,
   IMAGE_UPLOAD_ACCEPT,
+  isImageUploadFile,
 } from '../imageUpload';
 import {
   WIKI_ATTACHMENT_MAX_GROUPS,
@@ -240,6 +241,29 @@ export const WikiAttachmentEditor: React.FC<WikiAttachmentEditorProps> = ({
     )));
   };
 
+  const handlePasteImages = (event: React.ClipboardEvent<HTMLElement>, groupId: string) => {
+    if (disabled) {
+      return;
+    }
+
+    const pastedFiles = Array.from(event.clipboardData?.items || []).flatMap((item) => {
+      if (item.kind !== 'file') {
+        return [];
+      }
+      const file = item.getAsFile();
+      if (!file || (!file.type.startsWith('image/') && !isImageUploadFile(file))) {
+        return [];
+      }
+      return [file];
+    });
+    if (pastedFiles.length === 0) {
+      return;
+    }
+
+    event.preventDefault();
+    handleFilesSelected(groupId, pastedFiles);
+  };
+
   return (
     <LayerCard className="wiki-surface-soft overflow-hidden p-0 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-kumo-line px-4 py-4 md:px-5">
@@ -290,7 +314,13 @@ export const WikiAttachmentEditor: React.FC<WikiAttachmentEditorProps> = ({
             const canAddImages = draft.images.length < WIKI_ATTACHMENT_MAX_IMAGES_PER_GROUP
               && totalImages < WIKI_ATTACHMENT_MAX_TOTAL_IMAGES;
             return (
-              <section key={draft.clientId} className="rounded-xl border border-kumo-line bg-kumo-base p-4 shadow-sm">
+              <section
+                key={draft.clientId}
+                tabIndex={disabled ? -1 : 0}
+                aria-label={`附件 ${groupIndex + 1}，可粘贴图片`}
+                onPaste={(event) => handlePasteImages(event, draft.clientId)}
+                className="wiki-focus-ring rounded-xl border border-kumo-line bg-kumo-base p-4 shadow-sm"
+              >
                 <div className="flex items-start gap-3">
                   <span className="mt-1 flex size-8 shrink-0 items-center justify-center rounded-lg bg-kumo-tint text-xs font-semibold tabular-nums text-kumo-brand">
                     {String(groupIndex + 1).padStart(2, '0')}
@@ -375,13 +405,13 @@ export const WikiAttachmentEditor: React.FC<WikiAttachmentEditorProps> = ({
                       />
                       <UploadSimple size={22} className="text-kumo-brand" />
                       <span className="mt-2 text-xs font-semibold text-kumo-strong">上传图片</span>
-                      <span className="mt-1 px-2 text-[11px] leading-4 text-kumo-subtle">JPEG / PNG / GIF / WebP</span>
+                      <span className="mt-1 px-2 text-[11px] leading-4 text-kumo-subtle">选择文件或 Ctrl+V 粘贴</span>
                     </label>
                   ) : null}
                 </div>
 
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-kumo-subtle">
-                  <span>单图不超过 5MB</span>
+                  <span>JPEG / PNG / GIF / WebP，单图不超过 5MB</span>
                   <span className="tabular-nums">{draft.images.length} / {WIKI_ATTACHMENT_MAX_IMAGES_PER_GROUP} 张</span>
                 </div>
 

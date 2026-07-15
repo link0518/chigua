@@ -1348,7 +1348,18 @@ registerPublicFramesRoutes(app);
 registerPublicNameStylesRoutes(app);
 
 registerPublicUploadRoutes(app, {
-  parseImageBody: express.raw({ type: ['image/png', 'image/jpeg', 'image/gif', 'image/webp'], limit: '5mb' }),
+  parseImageBody: express.raw({
+    type: [
+      'image/png',
+      'image/x-png',
+      'image/jpeg',
+      'image/jpg',
+      'image/pjpeg',
+      'image/gif',
+      'image/webp',
+    ],
+    limit: '5mb',
+  }),
   requireFingerprint,
   checkBanFor,
   enforceRateLimit,

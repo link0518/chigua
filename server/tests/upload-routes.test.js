@@ -299,6 +299,35 @@ test('图片上传路由校验 MIME 与真实文件头一致', async () => {
   assert.equal(res.body.error, '图片文件格式不正确');
 });
 
+test('图片上传路由兼容 PNG 的 image/x-png MIME', async () => {
+  const app = createApp();
+  globalThis.fetch = async () => new Response(JSON.stringify({ data: [{ src: '/images/a.png' }] }), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  });
+
+  try {
+    registerPublicUploadRoutes(app, {
+      parseImageBody: (req, res, next) => next(),
+      requireFingerprint: () => 'fp-1',
+      checkBanFor: () => true,
+      enforceRateLimit: () => true,
+      getRuntimeConfig: () => ({ imgbedBaseUrl: 'https://img.example', imgbedToken: 'token' }),
+    });
+
+    const res = await app.run('/api/uploads/image', {
+      headers: { 'content-type': 'image/x-png' },
+      body: createPngBody(),
+      query: {},
+    });
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.url, 'https://img.example/images/a.png');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('图片上传路由识别 JPEG、PNG、GIF、WebP 文件头', async () => {
   const cases = [
     { type: 'image/jpeg', body: Buffer.from([0xff, 0xd8, 0xff, 0x00]) },

@@ -6,6 +6,12 @@ const ALLOWED_IMAGE_TYPES = new Set([
   'image/webp',
 ]);
 
+const NORMALIZED_IMAGE_TYPES = Object.freeze({
+  'image/jpg': 'image/jpeg',
+  'image/pjpeg': 'image/jpeg',
+  'image/x-png': 'image/png',
+});
+
 const toBooleanParam = (value, fallback) => {
   if (typeof value === 'boolean') return value;
   if (value === undefined || value === null || value === '') return fallback;
@@ -58,6 +64,11 @@ const hasValidImageSignature = (buffer, contentType) => {
       && hasBytesAt(buffer, 8, [0x57, 0x45, 0x42, 0x50]);
   }
   return false;
+};
+
+const normalizeImageContentType = (value) => {
+  const contentType = String(value || '').split(';')[0].trim().toLowerCase();
+  return NORMALIZED_IMAGE_TYPES[contentType] || contentType;
 };
 
 const UPLOAD_USAGE_PERMISSIONS = Object.freeze({
@@ -132,7 +143,7 @@ export const registerPublicUploadRoutes = (app, deps) => {
       return;
     }
 
-    const contentType = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+    const contentType = normalizeImageContentType(req.headers['content-type']);
     if (!ALLOWED_IMAGE_TYPES.has(contentType)) {
       return res.status(400).json({ error: '仅支持上传图片文件' });
     }

@@ -20,6 +20,12 @@ import type { Toast } from '../store/AppContext';
 import type { WikiAttachment, WikiEntry, WikiRelatedPost, WikiRevision } from '../types';
 import MarkdownRenderer from './MarkdownRenderer';
 import { Badge, SketchButton } from './SketchUI';
+import {
+  getImageUploadValidationError,
+  IMAGE_UPLOAD_ACCEPT,
+  isImageUploadFile,
+  uploadImageFile,
+} from './imageUpload';
 import WikiMarkdownComposer from './WikiMarkdownComposer';
 import { getWikiMarkdownExcerpt } from './wiki/wikiMarkdownPlainText';
 
@@ -40,10 +46,7 @@ const WIKI_MAX_ATTACHMENTS = 5;
 const WIKI_MAX_IMAGES_PER_ATTACHMENT = 3;
 const WIKI_MAX_TOTAL_IMAGES = 10;
 const WIKI_ATTACHMENT_TITLE_MAX_LENGTH = 60;
-const WIKI_ATTACHMENT_IMAGE_MAX_SIZE = 5 * 1024 * 1024;
 const WIKI_RELATED_POST_ID_MAX_LENGTH = 128;
-const WIKI_ATTACHMENT_ACCEPT = 'image/jpeg,image/png,image/gif,image/webp';
-const WIKI_ATTACHMENT_MIME_TYPES = new Set(WIKI_ATTACHMENT_ACCEPT.split(','));
 
 type AdminWikiEntry = WikiEntry & { relatedPosts?: WikiRelatedPost[] };
 type AdminWikiRevision = WikiRevision & { relatedPosts?: WikiRelatedPost[] };
@@ -387,22 +390,21 @@ const WikiEntryEditor: React.FC<{
     )));
   };
 
-  const handleSelectAttachmentImages = (attachmentId: string, fileList: FileList | null) => {
+  const handleSelectAttachmentImages = (attachmentId: string, files: File[]) => {
     const target = attachmentDrafts.find((attachment) => attachment.clientId === attachmentId);
-    if (!target || !fileList?.length) {
+    if (!target || files.length === 0) {
       return;
     }
 
-    const files = Array.from(fileList);
     const validFiles: File[] = [];
     let invalidTypeCount = 0;
     let oversizedCount = 0;
     files.forEach((file) => {
-      if (!WIKI_ATTACHMENT_MIME_TYPES.has(file.type)) {
+      if (!isImageUploadFile(file)) {
         invalidTypeCount += 1;
         return;
       }
-      if (file.size > WIKI_ATTACHMENT_IMAGE_MAX_SIZE) {
+      if (getImageUploadValidationError(file)) {
         oversizedCount += 1;
         return;
       }
@@ -442,6 +444,32 @@ const WikiEntryEditor: React.FC<{
         ? { ...attachment, images: [...attachment.images, ...newImages] }
         : attachment
     )));
+  };
+
+  const handlePasteAttachmentImages = (
+    event: React.ClipboardEvent<HTMLDivElement>,
+    attachmentId: string
+  ) => {
+    if (!canManage || submitting) {
+      return;
+    }
+
+    const pastedFiles = Array.from(event.clipboardData?.items || []).flatMap((item) => {
+      if (item.kind !== 'file') {
+        return [];
+      }
+      const file = item.getAsFile();
+      if (!file || (!file.type.startsWith('image/') && !isImageUploadFile(file))) {
+        return [];
+      }
+      return [file];
+    });
+    if (pastedFiles.length === 0) {
+      return;
+    }
+
+    event.preventDefault();
+    handleSelectAttachmentImages(attachmentId, pastedFiles);
   };
 
   const validateAttachments = () => {
@@ -507,7 +535,7 @@ const WikiEntryEditor: React.FC<{
         image.error = undefined;
         syncDrafts();
         try {
-          const result = await api.uploadImage(image.file, { usage: 'wiki' });
+          const result = await uploadImageFile(image.file, { usage: 'wiki' });
           const remoteUrl = String(result?.url || result?.src || '').trim();
           if (!remoteUrl) {
             throw new Error('图片上传成功但未返回地址');
@@ -722,7 +750,13 @@ const WikiEntryEditor: React.FC<{
             ) : (
               <div className="space-y-3">
                 {attachmentDrafts.map((attachment, attachmentIndex) => (
-                  <div key={attachment.clientId} className="rounded-lg border-2 border-gray-200 bg-white p-4">
+                  <div
+                    key={attachment.clientId}
+                    tabIndex={canManage && !submitting ? 0 : -1}
+                    aria-label={`附件 ${attachmentIndex + 1}，可粘贴图片`}
+                    onPaste={(event) => handlePasteAttachmentImages(event, attachment.clientId)}
+                    className="rounded-lg border-2 border-gray-200 bg-white p-4 outline-none focus:border-ink"
+                  >
                     <div className="mb-3 flex items-start gap-3">
                       <label className="min-w-0 flex-1 space-y-1">
                         <span className="text-xs font-bold text-ink">附件 {attachmentIndex + 1} 标题</span>
@@ -782,19 +816,24 @@ const WikiEntryEditor: React.FC<{
                           <ImagePlus className="mb-1 h-5 w-5" /> 上传图片
                           <input
                             type="file"
-                            accept={WIKI_ATTACHMENT_ACCEPT}
+                            accept={IMAGE_UPLOAD_ACCEPT}
                             multiple
                             disabled={!canManage || submitting}
                             className="hidden"
                             onChange={(event) => {
-                              handleSelectAttachmentImages(attachment.clientId, event.currentTarget.files);
+                              handleSelectAttachmentImages(
+                                attachment.clientId,
+                                Array.from(event.currentTarget.files || [])
+                              );
                               event.currentTarget.value = '';
                             }}
                           />
                         </label>
                       )}
                     </div>
-                    <p className="mt-2 text-xs text-pencil">当前 {attachment.images.length} / {WIKI_MAX_IMAGES_PER_ATTACHMENT} 张</p>
+                    <p className="mt-2 text-xs text-pencil">
+                      选择文件或 Ctrl+V 粘贴 · 当前 {attachment.images.length} / {WIKI_MAX_IMAGES_PER_ATTACHMENT} 张
+                    </p>
                   </div>
                 ))}
               </div>
