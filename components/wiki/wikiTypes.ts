@@ -1,4 +1,10 @@
-import type { WikiEntry, WikiEntrySort, WikiRevision } from '../../types';
+import type {
+  WikiAttachment,
+  WikiEntry,
+  WikiEntrySort,
+  WikiRelatedPost,
+  WikiRevision,
+} from '../../types';
 
 export type WikiTagStat = {
   name: string;
@@ -34,4 +40,10 @@ export type WikiListState = {
   page: number;
 };
 
-export type { WikiEntry, WikiEntrySort, WikiRevision };
+export type {
+  WikiAttachment,
+  WikiEntry,
+  WikiEntrySort,
+  WikiRelatedPost,
+  WikiRevision,
+};

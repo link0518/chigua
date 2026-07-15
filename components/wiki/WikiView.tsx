@@ -7,6 +7,7 @@ import {
   WIKI_DETAIL_ENTER_MS,
   WIKI_DETAIL_EXIT_MS,
   WIKI_OVERLAY_MODAL_SELECTOR,
+  WIKI_PHOTO_VIEWER_SELECTOR,
 } from './wikiConstants';
 import WikiEntryDetail from './WikiEntryDetail';
 import WikiFloatingFeedback from './WikiFeedback';
@@ -54,12 +55,10 @@ const WikiView: React.FC = () => {
   const { feedback, showFeedback } = useWikiFeedback();
   const isMobileFeed = useWikiMobileFeed();
   const listRequestRef = useRef(0);
-  const detailAnimationFrameRef = useRef<number | null>(null);
   const detailCloseTimerRef = useRef<number | null>(null);
   const slug = useMemo(() => getSlugFromPath(path), [path]);
   const isDetail = Boolean(slug);
   const [detailMounted, setDetailMounted] = useState(isDetail);
-  const [detailVisible, setDetailVisible] = useState(false);
   const detailActive = isDetail || detailMounted;
   const detailTransitionStyle = useMemo(() => ({
     '--wiki-detail-enter-ms': `${WIKI_DETAIL_ENTER_MS}ms`,
@@ -91,19 +90,12 @@ const WikiView: React.FC = () => {
   }, [syncListStateFromHref]);
 
   useEffect(() => () => {
-    if (detailAnimationFrameRef.current !== null) {
-      window.cancelAnimationFrame(detailAnimationFrameRef.current);
-    }
     if (detailCloseTimerRef.current !== null) {
       window.clearTimeout(detailCloseTimerRef.current);
     }
   }, []);
 
   useEffect(() => {
-    if (detailAnimationFrameRef.current !== null) {
-      window.cancelAnimationFrame(detailAnimationFrameRef.current);
-      detailAnimationFrameRef.current = null;
-    }
     if (detailCloseTimerRef.current !== null) {
       window.clearTimeout(detailCloseTimerRef.current);
       detailCloseTimerRef.current = null;
@@ -111,17 +103,9 @@ const WikiView: React.FC = () => {
 
     if (isDetail) {
       setDetailMounted(true);
-      setDetailVisible(false);
-      detailAnimationFrameRef.current = window.requestAnimationFrame(() => {
-        detailAnimationFrameRef.current = window.requestAnimationFrame(() => {
-          setDetailVisible(true);
-          detailAnimationFrameRef.current = null;
-        });
-      });
       return;
     }
 
-    setDetailVisible(false);
     if (!detailMounted) {
       return;
     }
@@ -171,6 +155,11 @@ const WikiView: React.FC = () => {
       }
 
       if (document.querySelector(WIKI_OVERLAY_MODAL_SELECTOR)) {
+        return;
+      }
+
+      // PhotoView 在关闭动画结束前仍保留 Portal；此期间继续拦截 Escape，避免详情被连带关闭。
+      if (document.querySelector(WIKI_PHOTO_VIEWER_SELECTOR)) {
         return;
       }
 
@@ -364,17 +353,17 @@ const WikiView: React.FC = () => {
       />
 
       <div
-        className={`wiki-detail-overlay pointer-events-none fixed inset-0 right-0 z-[60] w-full lg:left-80 lg:w-auto 2xl:left-auto 2xl:w-[1300px] ${detailVisible ? 'is-open' : ''}`}
+        className={`wiki-detail-overlay pointer-events-none fixed inset-0 z-[60] w-full ${isDetail ? 'is-open' : ''}`}
         style={detailTransitionStyle}
       >
         <button
           type="button"
           aria-label="关闭瓜条详情"
-          className={`wiki-detail-scrim absolute inset-0 z-0 lg:hidden ${detailActive ? 'pointer-events-auto' : 'pointer-events-none'}`}
+          className={`wiki-detail-scrim absolute inset-0 z-0 ${detailActive ? 'pointer-events-auto' : 'pointer-events-none'}`}
           onClick={() => navigateTo(listUrl)}
         />
         <div
-          className={`wiki-detail-shell absolute inset-y-0 right-0 z-10 w-full overflow-hidden bg-kumo-overlay lg:border-l ${detailActive ? 'pointer-events-auto' : 'pointer-events-none'}`}
+          className={`wiki-detail-shell absolute inset-y-0 right-0 z-10 w-full overflow-hidden bg-kumo-overlay lg:w-[calc(100%-20rem)] lg:border-l 2xl:max-w-[1300px] ${detailActive ? 'pointer-events-auto' : 'pointer-events-none'}`}
         >
           <div
             className="wiki-detail-content absolute inset-y-0 right-0 w-full min-w-0"

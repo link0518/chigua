@@ -135,6 +135,17 @@ export interface NotificationItem {
 
 export type WikiEntrySort = 'updated' | 'number';
 
+export interface WikiAttachment {
+  title: string;
+  imageUrls: string[];
+}
+
+export interface WikiRelatedPost {
+  id: string;
+  available: boolean;
+  excerpt?: string;
+}
+
 export interface WikiEntry {
   id: string;
   slug: string;
@@ -149,12 +160,17 @@ export interface WikiEntry {
   updatedAt: number;
   deleted?: boolean;
   deletedAt?: number | null;
+  relatedPostIds?: string[];
+  relatedPosts?: WikiRelatedPost[];
+  attachments?: WikiAttachment[];
 }
 
 export interface WikiRevisionData {
   name: string;
   narrative: string;
   tags: string[];
+  relatedPostIds?: string[];
+  attachments?: WikiAttachment[];
   editSummary?: string;
 }
 
@@ -167,6 +183,7 @@ export interface WikiRevision {
   baseRevisionId?: string | null;
   baseVersionNumber: number;
   data: WikiRevisionData;
+  relatedPosts?: WikiRelatedPost[];
   editSummary?: string;
   status: 'pending' | 'approved' | 'rejected';
   submitterFingerprint?: string | null;

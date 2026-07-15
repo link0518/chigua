@@ -53,6 +53,7 @@ copy .env.example .env.local
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | 后台超级管理员账号；与 `SESSION_SECRET` 一起决定后台是否启用。 |
 | `VITE_TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile 站点与服务端校验密钥。 |
 | `IMGBED_BASE_URL` / `IMGBED_TOKEN` | 服务端图片上传代理配置；缺失时图片上传不可用。 |
+| `WIKI_ATTACHMENT_ALLOWED_ORIGINS` | 可选，逗号分隔的额外 Wiki 附件图床来源（历史图床或独立 CDN）。默认允许 `https://img.zsix.de`、`https://ibed.933211.xyz`，并自动允许 `IMGBED_BASE_URL` 的来源；外部来源必须使用 HTTPS，本地回环 HTTP 可用于开发。 |
 | `FINGERPRINT_SALT` | 客户端指纹哈希盐；缺失时回退到 `SESSION_SECRET` 或内置默认值。 |
 | `SITE_URL` | 生产站点地址，用于 SEO、分享链接与 sitemap；请在本地或部署环境中配置真实域名，不要提交私有站点信息。 |
 

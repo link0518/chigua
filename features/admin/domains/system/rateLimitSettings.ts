@@ -13,7 +13,7 @@ export const RATE_LIMIT_DEFAULTS: RateLimitSettings = {
   report: { limit: 1, windowMs: 60 * 1000 },
   feedback: { limit: 1, windowMs: 60 * 60 * 1000 },
   wiki: { limit: 3, windowMs: 60 * 60 * 1000 },
-  upload: { limit: 3, windowMs: 30 * 1000 },
+  upload: { limit: 12, windowMs: 60 * 1000 },
 };
 
 export const RATE_LIMIT_FIELDS: Array<{ key: RateLimitAction; label: string; hint: string }> = [
@@ -22,7 +22,7 @@ export const RATE_LIMIT_FIELDS: Array<{ key: RateLimitAction; label: string; hin
   { key: 'report', label: '举报限流', hint: '限制普通用户举报频率' },
   { key: 'feedback', label: '留言限流', hint: '限制反馈留言提交频率' },
   { key: 'wiki', label: '瓜条提交限流', hint: '限制角色瓜条新建和编辑提交频率' },
-  { key: 'upload', label: '图片上传限流', hint: '限制评论和投稿编辑器的图片上传频率' },
+  { key: 'upload', label: '图片上传限流', hint: '统一限制帖子、评论和瓜条附件的图片上传频率' },
 ];
 
 export const normalizeRateLimitNumber = (value: unknown, fallback: number, min: number, max: number) => {

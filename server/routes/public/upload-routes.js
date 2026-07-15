@@ -37,14 +37,61 @@ const getExtensionByType = (contentType) => {
   return 'bin';
 };
 
+const hasBytesAt = (buffer, offset, bytes) => (
+  buffer.length >= offset + bytes.length
+  && bytes.every((value, index) => buffer[offset + index] === value)
+);
+
+const hasValidImageSignature = (buffer, contentType) => {
+  if (contentType === 'image/jpeg') {
+    return hasBytesAt(buffer, 0, [0xff, 0xd8, 0xff]);
+  }
+  if (contentType === 'image/png') {
+    return hasBytesAt(buffer, 0, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  }
+  if (contentType === 'image/gif') {
+    return hasBytesAt(buffer, 0, [0x47, 0x49, 0x46, 0x38, 0x37, 0x61])
+      || hasBytesAt(buffer, 0, [0x47, 0x49, 0x46, 0x38, 0x39, 0x61]);
+  }
+  if (contentType === 'image/webp') {
+    return hasBytesAt(buffer, 0, [0x52, 0x49, 0x46, 0x46])
+      && hasBytesAt(buffer, 8, [0x57, 0x45, 0x42, 0x50]);
+  }
+  return false;
+};
+
 const UPLOAD_USAGE_PERMISSIONS = Object.freeze({
-  post: { permission: 'post', message: '账号已被封禁，无法上传图片' },
-  comment: { permission: 'comment', message: '账号已被封禁，无法上传图片' },
+  post: {
+    permission: 'post',
+    message: '账号已被封禁，无法上传图片',
+  },
+  comment: {
+    permission: 'comment',
+    message: '账号已被封禁，无法上传图片',
+  },
+  wiki: {
+    permission: 'post',
+    message: '账号已被封禁，无法上传图片',
+  },
 });
 
 const resolveUploadUsagePermission = (value) => {
   const normalized = String(value || '').trim().toLowerCase();
   return UPLOAD_USAGE_PERMISSIONS[normalized] || UPLOAD_USAGE_PERMISSIONS.post;
+};
+
+const isLoopbackHostname = (hostname) => {
+  const normalized = String(hostname || '').trim().toLowerCase().replace(/\.$/, '');
+  if (normalized === 'localhost' || normalized.endsWith('.localhost')) {
+    return true;
+  }
+  if (normalized === '::1' || normalized === '[::1]') {
+    return true;
+  }
+  const ipv4Parts = normalized.split('.');
+  return ipv4Parts.length === 4
+    && ipv4Parts[0] === '127'
+    && ipv4Parts.every((part) => /^\d{1,3}$/.test(part) && Number(part) <= 255);
 };
 
 export const registerPublicUploadRoutes = (app, deps) => {
@@ -73,10 +120,14 @@ export const registerPublicUploadRoutes = (app, deps) => {
     }
 
     const usagePermission = resolveUploadUsagePermission(req.query?.usage);
-    if (!checkBanFor(req, res, usagePermission.permission, usagePermission.message, fingerprint)) {
-      return;
+    // 图片 URL 可被跨业务复用，不能只检查客户端声明的单一用途；任一内容操作封禁都应阻止共享上传。
+    for (const permission of ['post', 'comment']) {
+      if (!checkBanFor(req, res, permission, usagePermission.message, fingerprint)) {
+        return;
+      }
     }
 
+    // 上传用途由客户端声明，不能用它选择限流桶，否则可通过切换 usage 绕过总额度。
     if (!enforceRateLimit(req, res, 'upload', fingerprint)) {
       return;
     }
@@ -90,12 +141,31 @@ export const registerPublicUploadRoutes = (app, deps) => {
     if (!body.length || body.length > MAX_UPLOAD_BYTES) {
       return res.status(400).json({ error: '图片大小不符合要求' });
     }
+    if (!hasValidImageSignature(body, contentType)) {
+      return res.status(400).json({ error: '图片文件格式不正确' });
+    }
 
     const config = getRuntimeConfig();
     const baseUrl = String(config.imgbedBaseUrl || '').trim().replace(/\/$/, '');
     const token = String(config.imgbedToken || '').trim();
     if (!baseUrl || !token) {
       return res.status(503).json({ error: '图片上传服务未配置' });
+    }
+    let parsedBaseUrl;
+    try {
+      parsedBaseUrl = new URL(baseUrl);
+    } catch {
+      return res.status(503).json({ error: '图片上传服务地址无效' });
+    }
+    if (
+      !['http:', 'https:'].includes(parsedBaseUrl.protocol)
+      || parsedBaseUrl.username
+      || parsedBaseUrl.password
+    ) {
+      return res.status(503).json({ error: '图片上传服务地址无效' });
+    }
+    if (parsedBaseUrl.protocol === 'http:' && !isLoopbackHostname(parsedBaseUrl.hostname)) {
+      return res.status(503).json({ error: '图片上传服务必须使用 HTTPS（本地回环地址除外）' });
     }
 
     const params = new URLSearchParams();
@@ -114,6 +184,7 @@ export const registerPublicUploadRoutes = (app, deps) => {
     try {
       const response = await fetch(`${baseUrl}/upload?${params.toString()}`, {
         method: 'POST',
+        redirect: 'error',
         headers: {
           Authorization: `Bearer ${token}`,
         },

@@ -1,8 +1,12 @@
 import {
+  buildWikiAttachmentValidationOptions,
   mapWikiEntryRow,
   mapWikiRevisionRow,
   parseWikiTags,
+  resolveWikiRelatedPosts,
   sanitizeWikiPayload,
+  serializeWikiRevisionData,
+  validatePublicWikiRelatedPosts,
 } from '../../wiki-utils.js';
 
 export const registerPublicWikiRoutes = (app, deps) => {
@@ -15,6 +19,7 @@ export const registerPublicWikiRoutes = (app, deps) => {
     verifyTurnstile,
     crypto,
     wecomWebhookService,
+    getRuntimeConfig = () => ({}),
   } = deps;
 
   const escapeLike = (value) => String(value).replace(/[\\%_]/g, (match) => `\\${match}`);
@@ -68,7 +73,10 @@ export const registerPublicWikiRoutes = (app, deps) => {
   };
 
   const validateSubmission = async (req, res, options = {}) => {
-    const payload = sanitizeWikiPayload(req.body || {});
+    const payload = sanitizeWikiPayload(req.body || {}, {
+      ...buildWikiAttachmentValidationOptions(getRuntimeConfig()),
+      fallbackData: options.fallbackData,
+    });
     if (!payload.ok) {
       res.status(400).json({ error: payload.error });
       return null;
@@ -90,6 +98,11 @@ export const registerPublicWikiRoutes = (app, deps) => {
     const verification = await verifyTurnstile(req.body?.turnstileToken, req, 'wiki');
     if (!verification.ok) {
       res.status(verification.status).json({ error: verification.error });
+      return null;
+    }
+    const relatedPostsValidation = validatePublicWikiRelatedPosts(db, payload.data.relatedPostIds);
+    if (!relatedPostsValidation.ok) {
+      res.status(400).json({ error: relatedPostsValidation.error });
       return null;
     }
     return { ...payload.data, fingerprint };
@@ -159,7 +172,7 @@ export const registerPublicWikiRoutes = (app, deps) => {
     });
 
     return res.json({
-      items: rows.map(mapWikiEntryRow),
+      items: rows.map((row) => mapWikiEntryRow(row, { includeAttachments: false })),
       total,
       page,
       limit,
@@ -188,8 +201,10 @@ export const registerPublicWikiRoutes = (app, deps) => {
     if (!row) {
       return res.status(404).json({ error: '瓜条不存在或尚未公开' });
     }
+    const entry = mapWikiEntryRow(row);
+    entry.relatedPosts = resolveWikiRelatedPosts(db, entry.relatedPostIds);
     return res.json({
-      entry: mapWikiEntryRow(row),
+      entry,
       history: getApprovedHistory(row.id),
     });
   });
@@ -219,7 +234,7 @@ export const registerPublicWikiRoutes = (app, deps) => {
       `
     ).run(
       revisionId,
-      JSON.stringify({ name: data.name, narrative: data.narrative, tags: data.tags }),
+      serializeWikiRevisionData(data),
       data.editSummary || '',
       data.fingerprint,
       getClientIp(req) || null,
@@ -231,6 +246,8 @@ export const registerPublicWikiRoutes = (app, deps) => {
       name: data.name,
       narrative: data.narrative,
       tags: data.tags,
+      relatedPostIds: data.relatedPostIds,
+      attachments: data.attachments,
       editSummary: data.editSummary || '',
       createdAt: now,
     });
@@ -247,7 +264,10 @@ export const registerPublicWikiRoutes = (app, deps) => {
       return res.status(404).json({ error: '瓜条不存在或尚未公开' });
     }
 
-    const data = await validateSubmission(req, res, { requireEditSummary: true });
+    const data = await validateSubmission(req, res, {
+      requireEditSummary: true,
+      fallbackData: mapWikiEntryRow(entry),
+    });
     if (!data) {
       return;
     }
@@ -274,7 +294,7 @@ export const registerPublicWikiRoutes = (app, deps) => {
       entry.id,
       entry.current_revision_id || null,
       Number(entry.version_number || 1),
-      JSON.stringify({ name: data.name, narrative: data.narrative, tags: data.tags }),
+      serializeWikiRevisionData(data),
       data.editSummary || '',
       data.fingerprint,
       getClientIp(req) || null,
@@ -286,6 +306,8 @@ export const registerPublicWikiRoutes = (app, deps) => {
       name: data.name,
       narrative: data.narrative,
       tags: data.tags,
+      relatedPostIds: data.relatedPostIds,
+      attachments: data.attachments,
       editSummary: data.editSummary || '',
       createdAt: now,
     });

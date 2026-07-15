@@ -90,6 +90,16 @@ const {
   siteUrl: SITE_URL,
 } = createRuntimeConfig();
 
+// 可通过逗号或空白分隔显式保留历史图床来源；当前图床始终自动加入白名单。
+const WIKI_ATTACHMENT_ALLOWED_ORIGINS = String(process.env.WIKI_ATTACHMENT_ALLOWED_ORIGINS || '')
+  .split(/[\s,，;；]+/g)
+  .map((item) => item.trim())
+  .filter(Boolean);
+const getWikiRuntimeConfig = () => ({
+  imgbedBaseUrl: IMGBED_BASE_URL,
+  wikiAttachmentAllowedOrigins: WIKI_ATTACHMENT_ALLOWED_ORIGINS,
+});
+
 if (!sessionSecretConfigured) {
   console.warn('SESSION_SECRET 未配置，已生成临时密钥（后台将被禁用）');
 }
@@ -1432,6 +1442,7 @@ registerPublicWikiRoutes(app, {
   verifyTurnstile,
   crypto,
   wecomWebhookService,
+  getRuntimeConfig: getWikiRuntimeConfig,
 });
 
 registerPublicReportsRoutes(app, {
@@ -1540,6 +1551,7 @@ registerAdminWikiRoutes(app, {
   requireAdminManage: wikiAdmin.manage,
   logAdminAction,
   crypto,
+  getRuntimeConfig: getWikiRuntimeConfig,
 });
 
 registerAdminFeedbackRoutes(app, {

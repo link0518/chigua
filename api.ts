@@ -411,7 +411,7 @@ export const api = {
       uploadNameType?: 'default' | 'index' | 'origin' | 'short';
       returnFormat?: 'default' | 'full';
       uploadFolder?: string;
-      usage?: 'post' | 'comment';
+      usage?: 'post' | 'comment' | 'wiki';
     } = {}
   ): Promise<{ src: string; url: string }> => {
     return apiFetch(`/uploads/image${toQuery({

@@ -252,6 +252,8 @@ CREATE TABLE IF NOT EXISTS wiki_entries (
   name TEXT NOT NULL,
   narrative TEXT NOT NULL,
   tags TEXT,
+  related_post_ids_json TEXT NOT NULL DEFAULT '[]',
+  attachments_json TEXT NOT NULL DEFAULT '[]',
   display_order INTEGER,
   status TEXT NOT NULL DEFAULT 'approved',
   current_revision_id TEXT,
@@ -417,6 +419,8 @@ ensureColumn('reports', 'target_type', "TEXT NOT NULL DEFAULT 'post'");
 ensureColumn('reports', 'reason_code', 'TEXT');
 ensureColumn('reports', 'evidence', 'TEXT');
 ensureColumn('wiki_entries', 'display_order', 'INTEGER');
+ensureColumn('wiki_entries', 'related_post_ids_json', "TEXT NOT NULL DEFAULT '[]'");
+ensureColumn('wiki_entries', 'attachments_json', "TEXT NOT NULL DEFAULT '[]'");
 ensureColumn('banned_ips', 'expires_at', 'INTEGER');
 ensureColumn('banned_ips', 'permissions', 'TEXT');
 ensureColumn('banned_ips', 'reason', 'TEXT');

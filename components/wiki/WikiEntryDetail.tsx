@@ -7,14 +7,15 @@ import {
   MagnifyingGlass,
   PencilSimpleLine,
   ShareNetwork,
-  ShieldCheck,
 } from '@phosphor-icons/react';
 
 import { copyTextToClipboard } from '../clipboard';
 import MarkdownRenderer from '../MarkdownRenderer';
+import { WikiAttachmentList } from './WikiAttachmentViewer';
 import WikiFloatingFeedback from './WikiFeedback';
 import WikiLoadingScreen from './WikiLoadingScreen';
 import { useWikiFeedback } from './wikiHooks';
+import { WikiRelatedPostList } from './WikiRelatedPostField';
 import type { WikiEntry, WikiRevision } from './wikiTypes';
 import {
   formatDateTime,
@@ -244,6 +245,50 @@ interface WikiEntryDetailProps {
   onSearchCurrentEntry: () => void;
 }
 
+interface WikiDetailCommandBarProps {
+  onBack: () => void;
+  children: React.ReactNode;
+}
+
+const WikiDetailCommandBar: React.FC<WikiDetailCommandBarProps> = ({ onBack, children }) => (
+  <header className="wiki-detail-command relative z-20 mx-auto mb-5 w-full max-w-4xl shrink-0 border-b border-kumo-line pb-3">
+    <div className="flex min-w-0 items-center justify-between gap-3">
+      <Button
+        type="button"
+        variant="secondary"
+        size="base"
+        className="wiki-motion-button shrink-0 justify-center px-3"
+        onClick={onBack}
+        icon={<ArrowLeft size={16} />}
+      >
+        返回
+      </Button>
+      {children}
+    </div>
+  </header>
+);
+
+const WikiEntryLoadingLayout: React.FC<Pick<WikiEntryDetailProps, 'onBack'>> = ({ onBack }) => (
+  <div className="wiki-detail-panel relative z-10 flex h-full w-full flex-col overflow-hidden bg-kumo-overlay">
+    <article className="wiki-detail-main relative flex min-h-0 min-w-0 flex-1 flex-col px-4 md:px-8 xl:px-12">
+      <WikiDetailCommandBar onBack={onBack}>
+        <div className="hidden items-center gap-2 md:flex" aria-hidden="true">
+          <span className="wiki-skeleton-card h-9 w-9 rounded-lg bg-kumo-tint" />
+          <span className="wiki-skeleton-card h-9 w-9 rounded-lg bg-kumo-tint" />
+          <span className="wiki-skeleton-card h-9 w-9 rounded-lg bg-kumo-tint" />
+          <span className="wiki-skeleton-card h-9 w-16 rounded-lg bg-kumo-tint" />
+        </div>
+      </WikiDetailCommandBar>
+      <WikiLoadingScreen
+        variant="detail"
+        title="正在读取档案详情"
+        description="同步记录叙述、版本历史和分享信息"
+        className="min-h-0 flex-1 bg-transparent py-4"
+      />
+    </article>
+  </div>
+);
+
 const WikiEntryDetail: React.FC<WikiEntryDetailProps> = ({
   entry,
   history,
@@ -309,13 +354,7 @@ const WikiEntryDetail: React.FC<WikiEntryDetailProps> = ({
   }, [entry, exportEntry, showFeedback]);
 
   if (loading) {
-    return (
-      <WikiLoadingScreen
-        variant="detail"
-        title="正在读取档案详情"
-        description="同步记录叙述、版本历史和分享信息"
-      />
-    );
+    return <WikiEntryLoadingLayout onBack={onBack} />;
   }
 
   if (error || !entry) {
@@ -337,90 +376,61 @@ const WikiEntryDetail: React.FC<WikiEntryDetailProps> = ({
     );
   }
 
-  const entryUpdatedLabel = formatDateTime(entry.updatedAt);
-  const entryCreatedLabel = formatDateTime(entry.createdAt);
+  const relatedPosts = Array.isArray(entry.relatedPosts) && entry.relatedPosts.length > 0
+    ? entry.relatedPosts
+    : (entry.relatedPostIds || []).map((postId) => ({
+      id: postId,
+      available: true,
+    }));
 
   return (
     <div className="wiki-detail-panel relative z-10 flex h-full w-full flex-col overflow-y-auto bg-kumo-overlay lg:flex-row lg:overflow-hidden">
       <WikiFloatingFeedback feedback={feedback} />
 
       <article className="wiki-detail-main relative min-w-0 flex-1 px-4 md:px-8 lg:overflow-y-auto xl:px-12">
-        <div className="wiki-detail-command sticky top-0 z-20 -mx-4 mb-5 border-b border-kumo-line bg-kumo-overlay/95 px-4 py-3 shadow-sm backdrop-blur md:-mx-8 md:px-8 lg:mx-auto lg:max-w-4xl lg:rounded-lg lg:border lg:bg-kumo-base/95 lg:p-3">
-          <div className="flex min-w-0 items-center justify-between gap-3">
-            <Button
-              type="button"
-              variant="secondary"
-              size="base"
-              className="wiki-motion-button shrink-0 justify-center px-3"
-              onClick={onBack}
-              icon={<ArrowLeft size={16} />}
-            >
-              返回
-            </Button>
-
-            <div className="wiki-detail-action-group wiki-action-strip hidden min-w-0 shrink-0 gap-2 overflow-x-auto pb-1 md:flex xl:hidden">
-              <WikiEntryActionButtons
-                entry={entry}
-                exportEntry={exportEntry}
-                onEdit={onEdit}
-                onSearchCurrentEntry={onSearchCurrentEntry}
-                onShare={handleShare}
-                onSaveImage={handleSaveImage}
-                iconOnly
-              />
-            </div>
-
-            <div className="wiki-detail-action-group wiki-action-strip hidden min-w-0 shrink-0 gap-2 overflow-x-auto pb-1 xl:flex xl:justify-end xl:overflow-visible xl:pb-0">
-              <WikiEntryActionButtons
-                entry={entry}
-                exportEntry={exportEntry}
-                onEdit={onEdit}
-                onSearchCurrentEntry={onSearchCurrentEntry}
-                onShare={handleShare}
-                onSaveImage={handleSaveImage}
-              />
-            </div>
+        <WikiDetailCommandBar onBack={onBack}>
+          <div className="wiki-detail-action-group wiki-action-strip hidden min-w-0 shrink-0 gap-2 overflow-x-auto pb-1 md:flex xl:hidden">
+            <WikiEntryActionButtons
+              entry={entry}
+              exportEntry={exportEntry}
+              onEdit={onEdit}
+              onSearchCurrentEntry={onSearchCurrentEntry}
+              onShare={handleShare}
+              onSaveImage={handleSaveImage}
+              iconOnly
+            />
           </div>
-        </div>
+
+          <div className="wiki-detail-action-group wiki-action-strip hidden min-w-0 shrink-0 gap-2 overflow-x-auto pb-1 xl:flex xl:justify-end xl:overflow-visible xl:pb-0">
+            <WikiEntryActionButtons
+              entry={entry}
+              exportEntry={exportEntry}
+              onEdit={onEdit}
+              onSearchCurrentEntry={onSearchCurrentEntry}
+              onShare={handleShare}
+              onSaveImage={handleSaveImage}
+            />
+          </div>
+        </WikiDetailCommandBar>
 
         <WikiEntryNarrativeCard entry={entry} />
       </article>
 
       {exportEntry ? <WikiEntryExportCard ref={exportCardRef} entry={exportEntry} /> : null}
 
-      <aside className="wiki-detail-aside w-full shrink-0 border-t border-kumo-line bg-kumo-base p-5 shadow-xl md:p-6 lg:w-[22rem] lg:overflow-y-auto lg:border-l lg:border-t-0 xl:w-[24rem]">
-        <div className="space-y-5">
-          <LayerCard className="wiki-surface-soft shadow-sm">
-            <LayerCard.Secondary>
-              <div className="flex items-center gap-2 text-sm font-semibold text-kumo-strong">
-                <ShieldCheck size={18} />
-                审核状态
-              </div>
-            </LayerCard.Secondary>
-            <LayerCard.Primary>
-              <dl className="space-y-3 text-sm">
-                <div className="flex items-center justify-between gap-4">
-                  <dt className="text-kumo-subtle">状态</dt>
-                  <dd className="font-semibold text-kumo-success">已通过</dd>
-                </div>
-                <div className="flex items-center justify-between gap-4">
-                  <dt className="text-kumo-subtle">版本</dt>
-                  <dd className="font-semibold text-kumo-strong">第 {entry.versionNumber} 版</dd>
-                </div>
-                <div className="flex items-center justify-between gap-4">
-                  <dt className="text-kumo-subtle">发布</dt>
-                  <dd className="text-right text-kumo-default">{entryCreatedLabel || '暂无记录'}</dd>
-                </div>
-                <div className="flex items-center justify-between gap-4">
-                  <dt className="text-kumo-subtle">更新</dt>
-                  <dd className="text-right text-kumo-default">{entryUpdatedLabel || '暂无记录'}</dd>
-                </div>
-              </dl>
-            </LayerCard.Primary>
-          </LayerCard>
-
-          <WikiRevisionHistory history={history} onOpenRevision={setSelectedRevision} />
+      <aside className="wiki-detail-aside flex min-w-0 w-full shrink-0 flex-col gap-4 overflow-x-hidden border-t border-kumo-line bg-kumo-base p-5 shadow-xl md:p-6 lg:grid lg:w-[22rem] lg:min-h-0 lg:overflow-y-auto lg:border-l lg:border-t-0 xl:w-[24rem]">
+        <div className="wiki-detail-related min-h-0 min-w-0">
+          <WikiRelatedPostList posts={relatedPosts} className="wiki-related-post-card" />
         </div>
+        <div className="wiki-detail-attachments min-h-0 min-w-0">
+          <WikiAttachmentList
+            attachments={entry.attachments}
+            className="wiki-attachment-card"
+            compact
+            showEmpty
+          />
+        </div>
+        <WikiRevisionHistory history={history} onOpenRevision={setSelectedRevision} />
       </aside>
 
       <div className="wiki-mobile-action-bar fixed inset-x-0 bottom-0 z-40 border-t border-kumo-line bg-kumo-base/95 px-4 py-3 shadow-[0_-14px_34px_rgba(0,0,0,0.08)] backdrop-blur md:hidden">

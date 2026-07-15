@@ -125,8 +125,8 @@ test('后台设置默认返回图片上传限流配置', async () => {
   const res = await runHandlers(routes.get('GET /api/admin/settings'), { body: {} });
 
   assert.equal(res.statusCode, 200);
-  assert.equal(res.payload.rateLimits.upload.limit, 3);
-  assert.equal(res.payload.rateLimits.upload.windowMs, 30 * 1000);
+  assert.equal(res.payload.rateLimits.upload.limit, 12);
+  assert.equal(res.payload.rateLimits.upload.windowMs, 60 * 1000);
   db.close();
 });
 

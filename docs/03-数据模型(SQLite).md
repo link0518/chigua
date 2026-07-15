@@ -248,6 +248,8 @@ permissions 常见值（见服务端/前端映射）：
 - `name`：角色名字。
 - `narrative`：记录叙述。
 - `tags`：JSON 字符串，保存清洗后的 tags 数组。
+- `related_post_ids_json`：JSON 字符串，按添加顺序保存最多 5 个相关帖子 ID；不保存帖子正文快照，也不建立外键。
+- `attachments_json`：JSON 字符串，保存分组图片附件，结构为 `[{ "title": string, "imageUrls": string[] }]`，默认值为 `[]`。
 - `status`：当前瓜条状态，公开读取只使用 `approved`。
 - `current_revision_id`：当前公开版本对应的 revision。
 - `version_number`：当前公开版本号。
@@ -263,7 +265,7 @@ permissions 常见值（见服务端/前端映射）：
 - `action_type`：`create` 或 `edit`。
 - `base_revision_id`：编辑基于的公开 revision。
 - `base_version_number`：编辑基于的公开版本号。
-- `data_json`：版本内容，只包含 `name`、`narrative`、`tags`。
+- `data_json`：完整版本内容，包含 `name`、`narrative`、`tags`、`relatedPostIds`、`attachments`。
 - `edit_summary`：修改说明。
 - `status`：`pending`、`approved`、`rejected`。
 - `submitter_fingerprint`：提交者指纹。
@@ -285,7 +287,21 @@ permissions 常见值（见服务端/前端映射）：
 
 ### 3.4 字段边界
 
-角色 Wiki 当前只允许保存名字、记录叙述和 tags。不要新增或保留以下字段：
+角色 Wiki 当前允许保存以下业务字段：
+
+- `name`：名字。
+- `narrative`：记录叙述。
+- `tags`：标签数组。
+- `relatedPostIds`：相关帖子 ID 数组，最多 5 个并去重，单个 ID 最长 128 个字符。
+- `attachments`：分组图片附件，最多 5 组、每组 1 至 3 张、总计最多 10 张；组标题最长 60 个字符。
+
+附件只保存经过白名单校验的远端图片 URL，不保存 `File`、Blob URL、Base64 或图片二进制。白名单默认包含 `https://img.zsix.de`、`https://ibed.933211.xyz`，并自动加入当前 `IMGBED_BASE_URL` 的来源；历史图床或独立 CDN 等额外来源通过 `WIKI_ATTACHMENT_ALLOWED_ORIGINS` 显式配置。所有新写入的外部附件必须使用 HTTPS，仅本地回环地址允许 HTTP 以便开发调试。
+
+相关帖子不使用数据库外键。帖子删除或隐藏不会破坏瓜条数据，读取详情时再根据帖子当前状态生成 `available`；历史版本只保留当时的帖子 ID，不保留正文摘要快照。
+
+数据库迁移对旧瓜条使用 `related_post_ids_json = '[]'`、`attachments_json = '[]'`，不批量重写历史 `data_json`。解析旧 revision 时缺失字段按空数组处理；审核旧编辑时由服务端按兼容规则继承当前公开值，避免静默清空后来新增的相关资料。
+
+不要新增或保留以下角色档案字段：
 
 - `affiliations_json`
 - `attributes_json`

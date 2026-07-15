@@ -1,11 +1,14 @@
 import {
+  buildWikiAttachmentValidationOptions,
   getNextWikiDisplayOrder,
   isWikiDisplayOrderConflict,
   mapWikiEntryRow,
   mapWikiRevisionRow,
-  parseWikiRevisionData,
+  resolveWikiRelatedPosts,
   resolveUniqueWikiSlug,
   sanitizeWikiPayload,
+  serializeWikiRevisionData,
+  validatePublicWikiRelatedPosts,
 } from '../../wiki-utils.js';
 
 export const registerAdminWikiRoutes = (app, deps) => {
@@ -17,6 +20,7 @@ export const registerAdminWikiRoutes = (app, deps) => {
     requireAdminManage = (_req, _res, next) => next(),
     logAdminAction,
     crypto,
+    getRuntimeConfig = () => ({}),
   } = deps;
 
   const parsePositiveInt = (value, fallback) => {
@@ -28,13 +32,63 @@ export const registerAdminWikiRoutes = (app, deps) => {
     return normalized >= 1 ? normalized : fallback;
   };
 
-  const sanitizeAdminPayload = (body, res) => {
-    const payload = sanitizeWikiPayload(body || {});
+  const getAttachmentValidationOptions = () => buildWikiAttachmentValidationOptions(getRuntimeConfig());
+
+  const validateRelatedPosts = (relatedPostIds) => {
+    const validation = validatePublicWikiRelatedPosts(db, relatedPostIds);
+    if (!validation.ok) {
+      throw new Error(validation.error);
+    }
+  };
+
+  const sanitizeAdminPayload = (body, res, fallbackData = undefined) => {
+    const payload = sanitizeWikiPayload(body || {}, {
+      ...getAttachmentValidationOptions(),
+      fallbackData,
+    });
     if (!payload.ok) {
       res.status(400).json({ error: payload.error });
       return null;
     }
+    const relatedPostsValidation = validatePublicWikiRelatedPosts(db, payload.data.relatedPostIds);
+    if (!relatedPostsValidation.ok) {
+      res.status(400).json({ error: relatedPostsValidation.error });
+      return null;
+    }
     return payload.data;
+  };
+
+  const parseRevisionPayload = (revision, fallbackData = undefined) => {
+    let source;
+    try {
+      source = JSON.parse(String(revision.data_json || '{}'));
+    } catch {
+      throw new Error('审核数据格式错误');
+    }
+    if (!source || typeof source !== 'object' || Array.isArray(source)) {
+      throw new Error('审核数据格式错误');
+    }
+    const payload = sanitizeWikiPayload(source, {
+      ...getAttachmentValidationOptions(),
+      fallbackData,
+    });
+    if (!payload.ok) {
+      throw new Error(payload.error || '审核数据格式错误');
+    }
+    validateRelatedPosts(payload.data.relatedPostIds);
+    return payload.data;
+  };
+
+  const mapAdminWikiEntry = (row) => {
+    const entry = mapWikiEntryRow(row);
+    entry.relatedPosts = resolveWikiRelatedPosts(db, entry.relatedPostIds);
+    return entry;
+  };
+
+  const mapAdminWikiRevision = (row, versionNumber = null) => {
+    const revision = mapWikiRevisionRow(row, versionNumber);
+    revision.relatedPosts = resolveWikiRelatedPosts(db, revision.data.relatedPostIds);
+    return revision;
   };
 
   const getAdminName = (req) => String(req.session?.admin?.username || 'admin');
@@ -68,9 +122,19 @@ export const registerAdminWikiRoutes = (app, deps) => {
   const approveRevision = db.transaction((req, revision) => {
     const now = Date.now();
     const adminName = getAdminName(req);
-    const data = parseWikiRevisionData(revision.data_json);
+    const claimResult = db.prepare(
+      `
+      UPDATE wiki_entry_revisions
+      SET status = 'approved'
+      WHERE id = ? AND status = 'pending'
+      `
+    ).run(revision.id);
+    if (Number(claimResult.changes || 0) !== 1) {
+      throw new Error('该记录已处理');
+    }
 
     if (revision.action_type === 'create') {
+      const data = parseRevisionPayload(revision);
       const entryId = crypto.randomUUID();
       const slug = resolveUniqueWikiSlug(db, data.name);
       const displayOrder = getNextWikiDisplayOrder(db);
@@ -82,6 +146,8 @@ export const registerAdminWikiRoutes = (app, deps) => {
           name,
           narrative,
           tags,
+          related_post_ids_json,
+          attachments_json,
           display_order,
           status,
           current_revision_id,
@@ -90,7 +156,7 @@ export const registerAdminWikiRoutes = (app, deps) => {
           updated_at,
           deleted,
           deleted_at
-        ) VALUES (?, ?, ?, ?, ?, ?, 'approved', ?, 1, ?, ?, 0, NULL)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'approved', ?, 1, ?, ?, 0, NULL)
         `
       ).run(
         entryId,
@@ -98,6 +164,8 @@ export const registerAdminWikiRoutes = (app, deps) => {
         data.name,
         data.narrative,
         JSON.stringify(data.tags),
+        JSON.stringify(data.relatedPostIds),
+        JSON.stringify(data.attachments),
         displayOrder,
         revision.id,
         revision.created_at || now,
@@ -107,13 +175,14 @@ export const registerAdminWikiRoutes = (app, deps) => {
         `
         UPDATE wiki_entry_revisions
         SET entry_id = ?,
+          data_json = ?,
           status = 'approved',
           reviewed_at = ?,
           reviewed_by = ?,
           review_reason = NULL
         WHERE id = ?
         `
-      ).run(entryId, now, adminName, revision.id);
+      ).run(entryId, serializeWikiRevisionData(data), now, adminName, revision.id);
       return { entryId, slug, versionNumber: 1 };
     }
 
@@ -123,6 +192,7 @@ export const registerAdminWikiRoutes = (app, deps) => {
     if (!entry) {
       throw new Error('瓜条不存在或已删除');
     }
+    const data = parseRevisionPayload(revision, mapWikiEntryRow(entry));
     const currentRevisionId = String(entry.current_revision_id || '');
     const baseRevisionId = String(revision.base_revision_id || '');
     const currentVersionNumber = Number(entry.version_number || 1);
@@ -139,6 +209,8 @@ export const registerAdminWikiRoutes = (app, deps) => {
         name = ?,
         narrative = ?,
         tags = ?,
+        related_post_ids_json = ?,
+        attachments_json = ?,
         status = 'approved',
         current_revision_id = ?,
         version_number = ?,
@@ -150,6 +222,8 @@ export const registerAdminWikiRoutes = (app, deps) => {
       data.name,
       data.narrative,
       JSON.stringify(data.tags),
+      JSON.stringify(data.relatedPostIds),
+      JSON.stringify(data.attachments),
       revision.id,
       versionNumber,
       now,
@@ -158,13 +232,14 @@ export const registerAdminWikiRoutes = (app, deps) => {
     db.prepare(
       `
       UPDATE wiki_entry_revisions
-      SET status = 'approved',
+      SET data_json = ?,
+        status = 'approved',
         reviewed_at = ?,
         reviewed_by = ?,
         review_reason = NULL
       WHERE id = ?
       `
-    ).run(now, adminName, revision.id);
+    ).run(serializeWikiRevisionData(data), now, adminName, revision.id);
     return { entryId: entry.id, slug, versionNumber };
   });
 
@@ -182,6 +257,8 @@ export const registerAdminWikiRoutes = (app, deps) => {
         name,
         narrative,
         tags,
+        related_post_ids_json,
+        attachments_json,
         display_order,
         status,
         current_revision_id,
@@ -190,9 +267,21 @@ export const registerAdminWikiRoutes = (app, deps) => {
         updated_at,
         deleted,
         deleted_at
-      ) VALUES (?, ?, ?, ?, ?, ?, 'approved', ?, 1, ?, ?, 0, NULL)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'approved', ?, 1, ?, ?, 0, NULL)
       `
-    ).run(entryId, slug, data.name, data.narrative, JSON.stringify(data.tags), displayOrder, revisionId, now, now);
+    ).run(
+      entryId,
+      slug,
+      data.name,
+      data.narrative,
+      JSON.stringify(data.tags),
+      JSON.stringify(data.relatedPostIds),
+      JSON.stringify(data.attachments),
+      displayOrder,
+      revisionId,
+      now,
+      now
+    );
     db.prepare(
       `
       INSERT INTO wiki_entry_revisions (
@@ -214,7 +303,7 @@ export const registerAdminWikiRoutes = (app, deps) => {
     ).run(
       revisionId,
       entryId,
-      JSON.stringify({ name: data.name, narrative: data.narrative, tags: data.tags }),
+      serializeWikiRevisionData(data),
       data.editSummary || '管理员创建',
       now,
       now,
@@ -278,7 +367,7 @@ export const registerAdminWikiRoutes = (app, deps) => {
       )
       .all(...params, limit, offset);
 
-    return res.json({ items: rows.map((row) => mapWikiRevisionRow(row)), total, page, limit });
+    return res.json({ items: rows.map((row) => mapAdminWikiRevision(row)), total, page, limit });
   });
 
   app.get('/api/admin/wiki/entries', requireAdmin, requireAdminRead, (req, res) => {
@@ -316,7 +405,7 @@ export const registerAdminWikiRoutes = (app, deps) => {
       )
       .all(...params, limit, offset);
 
-    return res.json({ items: rows.map(mapWikiEntryRow), total, page, limit });
+    return res.json({ items: rows.map(mapAdminWikiEntry), total, page, limit });
   });
 
   app.post('/api/admin/wiki/entries', requireAdmin, requireAdminCsrf, requireAdminManage, (req, res) => {
@@ -338,7 +427,7 @@ export const registerAdminWikiRoutes = (app, deps) => {
         reason: data.editSummary || null,
       });
       return res.status(201).json({
-        entry: mapWikiEntryRow(
+        entry: mapAdminWikiEntry(
           db.prepare('SELECT * FROM wiki_entries WHERE id = ?').get(result.entryId)
         ),
       });
@@ -370,16 +459,19 @@ export const registerAdminWikiRoutes = (app, deps) => {
 
     if (action === 'reject') {
       const now = Date.now();
-      db.prepare(
+      const result = db.prepare(
         `
         UPDATE wiki_entry_revisions
         SET status = 'rejected',
           review_reason = ?,
           reviewed_at = ?,
           reviewed_by = ?
-        WHERE id = ?
+        WHERE id = ? AND status = 'pending'
         `
       ).run(reason || null, now, getAdminName(req), id);
+      if (Number(result.changes || 0) !== 1) {
+        return res.status(400).json({ error: '该记录已处理' });
+      }
       logAdminAction(req, {
         action: 'wiki_revision_reject',
         targetType: 'wiki_revision',
@@ -416,7 +508,7 @@ export const registerAdminWikiRoutes = (app, deps) => {
     if (!entry) {
       return res.status(404).json({ error: '瓜条不存在' });
     }
-    const data = sanitizeAdminPayload(req.body || {}, res);
+    const data = sanitizeAdminPayload(req.body || {}, res, mapWikiEntryRow(entry));
     if (!data) {
       return;
     }
@@ -450,7 +542,7 @@ export const registerAdminWikiRoutes = (app, deps) => {
         entry.id,
         entry.current_revision_id || null,
         Number(entry.version_number || 1),
-        JSON.stringify({ name: data.name, narrative: data.narrative, tags: data.tags }),
+        serializeWikiRevisionData(data),
         data.editSummary || '管理员直接编辑',
         now,
         now,
@@ -463,6 +555,8 @@ export const registerAdminWikiRoutes = (app, deps) => {
           name = ?,
           narrative = ?,
           tags = ?,
+          related_post_ids_json = ?,
+          attachments_json = ?,
           current_revision_id = ?,
           version_number = ?,
           updated_at = ?
@@ -473,6 +567,8 @@ export const registerAdminWikiRoutes = (app, deps) => {
         data.name,
         data.narrative,
         JSON.stringify(data.tags),
+        JSON.stringify(data.relatedPostIds),
+        JSON.stringify(data.attachments),
         revisionId,
         versionNumber,
         now,
@@ -480,7 +576,7 @@ export const registerAdminWikiRoutes = (app, deps) => {
       );
     })();
 
-    const updated = mapWikiEntryRow(db.prepare('SELECT * FROM wiki_entries WHERE id = ?').get(entry.id));
+    const updated = mapAdminWikiEntry(db.prepare('SELECT * FROM wiki_entries WHERE id = ?').get(entry.id));
     logAdminAction(req, {
       action: 'wiki_entry_edit',
       targetType: 'wiki_entry',

@@ -245,16 +245,23 @@
 ### 6.1 公开接口
 
 - `GET /api/wiki/entries?q=&tag=&page=&limit=`：查询公开角色瓜条列表。只返回已审核通过且未删除的瓜条。
-- `GET /api/wiki/entries/:slug`：查询公开角色详情，包含当前公开内容和已审核通过的编辑历史。
+- `GET /api/wiki/entries/:slug`：查询公开角色详情，包含当前公开内容、相关帖子当前可用状态、分组图片附件和已审核通过的编辑历史。
 - `POST /api/wiki/submissions`：提交新角色瓜条，进入待审核。
 - `POST /api/wiki/entries/:slug/edits`：提交已有角色瓜条编辑，进入待审核。
+- `POST /api/uploads/image?usage=wiki`：上传 Wiki 附件图片，复用现有图床代理但使用独立限流桶。
 
-投稿和编辑请求体统一只接受：
+投稿和编辑请求体接受：
 
 - `name`：名字，必填。
 - `narrative`：记录叙述，必填。
 - `tags`：标签数组。
+- `relatedPostIds`：相关帖子 ID 数组，最多 5 个，按顺序去重，单个 ID 最长 128 个字符。
+- `attachments`：附件数组，每项为 `{ title, imageUrls }`；最多 5 组、每组 1 至 3 张、总计最多 10 张。
 - `editSummary`：修改说明，可选。
+
+详情响应中的 `relatedPosts` 结构为 `{ id, available, excerpt? }[]`。帖子已删除或隐藏时返回 `available: false` 且不返回摘要；瓜条和其他相关帖子仍可正常展示。`attachments` 返回完整标题与 URL 数组。列表接口保持轻量，不要求返回完整图片 URL。
+
+编辑兼容旧客户端：未携带 `relatedPostIds` 或 `attachments` 时继承当前公开值；显式提交空数组才表示清空。历史 revision 缺失字段按相同规则处理，避免旧待审编辑覆盖新字段。
 
 公开接口不会返回待审核或已拒绝版本。提交成功只代表进入审核队列，不代表公开发布。
 
@@ -264,8 +271,8 @@
 
 以下接口均需要管理员登录，写操作需要 CSRF：
 
-- `GET /api/admin/wiki/revisions?status=&actionType=&q=&page=&limit=`：查询 Wiki 审核记录（`wiki:read`）。
-- `GET /api/admin/wiki/entries?status=&q=&page=&limit=`：查询 Wiki 瓜条管理列表（`wiki:read`）。
+- `GET /api/admin/wiki/revisions?status=&actionType=&q=&page=&limit=`：查询 Wiki 审核记录（`wiki:read`），返回 revision 内的 `relatedPostIds`、`attachments`，并在顶层补充相关帖当前状态 `relatedPosts`。
+- `GET /api/admin/wiki/entries?status=&q=&page=&limit=`：查询 Wiki 瓜条管理列表（`wiki:read`），返回当前公开快照的相关帖子、附件及相关帖状态。
 - `POST /api/admin/wiki/entries`：管理员直接创建公开瓜条（`wiki:manage` + CSRF）。
 - `POST /api/admin/wiki/revisions/:id/action`：对投稿或编辑执行 `approve` / `reject`（`wiki:manage` + CSRF）。
 - `POST /api/admin/wiki/entries/:id/edit`：管理员直接编辑当前公开瓜条（`wiki:manage` + CSRF）。
@@ -276,6 +283,8 @@
 - `create` 通过后创建公开瓜条，版本号为 `1`。
 - `edit` 通过后覆盖当前公开瓜条，版本号 `+1`。
 - `edit` 审核通过前必须校验待审记录的 `base_revision_id` 和 `base_version_number` 是否仍匹配当前公开瓜条；若瓜条已产生新版本，应拒绝直接覆盖并提示重新提交或手动合并。
+- 审核通过前再次逐条校验相关帖子；任一帖子已删除、隐藏或不存在时整体失败，不静默删除失效项。
+- 关联帖子和附件与正文在同一事务内写入公开快照和 revision 状态，任一步失败都回滚。
 - `reject` 不影响当前公开内容。
 
 ### 6.3 安全与限流
@@ -283,4 +292,8 @@
 - Wiki 投稿和编辑会附带 `X-Client-Fingerprint`，并记录提交者指纹与 IP。
 - Wiki 投稿和编辑执行 Turnstile 校验和封禁检查。
 - 新增 `wiki` 限流配置，默认 `3 次 / 小时`。
+- 图片上传统一使用 `upload` 限流配置，默认 `12 次 / 分钟`；共享上传端点同时检查 `post` 和 `comment` 封禁，`usage` 不能由客户端切换限流桶或规避内容操作封禁。历史配置中的旧 `upload=3 次 / 30 秒` 或 `wikiUpload` 会在读取时迁移到统一默认值。
+- Wiki 附件上传只接受 JPEG、PNG、GIF、WebP，单图最大 5MB，并同时校验请求 MIME 与文件头。
+- 附件 URL 默认接受 `https://img.zsix.de`、`https://ibed.933211.xyz`，并自动接受当前 `IMGBED_BASE_URL` 的来源；历史图床或独立 CDN 等额外来源通过 `WIKI_ATTACHMENT_ALLOWED_ORIGINS` 显式配置。所有新写入的外部附件必须使用 HTTPS，仅本地回环地址允许 HTTP；同时拒绝 `data:`、`blob:`、`javascript:` 等协议。
+- 图片上传代理对帖子、评论和 Wiki 三种用途统一执行相同的图床地址检查，并在发送 Bearer Token 前拒绝外部 HTTP、带账号密码或非 HTTP(S) 地址；上游重定向不自动跟随，避免 HTTPS 降级。
 - 后台审核、拒绝、删除、恢复、管理员创建和管理员编辑都写入 `admin_audit_logs`；审计查询会按 `action` 派生操作分类和风险等级，便于后台展示和筛选。

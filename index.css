@@ -159,12 +159,10 @@ body.theme-wiki {
   inset: 0;
   z-index: 1;
   pointer-events: none;
-  background: linear-gradient(
-    105deg,
-    transparent 28%,
-    var(--skeleton-highlight) 46%,
-    transparent 64%
-  );
+  background: linear-gradient(105deg,
+      transparent 28%,
+      var(--skeleton-highlight) 46%,
+      transparent 64%);
   transform: translateX(-120%);
   animation: home-post-skeleton-shine 1.6s ease-in-out infinite;
 }
@@ -206,61 +204,59 @@ body.theme-wiki {
   z-index: 1;
   height: 10px;
   background: var(--noticeboard-paper);
-  clip-path: polygon(
-    0 0,
-    100% 0,
-    100% 34%,
-    98% 82%,
-    96% 45%,
-    94% 88%,
-    92% 50%,
-    90% 78%,
-    88% 42%,
-    86% 90%,
-    84% 48%,
-    82% 80%,
-    80% 38%,
-    78% 86%,
-    76% 48%,
-    74% 92%,
-    72% 42%,
-    70% 82%,
-    68% 46%,
-    66% 88%,
-    64% 40%,
-    62% 78%,
-    60% 46%,
-    58% 90%,
-    56% 42%,
-    54% 82%,
-    52% 50%,
-    50% 88%,
-    48% 40%,
-    46% 80%,
-    44% 46%,
-    42% 92%,
-    40% 42%,
-    38% 78%,
-    36% 48%,
-    34% 86%,
-    32% 40%,
-    30% 84%,
-    28% 46%,
-    26% 90%,
-    24% 42%,
-    22% 80%,
-    20% 50%,
-    18% 88%,
-    16% 40%,
-    14% 82%,
-    12% 44%,
-    10% 90%,
-    8% 46%,
-    6% 84%,
-    4% 40%,
-    2% 78%,
-    0 36%
-  );
+  clip-path: polygon(0 0,
+      100% 0,
+      100% 34%,
+      98% 82%,
+      96% 45%,
+      94% 88%,
+      92% 50%,
+      90% 78%,
+      88% 42%,
+      86% 90%,
+      84% 48%,
+      82% 80%,
+      80% 38%,
+      78% 86%,
+      76% 48%,
+      74% 92%,
+      72% 42%,
+      70% 82%,
+      68% 46%,
+      66% 88%,
+      64% 40%,
+      62% 78%,
+      60% 46%,
+      58% 90%,
+      56% 42%,
+      54% 82%,
+      52% 50%,
+      50% 88%,
+      48% 40%,
+      46% 80%,
+      44% 46%,
+      42% 92%,
+      40% 42%,
+      38% 78%,
+      36% 48%,
+      34% 86%,
+      32% 40%,
+      30% 84%,
+      28% 46%,
+      26% 90%,
+      24% 42%,
+      22% 80%,
+      20% 50%,
+      18% 88%,
+      16% 40%,
+      14% 82%,
+      12% 44%,
+      10% 90%,
+      8% 46%,
+      6% 84%,
+      4% 40%,
+      2% 78%,
+      0 36%);
   filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.16));
   pointer-events: none;
 }
@@ -309,7 +305,7 @@ body.theme-wiki {
   transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1), width 220ms ease, height 220ms ease;
 }
 
-.noticeboard-header__seal > span {
+.noticeboard-header__seal>span {
   font-size: 22px;
   font-weight: 700;
   line-height: 1;
@@ -555,7 +551,7 @@ body.theme-wiki {
   height: 42px;
 }
 
-.noticeboard-header.is-compact .noticeboard-header__seal > span {
+.noticeboard-header.is-compact .noticeboard-header__seal>span {
   font-size: 19px;
 }
 
@@ -615,7 +611,7 @@ body.theme-wiki {
     box-shadow: 2px 2px 0 color-mix(in srgb, var(--noticeboard-ink) 88%, transparent);
   }
 
-  .noticeboard-header__seal > span {
+  .noticeboard-header__seal>span {
     font-size: 18px;
   }
 
@@ -727,6 +723,7 @@ body.theme-wiki {
 }
 
 @media (prefers-reduced-motion: reduce) {
+
   .noticeboard-header,
   .noticeboard-header__seal,
   .noticeboard-header__title,
@@ -860,13 +857,11 @@ body.theme-wiki {
   content: '';
   position: absolute;
   inset: 0;
-  background: repeating-linear-gradient(
-    45deg,
-    transparent,
-    transparent 2px,
-    rgba(255, 255, 255, 0.38) 2px,
-    rgba(255, 255, 255, 0.38) 4px
-  );
+  background: repeating-linear-gradient(45deg,
+      transparent,
+      transparent 2px,
+      rgba(255, 255, 255, 0.38) 2px,
+      rgba(255, 255, 255, 0.38) 4px);
 }
 
 .sticky-curl {
@@ -929,12 +924,41 @@ body.theme-wiki {
   animation: mascot-burst 0.6s ease-out forwards;
 }
 
-.mascot-burst span:nth-child(1) { top: 10px; left: 50px; animation-delay: 0s; }
-.mascot-burst span:nth-child(2) { top: 30px; left: 85px; animation-delay: 0.03s; }
-.mascot-burst span:nth-child(3) { top: 70px; left: 95px; animation-delay: 0.06s; }
-.mascot-burst span:nth-child(4) { top: 95px; left: 60px; animation-delay: 0.09s; }
-.mascot-burst span:nth-child(5) { top: 80px; left: 20px; animation-delay: 0.12s; }
-.mascot-burst span:nth-child(6) { top: 35px; left: 10px; animation-delay: 0.15s; }
+.mascot-burst span:nth-child(1) {
+  top: 10px;
+  left: 50px;
+  animation-delay: 0s;
+}
+
+.mascot-burst span:nth-child(2) {
+  top: 30px;
+  left: 85px;
+  animation-delay: 0.03s;
+}
+
+.mascot-burst span:nth-child(3) {
+  top: 70px;
+  left: 95px;
+  animation-delay: 0.06s;
+}
+
+.mascot-burst span:nth-child(4) {
+  top: 95px;
+  left: 60px;
+  animation-delay: 0.09s;
+}
+
+.mascot-burst span:nth-child(5) {
+  top: 80px;
+  left: 20px;
+  animation-delay: 0.12s;
+}
+
+.mascot-burst span:nth-child(6) {
+  top: 35px;
+  left: 10px;
+  animation-delay: 0.15s;
+}
 
 .markdown-preview img:not(.meme-image) {
   display: block;
@@ -962,11 +986,11 @@ body.theme-wiki {
   max-width: 100%;
 }
 
-.markdown-content > :first-child {
+.markdown-content> :first-child {
   margin-top: 0;
 }
 
-.markdown-content > :last-child {
+.markdown-content> :last-child {
   margin-bottom: 0;
 }
 
@@ -1047,10 +1071,12 @@ body.theme-wiki {
 }
 
 @keyframes mascot-float {
+
   0%,
   100% {
     transform: translateY(0) rotate(-1deg);
   }
+
   50% {
     transform: translateY(-10px) rotate(2deg);
   }
@@ -1060,9 +1086,11 @@ body.theme-wiki {
   0% {
     transform: scale(1);
   }
+
   50% {
     transform: scale(1.08);
   }
+
   100% {
     transform: scale(1);
   }
@@ -1073,9 +1101,11 @@ body.theme-wiki {
     transform: scale(0.6);
     opacity: 0;
   }
+
   30% {
     opacity: 1;
   }
+
   100% {
     transform: translateY(-18px) scale(1.4);
     opacity: 0;
@@ -1083,10 +1113,12 @@ body.theme-wiki {
 }
 
 @keyframes swing {
+
   0%,
   100% {
     transform: rotate(-5deg);
   }
+
   50% {
     transform: rotate(5deg);
   }
@@ -1142,6 +1174,7 @@ body.theme-wiki {
     opacity: 0;
     transform: translate3d(0, 8px, 0);
   }
+
   100% {
     opacity: 1;
     transform: translate3d(0, 0, 0);
@@ -1149,36 +1182,43 @@ body.theme-wiki {
 }
 
 @keyframes wiki-skeleton-pulse {
+
   0%,
   100% {
     opacity: 0.66;
   }
+
   50% {
     opacity: 1;
   }
 }
 
 @keyframes wiki-loading-scan {
+
   0%,
   100% {
     opacity: 0.22;
     transform: translate3d(0, -5.25rem, 0);
   }
+
   48%,
   58% {
     opacity: 1;
   }
+
   50% {
     transform: translate3d(0, 5.25rem, 0);
   }
 }
 
 @keyframes wiki-loading-seal-pulse {
+
   0%,
   100% {
     opacity: 0.74;
     transform: scale(0.96);
   }
+
   50% {
     opacity: 1;
     transform: scale(1.04);
@@ -1189,9 +1229,11 @@ body.theme-wiki {
   0% {
     transform: scaleX(0.18);
   }
+
   52% {
     transform: scaleX(0.72);
   }
+
   100% {
     transform: scaleX(1);
   }
@@ -1202,6 +1244,7 @@ body.theme-wiki {
     opacity: 0.72;
     transform: translate3d(0, 4px, 0);
   }
+
   100% {
     opacity: 1;
     transform: translate3d(0, 0, 0);
@@ -1209,10 +1252,12 @@ body.theme-wiki {
 }
 
 @keyframes wiki-loading-state-pulse {
+
   0%,
   100% {
     transform: scale(1);
   }
+
   50% {
     transform: scale(1.12);
   }
@@ -1224,6 +1269,7 @@ body.theme-wiki {
     transform: translate3d(0, 18px, 0) scale(0.96);
     filter: blur(12px);
   }
+
   100% {
     opacity: 1;
     transform: translate3d(0, 0, 0) scale(1);
@@ -1235,6 +1281,7 @@ body.theme-wiki {
   0% {
     transform: scaleX(1);
   }
+
   100% {
     transform: scaleX(0);
   }
@@ -1244,6 +1291,7 @@ body.theme-wiki {
   0% {
     opacity: 0;
   }
+
   100% {
     opacity: 1;
   }
@@ -1255,6 +1303,7 @@ body.theme-wiki {
     transform: translate3d(0, 28px, 0) scale(0.965);
     filter: blur(16px);
   }
+
   100% {
     opacity: 1;
     transform: translate3d(0, 0, 0) scale(1);
@@ -1293,14 +1342,6 @@ body.theme-wiki {
     linear-gradient(180deg, color-mix(in srgb, var(--kumo-color-tint, #f4f5f5) 42%, transparent), transparent 72%);
 }
 
-.wiki-detail-command {
-  background-image:
-    linear-gradient(180deg, color-mix(in srgb, var(--kumo-color-surface, #fff) 92%, transparent), color-mix(in srgb, var(--kumo-color-tint, #f4f5f5) 32%, transparent));
-  box-shadow:
-    0 1px 0 color-mix(in srgb, var(--kumo-color-base, #fff) 78%, transparent) inset,
-    0 10px 28px color-mix(in srgb, var(--kumo-color-strong, #111827) 7%, transparent);
-}
-
 .wiki-entry-cover {
   box-shadow:
     0 1px 0 color-mix(in srgb, var(--kumo-color-base, #fff) 78%, transparent) inset,
@@ -1324,14 +1365,6 @@ body.theme-wiki {
 .wiki-detail-overlay {
   --wiki-detail-enter-ms: 320ms;
   --wiki-detail-exit-ms: 220ms;
-  opacity: 0;
-  transition: opacity var(--wiki-detail-exit-ms) cubic-bezier(0.4, 0, 1, 1);
-}
-
-.wiki-detail-overlay.is-open {
-  opacity: 1;
-  transition-duration: var(--wiki-detail-enter-ms);
-  transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .wiki-detail-scrim {
@@ -1339,16 +1372,13 @@ body.theme-wiki {
   opacity: 0;
   -webkit-backdrop-filter: blur(0);
   backdrop-filter: blur(0);
-  transition:
-    opacity var(--wiki-detail-exit-ms) cubic-bezier(0.4, 0, 1, 1),
-    backdrop-filter var(--wiki-detail-exit-ms) cubic-bezier(0.4, 0, 1, 1),
-    -webkit-backdrop-filter var(--wiki-detail-exit-ms) cubic-bezier(0.4, 0, 1, 1);
+  transition: opacity var(--wiki-detail-exit-ms) cubic-bezier(0.4, 0, 1, 1);
 }
 
 .wiki-detail-overlay.is-open .wiki-detail-scrim {
   opacity: 1;
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
   transition-duration: var(--wiki-detail-enter-ms);
   transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -1390,18 +1420,47 @@ body.theme-wiki {
   transform: translate3d(0, 0, 0);
   filter: blur(0);
   transition:
-    opacity 250ms cubic-bezier(0.16, 1, 0.3, 1) 70ms,
-    transform 290ms cubic-bezier(0.16, 1, 0.3, 1) 70ms,
-    filter 250ms cubic-bezier(0.16, 1, 0.3, 1) 70ms;
+    opacity 250ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 290ms cubic-bezier(0.16, 1, 0.3, 1),
+    filter 250ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .wiki-detail-main {
   padding-top: calc(1.25rem + env(safe-area-inset-top));
-  padding-bottom: calc(8.5rem + env(safe-area-inset-bottom));
+  padding-bottom: 1.5rem;
 }
 
 .wiki-detail-aside {
   padding-bottom: calc(7.5rem + env(safe-area-inset-bottom));
+}
+
+.wiki-history-previous {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--kumo-color-strong, #111827) 24%, transparent) transparent;
+}
+
+.wiki-sidebar-card-header {
+  min-height: 3rem;
+  padding: 0.625rem 1rem;
+}
+
+.wiki-detail-aside,
+.wiki-detail-related,
+.wiki-detail-attachments,
+.wiki-history-panel,
+.wiki-sidebar-card {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.wiki-history-row {
+  transition: background-color 160ms ease, color 160ms ease;
+}
+
+@media (hover: hover) {
+  .wiki-history-row:hover {
+    background: var(--kumo-color-tint, #f3f4f6);
+  }
 }
 
 .wiki-form-modal-panel {
@@ -1437,7 +1496,7 @@ body.theme-wiki {
 @media (min-width: 768px) {
   .wiki-detail-main {
     padding-top: 2rem;
-    padding-bottom: 5rem;
+    padding-bottom: 2rem;
   }
 
   .wiki-detail-aside {
@@ -1446,8 +1505,35 @@ body.theme-wiki {
 }
 
 @media (min-width: 1024px) {
+  .wiki-detail-main {
+    padding-bottom: 5rem;
+  }
+
   .wiki-detail-aside {
+    grid-template-rows: 18.5rem 16rem minmax(14rem, 1fr);
+    overflow-x: hidden;
     padding-bottom: 2.5rem;
+    overscroll-behavior: contain;
+  }
+
+  .wiki-detail-related,
+  .wiki-detail-attachments,
+  .wiki-history-panel {
+    min-height: 0;
+    height: 100%;
+  }
+
+  .wiki-sidebar-card {
+    max-height: 100%;
+  }
+
+  .wiki-related-post-body,
+  .wiki-history-body {
+    min-height: 0;
+  }
+
+  .wiki-history-previous {
+    overflow-y: auto;
   }
 }
 
@@ -1642,7 +1728,7 @@ body.theme-wiki {
   border-radius: inherit;
 }
 
-.wiki-loading-meter > span {
+.wiki-loading-meter>span {
   display: block;
   width: 100%;
   height: 100%;
@@ -1700,58 +1786,6 @@ body.theme-wiki {
   transform: translate3d(0, 1px, 0);
 }
 
-.wiki-timeline {
-  position: relative;
-}
-
-.wiki-timeline-item {
-  position: relative;
-  padding: 0 0 1rem 1.5rem;
-}
-
-.wiki-timeline-item:last-child {
-  padding-bottom: 0;
-}
-
-.wiki-timeline-item::before {
-  content: '';
-  position: absolute;
-  left: 0.35rem;
-  top: 0.8rem;
-  bottom: -0.3rem;
-  width: 1px;
-  background: var(--kumo-color-line, #d7dcdf);
-}
-
-.wiki-timeline-item:last-child::before {
-  display: none;
-}
-
-.wiki-timeline-dot {
-  position: absolute;
-  left: 0;
-  top: 0.72rem;
-  width: 0.75rem;
-  height: 0.75rem;
-  border: 2px solid var(--kumo-color-base, #fff);
-  border-radius: 999px;
-  background: var(--kumo-color-contrast, #202425);
-  box-shadow: 0 0 0 1px var(--kumo-color-line, #d7dcdf);
-}
-
-.wiki-timeline-card {
-  transition-property: border-color, box-shadow, transform;
-  transition-duration: 160ms;
-  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-@media (hover: hover) {
-  .wiki-timeline-card:hover {
-    border-color: color-mix(in srgb, var(--kumo-color-contrast, #202425) 20%, var(--kumo-color-line, #d7dcdf));
-    box-shadow: 0 12px 32px color-mix(in srgb, var(--kumo-color-contrast, #202425) 7%, transparent);
-  }
-}
-
 .wiki-form-step {
   position: relative;
   transition: background-color 160ms ease, color 160ms ease;
@@ -1800,15 +1834,17 @@ body.theme-wiki {
   .mascot-float {
     animation: none;
   }
+
   .mascot-pop {
     animation: none;
   }
+
   .wiki-feedback-enter,
   .wiki-feedback-progress,
   .wiki-modal-backdrop-enter,
   .wiki-modal-panel-enter,
   .wiki-loading-log-row,
-  .wiki-loading-meter > span,
+  .wiki-loading-meter>span,
   .wiki-loading-seal,
   .wiki-loading-scan::before,
   .wiki-loading-state svg,
@@ -1865,6 +1901,7 @@ body.theme-wiki {
     right: 1.5rem;
     bottom: 1.5rem;
   }
+
   .mascot-burst {
     right: 1.5rem;
     bottom: 1.5rem;
@@ -1929,6 +1966,7 @@ body.theme-wiki {
   0% {
     transform: rotate(0deg);
   }
+
   100% {
     transform: rotate(360deg);
   }

@@ -23,7 +23,7 @@ const DEFAULT_RATE_LIMITS = Object.freeze({
   report: { limit: 1, windowMs: 60 * 1000 },
   feedback: { limit: 1, windowMs: 60 * 60 * 1000 },
   wiki: { limit: 3, windowMs: 60 * 60 * 1000 },
-  upload: { limit: 3, windowMs: 30 * 1000 },
+  upload: { limit: 12, windowMs: 60 * 1000 },
 });
 const RATE_LIMIT_ACTIONS = Object.freeze(Object.keys(DEFAULT_RATE_LIMITS));
 const CNY_TIMEZONE = 'Asia/Shanghai';
@@ -255,7 +255,31 @@ export const createSiteSettingsService = ({ db, turnstileSecretKey }) => {
       upsertSetting(SETTINGS_KEY_RATE_LIMITS, JSON.stringify(initial));
       return initial;
     }
-    return sanitizeRateLimits(stored);
+
+    let source = {};
+    try {
+      source = typeof stored === 'string' ? JSON.parse(stored) : stored;
+    } catch {
+      source = {};
+    }
+    const normalized = sanitizeRateLimits(source);
+    const storedUpload = source && typeof source === 'object' && !Array.isArray(source)
+      ? source.upload
+      : null;
+    const legacyWikiUpload = source && typeof source === 'object' && !Array.isArray(source)
+      ? source.wikiUpload
+      : null;
+    const usesLegacyDefault = Number(storedUpload?.limit) === 3
+      && Number(storedUpload?.windowMs) === 30 * 1000;
+
+    if (legacyWikiUpload || usesLegacyDefault) {
+      normalized.upload = sanitizeRateLimitItem(
+        legacyWikiUpload || DEFAULT_RATE_LIMITS.upload,
+        DEFAULT_RATE_LIMITS.upload
+      );
+      upsertSetting(SETTINGS_KEY_RATE_LIMITS, JSON.stringify(normalized));
+    }
+    return normalized;
   };
 
   const resolveAutoHideReportThreshold = () => {

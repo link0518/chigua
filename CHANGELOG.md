@@ -15,16 +15,19 @@
 - 新增表 `nickname_frames` 与访客 `user_cosmetics` 商城链路；公开 `GET /api/frames`、`/api/me/shop*`；发帖快照 `posts.author_frame_id`（仅新帖生效，他人可见）。涉及 `server/db.js`、`server/routes/public/shop-routes.js`、`server/routes/public/frames-routes.js`、前台「我的」商城。
 - 新增服务端回归测试 `server/tests/frame-package.test.js`、`server/tests/frame-post-snapshot.test.js`。
 
-- 新增独立角色 Wiki：前台提供 `/wiki` 角色画廊和 `/wiki/:slug` 详情页，采用 Nordic Wiki 视觉，不继承主站手绘风格；瓜条只保留名字、记录叙述和 tags。
+- 新增独立角色 Wiki：前台提供 `/wiki` 角色画廊和 `/wiki/:slug` 详情页，采用 Nordic Wiki 视觉，不继承主站手绘风格；瓜条保存名字、记录叙述、tags 及结构化相关资料。
 - 新增 Wiki 投稿和编辑审核链路：用户提交新瓜条或编辑已有瓜条后进入后台审核，通过后才公开，拒绝不影响当前公开内容。
 - 新增后台 `Wiki 审核` 模块，支持待审核、已通过、已拒绝和瓜条管理，并对通过、拒绝、删除、恢复、管理员编辑写入审计日志。
-- 新增 `wiki_entries`、`wiki_entry_revisions` 数据表和 Wiki 公共/后台 API，并增加 `wiki` 限流配置。
+- 新增瓜条相关资料：每条瓜条最多关联 5 个站内帖子，并支持最多 5 组、总计 10 张的分组图片附件；公开详情、历史版本和后台审核均可查看，失效帖子不会泄露摘要。
+- 新增后台瓜条相关帖子与附件编辑器，支持批量选图、上传进度、失败重试、缩略图预览和分组图片查看。
+- 新增 `wiki_entries`、`wiki_entry_revisions` 数据表和 Wiki 公共/后台 API，并增加 `wiki` 投稿限流；图片上传统一使用默认 `12 次 / 分钟` 的 `upload` 限流，避免客户端切换用途绕过额度。
 - 新增 Wiki 路由回归测试，覆盖投稿、编辑、审核通过、审核拒绝、历史展示和删除不可公开等场景。
 
 ### Changed
 
 - 移除聊天室功能：删除前台聊天室、后台聊天室管理、聊天室 WebSocket/HTTP 接口、聊天室数据表初始化、相关测试与直接 `ws` 依赖；保留历史聊天室举报过滤以兼容旧数据。
 - 图片上传改为服务端代理，图床 Token 不再进入前端构建产物；上传限频纳入后台系统设置。
+- 图片上传代理统一拒绝外部 HTTP、带凭据和非 HTTP(S) 图床地址，并禁止自动跟随上游重定向；Wiki 附件新写入同样仅允许 HTTPS 或本地回环 HTTP。
 - `npm run test:server` 改为自动运行 `server/tests/*.test.js` 下全部服务端测试。
 - 提取身份 SQL 匹配与剪贴板复制公共工具，减少重复实现。
 - 拆分后台系统设置页的限流、默认标签、自动隐藏阈值、春节状态与企业微信提醒组件，降低 `AdminDashboard.tsx` 维护成本。

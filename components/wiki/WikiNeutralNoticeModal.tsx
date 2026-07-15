@@ -9,7 +9,7 @@ import {
   X,
 } from '@phosphor-icons/react';
 
-import { useEscapeToClose } from './wikiHooks';
+import { useEscapeToClose, useWikiModalFocus } from './wikiHooks';
 
 interface WikiNeutralNoticeModalProps {
   open: boolean;
@@ -36,7 +36,9 @@ const rules = [
 ];
 
 const WikiNeutralNoticeModal: React.FC<WikiNeutralNoticeModalProps> = ({ open, onCancel, onConfirm }) => {
+  const modalRef = React.useRef<HTMLDivElement | null>(null);
   useEscapeToClose(open, onCancel);
+  useWikiModalFocus(open, modalRef);
 
   if (!open) {
     return null;
@@ -51,10 +53,13 @@ const WikiNeutralNoticeModal: React.FC<WikiNeutralNoticeModalProps> = ({ open, o
         onClick={onCancel}
       />
       <div
+        ref={modalRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="wiki-neutral-notice-title"
         aria-describedby="wiki-neutral-notice-description"
+        data-wiki-modal-initial-focus="true"
+        tabIndex={-1}
         className="wiki-modal-panel-enter relative z-10 flex max-h-[min(88vh,44rem)] w-full max-w-2xl flex-col overflow-hidden rounded-t-2xl border border-kumo-line bg-kumo-base shadow-2xl sm:rounded-2xl"
       >
         <header className="flex items-start gap-4 border-b border-kumo-line px-6 py-6 sm:px-8">
