@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import Database from 'better-sqlite3';
 import { registerPublicPostsRoutes } from '../routes/public/posts-routes.js';
+import { createPostHotScoreService } from '../services/post-hot-score-service.js';
+
+const TEST_NOW = new Date('2026-01-10T12:00:00+08:00').getTime();
 
 const createDb = () => {
   const db = new Database(':memory:');
@@ -14,7 +17,9 @@ const createDb = () => {
       tags TEXT,
       created_at INTEGER NOT NULL,
       deleted INTEGER NOT NULL DEFAULT 0,
-      hidden INTEGER NOT NULL DEFAULT 0
+      hidden INTEGER NOT NULL DEFAULT 0,
+      featured INTEGER NOT NULL DEFAULT 0,
+      featured_at INTEGER
     );
 
     CREATE TABLE comments (
@@ -30,7 +35,16 @@ const createDb = () => {
       post_identity_key TEXT,
       post_identity_label TEXT,
       post_identity_role TEXT,
+      fingerprint TEXT,
+      ip TEXT,
       author_name_style_id TEXT
+    );
+
+    CREATE TABLE post_reactions (
+      post_id TEXT,
+      session_id TEXT,
+      reaction TEXT,
+      created_at INTEGER
     );
 
     CREATE TABLE post_reactions_fingerprint (
@@ -51,6 +65,15 @@ const createDb = () => {
       post_id TEXT,
       status TEXT,
       created_at INTEGER
+    );
+
+    CREATE TABLE post_feature_requests (
+      id TEXT PRIMARY KEY,
+      post_id TEXT NOT NULL,
+      requester_identity_key TEXT NOT NULL,
+      requester_legacy_fingerprint TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      created_at INTEGER NOT NULL
     );
 
     CREATE INDEX idx_comments_post_id ON comments(post_id);
@@ -92,14 +115,17 @@ const createResponse = () => {
   };
 };
 
-const mapPostRowForTest = (row) => ({
+const mapPostRowForTest = (row, isHot) => ({
   id: row.id,
   content: row.content,
   author: row.author || '匿名',
   timestamp: String(row.created_at),
   tags: JSON.parse(row.tags || '[]'),
   createdAt: row.created_at,
-  isHot: false,
+  isHot,
+  isFeatured: row.featured === 1,
+  featuredAt: row.featured_at || null,
+  viewerFeatureRequestStatus: row.viewer_feature_request_status || null,
 });
 
 const mapCommentRowForTest = (row) => ({
@@ -116,16 +142,21 @@ const mapCommentRowForTest = (row) => ({
   authorNameStyleId: row.author_name_style_id || null,
 });
 
-const buildDeps = (db) => ({
+const buildDeps = (db, options = {}) => ({
   db,
   hotScoreSql: '0',
+  postHotScoreService: createPostHotScoreService({
+    db,
+    nowProvider: () => TEST_NOW,
+    cacheTtlMs: 0,
+  }),
   mapPostRow: mapPostRowForTest,
   mapCommentRow: mapCommentRowForTest,
   checkBanFor: () => true,
   formatDateKey: () => '2026-01-10',
   trackDailyVisit: () => {},
-  getIdentityLookupHashes: () => [],
-  getRequestIdentityContext: () => ({ lookupHashes: [] }),
+  getIdentityLookupHashes: () => options.identityHashes || [],
+  getRequestIdentityContext: () => ({ lookupHashes: options.identityHashes || [] }),
   startOfDay: (date) => {
     const normalized = new Date(date);
     normalized.setHours(0, 0, 0, 0);
@@ -146,14 +177,62 @@ const insertPost = (db, {
   createdAt = Date.now(),
   deleted = 0,
   hidden = 0,
+  featured = 0,
+  featuredAt = null,
 }) => {
   db.prepare(
     `
-      INSERT INTO posts (id, content, author, fingerprint, tags, created_at, deleted, hidden)
-      VALUES (?, ?, '匿名', ?, ?, ?, ?, ?)
+      INSERT INTO posts (id, content, author, fingerprint, tags, created_at, deleted, hidden, featured, featured_at)
+      VALUES (?, ?, '匿名', ?, ?, ?, ?, ?, ?, ?)
     `
-  ).run(id, content, `fingerprint-${id}`, JSON.stringify(tags), createdAt, deleted, hidden);
+  ).run(id, content, `fingerprint-${id}`, JSON.stringify(tags), createdAt, deleted, hidden, featured, featuredAt);
 };
+
+test('精华列表只返回公开精华帖子并按加精时间倒序', () => {
+  const db = createDb();
+  insertPost(db, { id: 'featured-old', featured: 1, featuredAt: 200 });
+  insertPost(db, { id: 'featured-new', featured: 1, featuredAt: 300 });
+  insertPost(db, { id: 'normal', featured: 0 });
+  insertPost(db, { id: 'featured-hidden', featured: 1, featuredAt: 400, hidden: 1 });
+  const app = createApp();
+  registerPublicPostsRoutes(app, buildDeps(db));
+  const handler = app.routes.get('GET /api/posts/featured');
+  const res = createResponse();
+  handler({ query: { limit: '20', offset: '0' }, sessionID: 'featured-session' }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.payload.total, 2);
+  assert.deepEqual(res.payload.items.map((item) => item.id), ['featured-new', 'featured-old']);
+  assert.ok(res.payload.items.every((item) => item.isFeatured));
+  db.close();
+});
+
+test('Cookie 轮换后帖子列表仍能通过 legacy 指纹返回原精华申请状态', () => {
+  const db = createDb();
+  insertPost(db, { id: 'requested-post', createdAt: 1000 });
+  db.prepare(`
+    INSERT INTO post_feature_requests (
+      id,
+      post_id,
+      requester_identity_key,
+      requester_legacy_fingerprint,
+      status,
+      created_at
+    ) VALUES ('feature-request', 'requested-post', 'canonical-old', 'legacy-shared', 'pending', 1100)
+  `).run();
+  const app = createApp();
+  registerPublicPostsRoutes(app, buildDeps(db, {
+    identityHashes: ['canonical-new', 'legacy-shared'],
+  }));
+  const handler = app.routes.get('GET /api/posts/home');
+  const res = createResponse();
+
+  handler({ query: { limit: '20', offset: '0' }, sessionID: 'home-session' }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.payload.items[0].viewerFeatureRequestStatus, 'pending');
+  db.close();
+});
 
 const insertComment = (db, {
   id,
@@ -163,15 +242,94 @@ const insertComment = (db, {
   createdAt = Date.now(),
   deleted = 0,
   hidden = 0,
+  fingerprint = null,
+  postIdentityKey = null,
+  ip = null,
 }) => {
   db.prepare(
     `
       INSERT INTO comments (
-        id, post_id, parent_id, reply_to_id, content, author, created_at, deleted, hidden
-      ) VALUES (?, ?, ?, NULL, ?, '匿名用户', ?, ?, ?)
+        id, post_id, parent_id, reply_to_id, content, author, created_at, deleted, hidden,
+        fingerprint, post_identity_key, ip
+      ) VALUES (?, ?, ?, NULL, ?, '匿名用户', ?, ?, ?, ?, ?, ?)
     `
-  ).run(id, postId, parentId, content, createdAt, deleted, hidden);
+  ).run(id, postId, parentId, content, createdAt, deleted, hidden, fingerprint, postIdentityKey, ip);
 };
+
+test('热门列表按近期独立互动排序，并允许旧帖因新互动重新进入榜单', () => {
+  const db = createDb();
+  insertPost(db, { id: 'old-active', createdAt: TEST_NOW - 30 * 24 * 60 * 60 * 1000 });
+  insertPost(db, { id: 'single-commenter', createdAt: TEST_NOW - 60 * 60 * 1000 });
+  insertPost(db, { id: 'new-without-interaction', createdAt: TEST_NOW });
+
+  db.prepare(`
+    INSERT INTO post_reactions_fingerprint (post_id, fingerprint, reaction, created_at)
+    VALUES (?, ?, 'like', ?)
+  `).run('old-active', 'identity-like', TEST_NOW - 30 * 60 * 1000);
+  db.prepare(`
+    INSERT INTO post_favorites (post_id, fingerprint, created_at)
+    VALUES (?, ?, ?)
+  `).run('old-active', 'identity-favorite', TEST_NOW - 20 * 60 * 1000);
+  insertComment(db, {
+    id: 'old-active-comment',
+    postId: 'old-active',
+    content: '旧帖的新评论',
+    fingerprint: 'identity-comment',
+    createdAt: TEST_NOW - 10 * 60 * 1000,
+  });
+  for (let index = 0; index < 6; index += 1) {
+    insertComment(db, {
+      id: `single-comment-${index}`,
+      postId: 'single-commenter',
+      content: `同一人的第 ${index + 1} 条评论`,
+      fingerprint: 'same-commenter',
+      createdAt: TEST_NOW - index * 60 * 1000,
+    });
+  }
+
+  const preparedSql = [];
+  const viewerHashes = ['viewer-current', 'viewer-legacy'];
+  const deps = buildDeps(db, { identityHashes: viewerHashes });
+  deps.db = new Proxy(db, {
+    get(target, property) {
+      if (property === 'prepare') {
+        return (sql) => {
+          preparedSql.push(sql);
+          return target.prepare(sql);
+        };
+      }
+      const value = Reflect.get(target, property);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+  const app = createApp();
+  registerPublicPostsRoutes(app, deps);
+  const handler = app.routes.get('GET /api/posts/feed');
+  const res = createResponse();
+  handler({ query: { filter: 'today' }, sessionID: 'feed-session' }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.payload.items.map((item) => item.id), ['old-active', 'single-commenter']);
+  assert.equal(res.payload.items[0].isHot, true);
+  assert.equal(res.payload.items[1].isHot, false);
+  assert.equal(res.payload.total, 2);
+
+  const candidatePostSql = preparedSql.find((sql) => sql.includes('FROM json_each(?) AS hot_posts'));
+  assert.ok(candidatePostSql);
+  const planDetails = db.prepare(`EXPLAIN QUERY PLAN ${candidatePostSql}`)
+    .all(
+      ...viewerHashes,
+      ...viewerHashes,
+      ...viewerHashes,
+      ...viewerHashes,
+      ...viewerHashes,
+      ...viewerHashes,
+      JSON.stringify(['old-active', 'single-commenter'])
+    )
+    .map((item) => item.detail);
+  assert.ok(planDetails.some((detail) => /SEARCH posts USING INDEX .*\(id=\?\)/.test(detail)));
+  db.close();
+});
 
 const runSearch = (handler, query) => {
   const req = { query, sessionID: 'search-session' };

@@ -20,6 +20,8 @@ const createSchema = (db) => {
       content TEXT,
       deleted INTEGER DEFAULT 0,
       deleted_at INTEGER,
+      featured INTEGER DEFAULT 0,
+      featured_at INTEGER,
       session_id TEXT,
       ip TEXT,
       fingerprint TEXT,

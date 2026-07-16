@@ -4,6 +4,7 @@ import HomeView from '@/components/HomeView';
 
 const SubmissionView = React.lazy(() => import('@/components/SubmissionView'));
 const FeedView = React.lazy(() => import('@/components/FeedView'));
+const FeaturedView = React.lazy(() => import('@/components/FeaturedView'));
 const SearchView = React.lazy(() => import('@/components/SearchView'));
 const AdminGate = React.lazy(() => import('@/components/AdminGate'));
 const FavoritesView = React.lazy(() => import('@/components/FavoritesView'));
@@ -25,6 +26,8 @@ const AppViewRenderer: React.FC<AppViewRendererProps> = ({
       return <SubmissionView />;
     case ViewType.FEED:
       return <FeedView />;
+    case ViewType.FEATURED:
+      return <FeaturedView />;
     case ViewType.SEARCH:
       return <SearchView />;
     case ViewType.FAVORITES:

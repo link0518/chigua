@@ -70,6 +70,8 @@ export const registerAdminPostsRoutes = (app, deps) => {
     hidden: row.hidden === 1,
     hiddenAt: row.hidden_at || null,
     hiddenReviewStatus: row.hidden_review_status || null,
+    isFeatured: row.featured === 1,
+    featuredAt: row.featured_at || null,
     hotScore: row.hot_score,
     sessionId: row.session_id || null,
     ip: row.ip || null,
@@ -460,7 +462,7 @@ app.post('/api/admin/posts/batch', requireAdmin, requireAdminCsrf, requireAdminM
 
   const now = Date.now();
   if (action === 'delete') {
-    db.prepare('UPDATE posts SET deleted = 1, deleted_at = ? WHERE id = ?')
+    db.prepare('UPDATE posts SET deleted = 1, deleted_at = ?, featured = 0, featured_at = NULL WHERE id = ?')
       .run(now, postId);
     moderationRepository.resolvePendingReportsForPosts([postId], 'post_delete', now);
   } else {

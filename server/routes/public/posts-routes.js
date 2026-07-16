@@ -4,6 +4,7 @@ export const registerPublicPostsRoutes = (app, deps) => {
   const {
     db,
     hotScoreSql,
+    postHotScoreService,
     mapPostRow,
     mapCommentRow,
     checkBanFor,
@@ -32,6 +33,7 @@ export const registerPublicPostsRoutes = (app, deps) => {
   const MAX_POST_TAGS = 2;
   const MAX_TAG_LENGTH = 6;
   const MAX_DEFAULT_TAGS = 50;
+  const MIN_HOT_INTERACTION_IDENTITIES = 3;
   const DAY_MS = 24 * 60 * 60 * 1000;
   const MAX_SEARCH_RANGE_DAYS = 30;
   const DATE_INPUT_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -132,6 +134,8 @@ export const registerPublicPostsRoutes = (app, deps) => {
   const buildViewerSelect = (identityHashes) => {
     const reactionMatch = buildIdentityMatch('pr.fingerprint', identityHashes);
     const favoriteMatch = buildIdentityMatch('pf.fingerprint', identityHashes);
+    const featureRequestMatch = buildIdentityMatch('pfr.requester_identity_key', identityHashes);
+    const featureLegacyMatch = buildIdentityMatch('pfr.requester_legacy_fingerprint', identityHashes);
     return {
       sql: `
         (
@@ -145,9 +149,22 @@ export const registerPublicPostsRoutes = (app, deps) => {
           SELECT 1
           FROM post_favorites pf
           WHERE pf.post_id = posts.id AND ${favoriteMatch.clause}
-        ) AS viewer_favorited
+        ) AS viewer_favorited,
+        (
+          SELECT pfr.status
+          FROM post_feature_requests pfr
+          WHERE pfr.post_id = posts.id
+            AND (${featureRequestMatch.clause} OR ${featureLegacyMatch.clause})
+          ORDER BY pfr.created_at DESC
+          LIMIT 1
+        ) AS viewer_feature_request_status
       `,
-      params: [...reactionMatch.params, ...favoriteMatch.params],
+      params: [
+        ...reactionMatch.params,
+        ...favoriteMatch.params,
+        ...featureRequestMatch.params,
+        ...featureLegacyMatch.params,
+      ],
     };
   };
 
@@ -259,7 +276,7 @@ app.get('/api/posts/home', (req, res) => {
     )
     .all(...viewerSelect.params, ...viewerAuthorSelect.params, limit, offset);
 
-  const posts = rows.map((row) => mapPostRow(row, row.hot_score >= 20));
+  const posts = rows.map((row) => mapPostRow(row, false));
   res.json({ items: posts, total });
 });
 
@@ -276,39 +293,98 @@ app.get('/api/posts/feed', (req, res) => {
   const viewerAuthorSelect = buildViewerAuthorSelect(viewerIdentityHashes);
 
   const conditions = ['posts.deleted = 0', 'posts.hidden = 0'];
-  const params = [...viewerSelect.params, ...viewerAuthorSelect.params];
-
-  if (filter === 'today') {
-    conditions.push('posts.created_at >= ?');
-    params.push(startOfDay());
-  } else if (filter === 'week') {
-    conditions.push('posts.created_at >= ?');
-    params.push(Date.now() - 7 * 24 * 60 * 60 * 1000);
-  }
+  const searchParams = [];
 
   if (search) {
     conditions.push('(posts.id LIKE ? OR posts.content LIKE ? OR posts.ip LIKE ? OR posts.fingerprint LIKE ?)');
     const keyword = `%${search}%`;
-    params.push(keyword, keyword, keyword, keyword);
+    searchParams.push(keyword, keyword, keyword, keyword);
+  }
+
+  const hotSnapshot = postHotScoreService.getSnapshot(filter);
+  // 快照已经给出候选范围，只读取有正向互动的帖子，避免每次扫描完整帖子表。
+  const hotPostIds = [];
+  hotSnapshot.forEach((metrics, postId) => {
+    if (Number(metrics?.interactionIdentityCount || 0) > 0) {
+      hotPostIds.push(postId);
+    }
+  });
+  if (!hotPostIds.length) {
+    return res.json({ items: [], total: 0 });
   }
 
   const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
+  // CROSS JOIN 固定候选 ID 为驱动表，防止 SQLite 为满足排序而重新扫描完整 posts 表。
   const rows = db
     .prepare(
       `
-      SELECT posts.*, ${hotScoreSql} AS hot_score,
+      SELECT posts.*,
         ${viewerSelect.sql},
         ${viewerAuthorSelect.sql}
-      FROM posts
+      FROM json_each(?) AS hot_posts
+      CROSS JOIN posts ON posts.id = hot_posts.value
       ${whereClause}
-      ORDER BY hot_score DESC, posts.created_at DESC
+      ORDER BY posts.created_at DESC
       `
     )
-    .all(...params);
+    .all(
+      ...viewerSelect.params,
+      ...viewerAuthorSelect.params,
+      JSON.stringify(hotPostIds),
+      ...searchParams
+    );
 
-  const posts = rows.map((row, index) => mapPostRow(row, index < 3));
+  const rankedRows = rows
+    .map((row) => ({ row, metrics: hotSnapshot.get(row.id) }))
+    .sort((left, right) => {
+      const leftEligible = left.metrics.interactionIdentityCount >= MIN_HOT_INTERACTION_IDENTITIES ? 1 : 0;
+      const rightEligible = right.metrics.interactionIdentityCount >= MIN_HOT_INTERACTION_IDENTITIES ? 1 : 0;
+      return rightEligible - leftEligible
+        || right.metrics.score - left.metrics.score
+        || right.metrics.lastInteractionAt - left.metrics.lastInteractionAt
+        || right.row.created_at - left.row.created_at;
+    });
+  const posts = rankedRows.map(({ row, metrics }, index) => mapPostRow(
+    { ...row, hot_score: metrics.score },
+    index < 3 && metrics.interactionIdentityCount >= MIN_HOT_INTERACTION_IDENTITIES
+  ));
   res.json({ items: posts, total: posts.length });
+});
+
+app.get('/api/posts/featured', (req, res) => {
+  if (!checkBanFor(req, res, 'view', '你已被限制浏览')) {
+    return;
+  }
+  const limit = Math.min(Math.max(Number(req.query.limit || 20), 1), 50);
+  const offset = Math.max(Number(req.query.offset || 0), 0);
+  const dateKey = formatDateKey();
+  trackDailyVisit(dateKey, req.sessionID);
+  const viewerIdentityHashes = getIdentityLookupHashes(req, res);
+  const viewerSelect = buildViewerSelect(viewerIdentityHashes);
+  const viewerAuthorSelect = buildViewerAuthorSelect(viewerIdentityHashes);
+
+  const total = Number(db.prepare(`
+    SELECT COUNT(1) AS count
+    FROM posts
+    WHERE deleted = 0 AND hidden = 0 AND featured = 1
+  `).get()?.count || 0);
+  const rows = db.prepare(`
+    SELECT posts.*, ${hotScoreSql} AS hot_score,
+      ${viewerSelect.sql},
+      ${viewerAuthorSelect.sql}
+    FROM posts
+    WHERE posts.deleted = 0
+      AND posts.hidden = 0
+      AND posts.featured = 1
+    ORDER BY posts.featured_at DESC, posts.created_at DESC
+    LIMIT ? OFFSET ?
+  `).all(...viewerSelect.params, ...viewerAuthorSelect.params, limit, offset);
+
+  return res.json({
+    items: rows.map((row) => mapPostRow(row, false)),
+    total,
+  });
 });
 
 app.get('/api/posts/tags', (req, res) => {
@@ -497,7 +573,7 @@ app.get('/api/posts/search', (req, res) => {
   }
 
   const items = rows.map((row) => ({
-    ...mapPostRow(row, row.hot_score >= 20),
+    ...mapPostRow(row, false),
     ...(keywordRaw
       ? {
         matchedComments: matchedCommentsByPost.get(row.id) || [],
@@ -638,7 +714,7 @@ app.get('/api/posts/:id', (req, res) => {
     return res.status(404).json({ error: '帖子不存在或已删除' });
   }
 
-  return res.json({ post: mapPostRow(row, row.hot_score >= 20) });
+  return res.json({ post: mapPostRow(row, false) });
 });
 
 app.post('/api/posts/:id/delete-requests', (req, res) => {
@@ -937,7 +1013,7 @@ app.get('/api/favorites', (req, res) => {
     )
     .all(...viewerReaction.params, ...favoriteMatch.params, limit, offset);
 
-  const items = rows.map((row) => mapPostRow(row, row.hot_score >= 20));
+  const items = rows.map((row) => mapPostRow(row, false));
   return res.json({ items, total });
 });
 

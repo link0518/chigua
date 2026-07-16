@@ -20,6 +20,7 @@ import {
   Pencil,
   Reply,
   Search,
+  Star,
   ThumbsUp,
   UserCircle,
   Trash2,
@@ -235,6 +236,15 @@ const App: React.FC = () => {
     };
   }, [isCnyTheme, isWikiView]);
 
+  useLayoutEffect(() => {
+    if (currentView === ViewType.SEARCH) {
+      return;
+    }
+
+    // 文本光标浏览开启时，旧页面的折叠选区会迁移到新页面的首个文本节点。
+    window.getSelection()?.removeAllRanges();
+  }, [currentView]);
+
   useEffect(() => {
     let active = true;
     const sendHeartbeat = async () => {
@@ -330,6 +340,10 @@ const App: React.FC = () => {
         return '你的帖子删除申请已通过';
       case 'post_delete_request_rejected':
         return '你的帖子删除申请已驳回';
+      case 'post_feature_request_approved':
+        return '你申请的帖子已加精';
+      case 'post_feature_request_rejected':
+        return '你的加精申请未通过';
       default:
         return '你有新提醒';
     }
@@ -355,6 +369,10 @@ const App: React.FC = () => {
         return <CheckCircle className={className} />;
       case 'post_delete_request_rejected':
         return <Trash2 className={className} />;
+      case 'post_feature_request_approved':
+        return <Star className={className} />;
+      case 'post_feature_request_rejected':
+        return <XCircle className={className} />;
       default:
         return <Bell className={className} />;
     }
@@ -474,6 +492,7 @@ const App: React.FC = () => {
   }> = ({ label, icon, onClick, active = false, dot = false }) => (
     <button
       type="button"
+      onMouseDown={(event) => event.preventDefault()}
       onClick={onClick}
       aria-current={active ? 'page' : undefined}
       className={`doodle-side-nav-item group relative flex w-full items-center gap-3 px-3 py-3 text-left font-hand text-lg font-bold transition-all active:translate-x-px active:translate-y-px ${active
@@ -695,6 +714,13 @@ const App: React.FC = () => {
                 }}
               />
               <MobileNavItem
+                label="精华"
+                onClick={() => {
+                  navigate(ViewType.FEATURED);
+                  setMobileMenuOpen(false);
+                }}
+              />
+              <MobileNavItem
                 label="搜索"
                 onClick={() => {
                   navigate(ViewType.SEARCH);
@@ -745,6 +771,12 @@ const App: React.FC = () => {
               icon={<Flame className="size-5" />}
               active={currentView === ViewType.FEED}
               onClick={() => navigate(ViewType.FEED)}
+            />
+            <SideNavItem
+              label="精华"
+              icon={<Star className="size-5" />}
+              active={currentView === ViewType.FEATURED}
+              onClick={() => navigate(ViewType.FEATURED)}
             />
             <SideNavItem
               label="搜索"

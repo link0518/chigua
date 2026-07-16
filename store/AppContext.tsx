@@ -4,6 +4,7 @@ import {
   AdminPermissionDefinitions,
   AdminPermissions,
   Comment,
+  FeatureRequestSubmissionResult,
   Post,
   Report,
   ReportSubmissionPayload,
@@ -64,6 +65,8 @@ interface AppState {
   homeTotal: number;
   feedPosts: Post[];
   feedTotal: number;
+  featuredPosts: Post[];
+  featuredTotal: number;
   reports: Report[];
   stats: Stats;
   toasts: Toast[];
@@ -97,6 +100,7 @@ interface AppContextType {
   deletePost: (postId: string) => void;
   reportPost: (postId: string, payload: ReportSubmissionPayload) => Promise<ReportSubmissionResult>;
   reportComment: (commentId: string, payload: ReportSubmissionPayload) => Promise<ReportSubmissionResult>;
+  requestPostFeature: (postId: string) => Promise<FeatureRequestSubmissionResult>;
   handleReport: (
     reportId: string,
     action: AdminReportAction,
@@ -118,6 +122,7 @@ interface AppContextType {
   getPendingReports: () => Report[];
   loadHomePosts: (options?: number | { limit?: number; offset?: number; append?: boolean }) => Promise<void>;
   loadFeedPosts: (filter?: 'week' | 'today' | 'all', search?: string) => Promise<void>;
+  loadFeaturedPosts: (options?: { limit?: number; offset?: number; append?: boolean }) => Promise<void>;
   loadReports: () => Promise<void>;
   loadStats: () => Promise<void>;
   loadSettings: () => Promise<void>;
@@ -146,6 +151,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     homeTotal: 0,
     feedPosts: [],
     feedTotal: 0,
+    featuredPosts: [],
+    featuredTotal: 0,
     reports: [],
     stats: initialStats,
     toasts: [],
@@ -302,6 +309,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     syncReactions(items);
   }, [syncReactions]);
 
+  const loadFeaturedPosts = useCallback(async (options: { limit?: number; offset?: number; append?: boolean } = {}) => {
+    const limit = options.limit ?? 20;
+    const offset = options.offset ?? 0;
+    const append = Boolean(options.append);
+    const data = await api.getFeaturedPosts(limit, offset);
+    const items: Post[] = data.items || [];
+    setState((prev) => {
+      const existingIds = new Set(prev.featuredPosts.map((post) => post.id));
+      return {
+        ...prev,
+        featuredPosts: append
+          ? [...prev.featuredPosts, ...items.filter((post) => !existingIds.has(post.id))]
+          : items,
+        featuredTotal: data.total ?? (append ? prev.featuredTotal : items.length),
+      };
+    });
+    syncReactions(items);
+  }, [syncReactions]);
+
   const loadReports = useCallback(async () => {
     const data = await api.getReports();
     setState((prev) => ({
@@ -434,6 +460,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         ...prev,
         homePosts: updateList(prev.homePosts),
         feedPosts: updateList(prev.feedPosts),
+        featuredPosts: updateList(prev.featuredPosts),
       };
     });
     return comment;
@@ -472,6 +499,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         dislikedPosts,
         homePosts: updateList(prev.homePosts),
         feedPosts: updateList(prev.feedPosts),
+        featuredPosts: updateList(prev.featuredPosts),
       };
     });
   }, []);
@@ -509,6 +537,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         dislikedPosts,
         homePosts: updateList(prev.homePosts),
         feedPosts: updateList(prev.feedPosts),
+        featuredPosts: updateList(prev.featuredPosts),
       };
     });
   }, []);
@@ -536,6 +565,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         favoritedPosts,
         homePosts: updateList(prev.homePosts),
         feedPosts: updateList(prev.feedPosts),
+        featuredPosts: updateList(prev.featuredPosts),
       };
     });
     return favorited;
@@ -548,6 +578,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       homeTotal: Math.max(prev.homeTotal - 1, 0),
       feedPosts: prev.feedPosts.filter((post) => post.id !== postId),
       feedTotal: Math.max(prev.feedTotal - 1, 0),
+      featuredPosts: prev.featuredPosts.filter((post) => post.id !== postId),
+      featuredTotal: Math.max(
+        prev.featuredTotal - (prev.featuredPosts.some((post) => post.id === postId) ? 1 : 0),
+        0
+      ),
       likedPosts: (() => {
         const next = new Set(prev.likedPosts);
         next.delete(postId);
@@ -579,6 +614,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const data: ReportSubmissionResult = await api.reportComment(commentId, payload);
     dispatchAutoHiddenEvent(data);
     return data;
+  }, []);
+
+  const requestPostFeature = useCallback(async (postId: string) => {
+    const data = await api.requestPostFeature(postId);
+    const request: FeatureRequestSubmissionResult = data.request;
+    setState((prev) => {
+      const updateList = (list: Post[]) => list.map((post) => (
+        post.id === postId
+          ? { ...post, viewerFeatureRequestStatus: 'pending' }
+          : post
+      ));
+      return {
+        ...prev,
+        homePosts: updateList(prev.homePosts),
+        feedPosts: updateList(prev.feedPosts),
+        featuredPosts: updateList(prev.featuredPosts),
+      };
+    });
+    return request;
   }, []);
 
 
@@ -642,6 +696,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       deletePost,
       reportPost,
       reportComment,
+      requestPostFeature,
       handleReport,
       showToast,
       removeToast,
@@ -657,6 +712,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       getPendingReports,
       loadHomePosts,
       loadFeedPosts,
+      loadFeaturedPosts,
       loadReports,
       loadStats,
       loadSettings,
@@ -676,6 +732,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       deletePost,
       reportPost,
       reportComment,
+      requestPostFeature,
       handleReport,
       showToast,
       removeToast,
@@ -691,6 +748,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       getPendingReports,
       loadHomePosts,
       loadFeedPosts,
+      loadFeaturedPosts,
       loadReports,
       loadStats,
       loadSettings,

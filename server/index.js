@@ -19,6 +19,7 @@ import { registerPublicSiteRoutes } from './routes/public/site-routes.js';
 import { registerPublicPostsRoutes } from './routes/public/posts-routes.js';
 import { registerPublicCommentsRoutes } from './routes/public/comments-routes.js';
 import { registerPublicReportsRoutes } from './routes/public/reports-routes.js';
+import { registerPublicPostFeaturesRoutes } from './routes/public/post-features-routes.js';
 import { registerPublicSystemRoutes } from './routes/public/system-routes.js';
 import { registerPublicShopRoutes } from './routes/public/shop-routes.js';
 import { registerPublicFramesRoutes } from './routes/public/frames-routes.js';
@@ -31,9 +32,11 @@ import { registerAdminNameStylesRoutes } from './routes/admin/name-styles-routes
 import { registerPublicNameStylesRoutes } from './routes/public/name-styles-routes.js';
 import { registerPublicUploadRoutes } from './routes/public/upload-routes.js';
 import { registerPublicWikiRoutes } from './routes/public/wiki-routes.js';
+import { createPostHotScoreService } from './services/post-hot-score-service.js';
 import { registerAdminAuthRoutes } from './routes/admin/auth-routes.js';
 import { registerAdminAnnouncementRoutes } from './routes/admin/announcement-routes.js';
 import { registerAdminReportsRoutes } from './routes/admin/reports-routes.js';
+import { registerAdminPostFeaturesRoutes } from './routes/admin/post-features-routes.js';
 import { registerAdminRumorsRoutes } from './routes/admin/rumors-routes.js';
 import { registerAdminSettingsRoutes } from './routes/admin/settings-routes.js';
 import { registerAdminPostsRoutes } from './routes/admin/posts-routes.js';
@@ -561,6 +564,7 @@ const RATE_LIMIT_ERROR_MESSAGES = {
   post: '发帖过于频繁，请稍后再试',
   comment: '评论过于频繁，请稍后再试',
   report: '举报过于频繁，请稍后再试',
+  feature: '精华申请过于频繁，请稍后再试',
   feedback: '留言过于频繁，请稍后再试',
   wiki: 'Wiki 提交过于频繁，请稍后再试',
   upload: '图片上传过于频繁，请稍后再试',
@@ -1190,6 +1194,9 @@ const mapPostRow = (row, isHot) => ({
   viewerFavorited: Boolean(row.viewer_favorited),
   viewerIsAuthor: Boolean(row.viewer_is_author),
   viewerDeleteRequestStatus: row.viewer_delete_request_status || null,
+  isFeatured: row.featured === 1,
+  featuredAt: row.featured_at || null,
+  viewerFeatureRequestStatus: row.viewer_feature_request_status || null,
   // 仅使用发帖时写入的快照，旧帖/未快照帖不显示框
   authorFrameId: row.author_frame_id || null,
   authorNameStyleId: row.author_name_style_id || null,
@@ -1317,7 +1324,19 @@ const buildCommentTree = (rows) => {
   return roots;
 };
 
-const hotScoreSql = '(views_count * 0.2 + likes_count * 3 + comments_count * 2)';
+// 非热门列表仍使用轻量的历史互动分数，明确排除浏览量。
+// 热门页的分时衰减、独立互动人数和评论封顶由 postHotScoreService 负责。
+const hotScoreSql = `(
+  3.0 * ln(1 + MAX(posts.likes_count, 0))
+  + 5.0 * ln(1 + (
+    SELECT COUNT(1)
+    FROM post_favorites hot_favorites
+    WHERE hot_favorites.post_id = posts.id
+  ))
+  + 4.0 * ln(1 + MAX(posts.comments_count, 0))
+  - 1.0 * ln(1 + MAX(posts.dislikes_count, 0))
+)`;
+const postHotScoreService = createPostHotScoreService({ db });
 
 
 registerPublicSystemRoutes(app, {
@@ -1398,6 +1417,7 @@ app.get('/api/update-announcements/latest', (req, res) => {
 registerPublicPostsRoutes(app, {
   db,
   hotScoreSql,
+  postHotScoreService,
   mapPostRow,
   mapCommentRow,
   checkBanFor,
@@ -1470,6 +1490,16 @@ registerPublicReportsRoutes(app, {
   wecomWebhookService,
 });
 
+registerPublicPostFeaturesRoutes(app, {
+  db,
+  requireFingerprint,
+  getRequestIdentityContext,
+  enforceRateLimit,
+  checkBanFor,
+  getClientIp,
+  crypto,
+});
+
 const contentReviewAdmin = requireAdminModule('content_review');
 const postsAdmin = requireAdminModule('posts');
 const wikiAdmin = requireAdminModule('wiki');
@@ -1515,6 +1545,17 @@ registerAdminReportsRoutes(app, {
   upsertBan,
   BAN_PERMISSIONS,
   resolveStoredIdentityHash,
+});
+
+registerAdminPostFeaturesRoutes(app, {
+  db,
+  requireAdmin,
+  requireAdminCsrf,
+  requireAdminRead: contentReviewAdmin.read,
+  requireAdminManage: contentReviewAdmin.manage,
+  logAdminAction,
+  createNotification,
+  formatRelativeTime,
 });
 
 registerAdminRumorsRoutes(app, {

@@ -121,6 +121,7 @@ export const api = {
   getHomePosts: (limit, offset = 0) => apiFetch(`/posts/home${toQuery({ limit, offset })}`),
   getPostById: (postId) => apiFetch(`/posts/${postId}`),
   getFeedPosts: (filter, search) => apiFetch(`/posts/feed${toQuery({ filter, search })}`),
+  getFeaturedPosts: (limit = 20, offset = 0) => apiFetch(`/posts/featured${toQuery({ limit, offset })}`),
   getPostTags: (limit = 50) => apiFetch(`/posts/tags${toQuery({ limit })}`),
   searchPosts: (
     q,
@@ -146,6 +147,9 @@ export const api = {
   likePost: (postId) => apiFetch(`/posts/${postId}/like`, { method: 'POST' }),
   dislikePost: (postId) => apiFetch(`/posts/${postId}/dislike`, { method: 'POST' }),
   toggleFavoritePost: (postId) => apiFetch(`/posts/${postId}/favorite`, { method: 'POST' }),
+  requestPostFeature: (postId) => apiFetch(`/posts/${encodeURIComponent(String(postId || ''))}/feature-requests`, {
+    method: 'POST',
+  }),
   viewPost: (postId) => apiFetch(`/posts/${postId}/view`, { method: 'POST' }),
   getComments: (postId, offset = 0, limit = 10) => apiFetch(`/posts/${postId}/comments${toQuery({ offset, limit })}`),
   getCommentThread: (postId, commentId) => apiFetch(`/posts/${postId}/comment-thread${toQuery({ commentId })}`),
@@ -234,6 +238,11 @@ export const api = {
     body: JSON.stringify({ action: String(action || '').trim().toLowerCase(), reason, ...options }),
   }),
   getAdminPosts: (params = {}) => apiFetch(`/admin/posts${toQuery(params)}`),
+  getAdminPostFeatures: (params = {}) => apiFetch(`/admin/post-features${toQuery(params)}`),
+  handleAdminPostFeature: (postId, action, reason = '') => apiFetch(`/admin/post-features/${encodeURIComponent(String(postId || ''))}/action`, {
+    method: 'POST',
+    body: JSON.stringify({ action, reason }),
+  }),
   createAdminPost: (content, tags = [], options = {}) => apiFetch('/admin/posts', {
     method: 'POST',
     body: JSON.stringify({ content, tags, ...options }),
@@ -344,7 +353,7 @@ export const api = {
     shopEnabled?: boolean;
     shopDailyClaimCoins?: number;
     defaultPostTags?: string[];
-    rateLimits?: Partial<Record<'post' | 'comment' | 'report' | 'feedback' | 'wiki' | 'upload', { limit?: number; windowMs?: number }>>;
+    rateLimits?: Partial<Record<'post' | 'comment' | 'report' | 'feature' | 'feedback' | 'wiki' | 'upload', { limit?: number; windowMs?: number }>>;
     autoHideReportThreshold?: number;
     wecomWebhook?: { enabled?: boolean; url?: string; clearUrl?: boolean };
   }) => apiFetch('/admin/settings', {

@@ -18,6 +18,8 @@ const createSchema = (db) => {
       hidden INTEGER NOT NULL DEFAULT 0,
       hidden_at INTEGER,
       hidden_review_status TEXT,
+      featured INTEGER NOT NULL DEFAULT 0,
+      featured_at INTEGER,
       comments_count INTEGER NOT NULL DEFAULT 0,
       created_at INTEGER
     );

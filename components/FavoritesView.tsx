@@ -5,6 +5,7 @@ import { Post } from '../types';
 import { useApp } from '../store/AppContext';
 import MarkdownRenderer from './MarkdownRenderer';
 import { buildPostPath, buildPostShareUrl, copyTextToClipboard } from './clipboard';
+import FeaturedBadge from './FeaturedBadge';
 
 const FavoritesView: React.FC = () => {
   const { showToast, isFavorited, toggleFavoritePost } = useApp();
@@ -118,6 +119,9 @@ const FavoritesView: React.FC = () => {
             <div className="flex items-start justify-between gap-3">
               <div className="text-xs text-gray-400 font-mono flex items-center gap-1">
                 {post.timestamp}
+                {post.isFeatured && (
+                  <FeaturedBadge className="ml-2" />
+                )}
               </div>
               <div className="flex items-center gap-2">
                 <button

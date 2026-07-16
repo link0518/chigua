@@ -16,7 +16,8 @@ export const createModerationRepository = (db) => {
       return;
     }
     const placeholders = buildPlaceholders(ids);
-    db.prepare(`UPDATE posts SET deleted = ?, deleted_at = ? WHERE id IN (${placeholders})`)
+    const featureResetSql = deleted ? ', featured = 0, featured_at = NULL' : '';
+    db.prepare(`UPDATE posts SET deleted = ?, deleted_at = ?${featureResetSql} WHERE id IN (${placeholders})`)
       .run(deleted, deletedAt, ...ids);
   };
 
@@ -107,7 +108,7 @@ export const createModerationRepository = (db) => {
   const getPostIdentity = (postId) => db.prepare('SELECT ip, fingerprint, created_at FROM posts WHERE id = ?').get(postId);
 
   const softDeletePost = (postId, deletedAt) => {
-    db.prepare('UPDATE posts SET deleted = 1, deleted_at = ? WHERE id = ?')
+    db.prepare('UPDATE posts SET deleted = 1, deleted_at = ?, featured = 0, featured_at = NULL WHERE id = ?')
       .run(deletedAt, postId);
   };
 

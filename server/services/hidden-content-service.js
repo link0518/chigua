@@ -68,7 +68,7 @@ const markPostHidden = (db, postId, now, reviewStatus = HIDDEN_REVIEW_PENDING) =
   if (!row || row.deleted === 1 || row.hidden === 1) {
     return false;
   }
-  db.prepare('UPDATE posts SET hidden = 1, hidden_at = ?, hidden_review_status = ? WHERE id = ?')
+  db.prepare('UPDATE posts SET hidden = 1, hidden_at = ?, hidden_review_status = ?, featured = 0, featured_at = NULL WHERE id = ?')
     .run(now, reviewStatus, postId);
   return true;
 };
@@ -151,7 +151,7 @@ export const createHiddenContentService = ({ db, logAdminAction, getAutoHideRepo
           db.prepare('UPDATE comments SET hidden = 1, hidden_at = ?, hidden_review_status = ? WHERE id = ?')
             .run(hiddenAt, HIDDEN_REVIEW_KEPT, targetId);
         } else {
-          db.prepare('UPDATE posts SET hidden = 1, hidden_at = ?, hidden_review_status = ? WHERE id = ?')
+          db.prepare('UPDATE posts SET hidden = 1, hidden_at = ?, hidden_review_status = ?, featured = 0, featured_at = NULL WHERE id = ?')
             .run(hiddenAt, HIDDEN_REVIEW_KEPT, targetId);
         }
 

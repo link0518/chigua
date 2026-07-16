@@ -44,3 +44,6 @@ frame-packages/
 
 # 本地瓜条检索与投稿资料，不入库
 /瓜条投稿资料/
+
+# 本地设计验收生成的临时浏览器配置，可能包含 Cookie、历史记录与登录数据
+/design-demos/.edge-profile-*/

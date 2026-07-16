@@ -1,15 +1,18 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ThumbsUp, ThumbsDown, MessageSquare, MoreHorizontal, Flag, Share2, Star, UserX } from 'lucide-react';
+import { ThumbsUp, ThumbsDown, MessageSquare, Share2, UserX } from 'lucide-react';
 import { Post } from '../types';
 import { Badge, roughBorderClassSm } from './SketchUI';
 import { useApp } from '../store/AppContext';
 import ReportModal from './ReportModal';
 import MarkdownRenderer from './MarkdownRenderer';
 import DeveloperMiniCard from './DeveloperMiniCard';
+import FeatureRequestConfirmModal from './FeatureRequestConfirmModal';
 import NicknameFrameCard from './NicknameFrameCard';
+import PostActionMenu from './PostActionMenu';
 import { useFrameRegistryVersion } from './nicknameFrames';
 import { postMatchesHiddenFilters } from '../store/hiddenPostTags';
 import { buildPostPath, buildPostShareUrl, copyTextToClipboard } from './clipboard';
+import FeaturedBadge from './FeaturedBadge';
 
 type FilterType = 'week' | 'today' | 'all';
 const DISPLAY_LIMIT = 10;
@@ -23,11 +26,12 @@ const PostItem: React.FC<{
   onComment: () => void;
   onShare: () => void;
   onReport: () => void;
+  onRequestFeature: () => void;
   onTagClick: (tag: string) => void;
   isLiked: boolean;
   isDisliked: boolean;
   isFavorited: boolean;
-}> = ({ post, rank, onLike, onDislike, onFavorite, onComment, onShare, onReport, onTagClick, isLiked, isDisliked, isFavorited }) => {
+}> = ({ post, rank, onLike, onDislike, onFavorite, onComment, onShare, onReport, onRequestFeature, onTagClick, isLiked, isDisliked, isFavorited }) => {
   useFrameRegistryVersion();
   const isDeveloperPost = post.author === 'admin';
   return (
@@ -102,13 +106,9 @@ const PostItem: React.FC<{
               <ThumbsDown className={`w-5 h-5 mt-1 ${isDisliked ? 'fill-current' : ''}`} />
               <span>{post.dislikes > 1000 ? (post.dislikes / 1000).toFixed(1) + 'k' : post.dislikes}</span>
             </button>
-            <button
-              onClick={onFavorite}
-              className={`flex items-center gap-1 transition-colors ${isFavorited ? 'text-amber-600' : 'hover:text-ink'}`}
-              title={isFavorited ? '取消收藏' : '收藏'}
-            >
-              <Star className={`w-5 h-5 ${isFavorited ? 'fill-current' : ''}`} />
-            </button>
+            {post.isFeatured && (
+              <FeaturedBadge />
+            )}
             <button
               onClick={onComment}
               className="flex items-center gap-1 hover:text-ink transition-colors ml-auto"
@@ -124,17 +124,14 @@ const PostItem: React.FC<{
               <span>分享</span>
             </button>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={onReport}
-              className="flex items-center gap-1 text-gray-400 hover:text-red-600 transition-colors text-sm"
-            >
-              <Flag className="w-4 h-4" />
-            </button>
-            <button className="text-pencil hover:text-ink">
-              <MoreHorizontal className="w-5 h-5" />
-            </button>
-          </div>
+          <PostActionMenu
+            post={post}
+            isFavorited={isFavorited}
+            onFavorite={onFavorite}
+            onReport={onReport}
+            onRequestFeature={onRequestFeature}
+            triggerClassName="text-pencil hover:text-ink"
+          />
         </div>
 
       </div>
@@ -150,6 +147,7 @@ const FeedView: React.FC = () => {
     postId: '',
     content: '',
   });
+  const [featureRequestPost, setFeatureRequestPost] = useState<Post | null>(null);
 
   useEffect(() => {
     loadFeedPosts(filter).catch(() => {});
@@ -287,6 +285,7 @@ const FeedView: React.FC = () => {
               onComment={() => handleComment(post.id, post.content)}
               onShare={() => handleShare(post.id)}
               onReport={() => handleReport(post.id, post.content)}
+              onRequestFeature={() => setFeatureRequestPost(post)}
               onTagClick={handleTagClick}
               isLiked={isLiked(post.id)}
               isDisliked={isDisliked(post.id)}
@@ -309,6 +308,11 @@ const FeedView: React.FC = () => {
         onClose={() => setReportModal({ isOpen: false, postId: '', content: '' })}
         postId={reportModal.postId}
         contentPreview={reportModal.content.substring(0, 80)}
+      />
+
+      <FeatureRequestConfirmModal
+        post={featureRequestPost}
+        onClose={() => setFeatureRequestPost(null)}
       />
 
     </div>

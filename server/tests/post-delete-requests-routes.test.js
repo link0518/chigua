@@ -32,6 +32,8 @@ const createDb = () => {
       dislikes_count INTEGER NOT NULL DEFAULT 0,
       comments_count INTEGER NOT NULL DEFAULT 0,
       views_count INTEGER NOT NULL DEFAULT 0,
+      featured INTEGER NOT NULL DEFAULT 0,
+      featured_at INTEGER,
       comment_identity_enabled INTEGER NOT NULL DEFAULT 0,
       comment_identity_guest_seq INTEGER NOT NULL DEFAULT 0,
       author_frame_id TEXT,
@@ -50,6 +52,15 @@ const createDb = () => {
       reviewed_by INTEGER,
       reviewed_by_username TEXT,
       review_reason TEXT
+    );
+
+    CREATE TABLE post_feature_requests (
+      id TEXT PRIMARY KEY,
+      post_id TEXT NOT NULL,
+      requester_identity_key TEXT NOT NULL,
+      requester_legacy_fingerprint TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      created_at INTEGER NOT NULL
     );
 
     CREATE TABLE post_reactions_fingerprint (

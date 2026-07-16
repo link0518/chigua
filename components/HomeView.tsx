@@ -5,12 +5,10 @@ import {
   ArrowRight,
   ArrowUp,
   ArrowUpRight,
-  Flag,
   LayoutGrid,
   MessageCircle,
   Rows3,
   Share2,
-  Star,
   ThumbsDown,
   ThumbsUp,
   UserX,
@@ -21,16 +19,19 @@ import { useApp } from '../store/AppContext';
 import type { Post } from '../types';
 import CommentModal from './CommentModal';
 import DeveloperMiniCard from './DeveloperMiniCard';
+import FeatureRequestConfirmModal from './FeatureRequestConfirmModal';
 import HomePostGridCard from './HomePostGridCard';
 import NicknameFrameCard from './NicknameFrameCard';
 import { useFrameRegistryVersion } from './nicknameFrames';
 import MarkdownRenderer from './MarkdownRenderer';
 import Modal from './Modal';
 import ReportModal from './ReportModal';
+import PostActionMenu from './PostActionMenu';
 import { SketchButton } from './SketchUI';
 import Turnstile, { TurnstileHandle } from './Turnstile';
 import { postMatchesHiddenFilters } from '../store/hiddenPostTags';
 import { buildPostPath, buildPostShareUrl, copyTextToClipboard } from './clipboard';
+import FeaturedBadge from './FeaturedBadge';
 
 type HomeViewMode = 'focus' | 'grid';
 
@@ -103,6 +104,7 @@ const HomeView: React.FC = () => {
   const [commentPostId, setCommentPostId] = useState<string | null>(null);
   const [focusCommentId, setFocusCommentId] = useState<string | null>(null);
   const [reportModal, setReportModal] = useState<HomeReportModalState>(() => createEmptyReportModalState());
+  const [featureRequestPost, setFeatureRequestPost] = useState<Post | null>(null);
   const [deleteRequestModal, setDeleteRequestModal] = useState<{ isOpen: boolean; postId: string; content: string; reason: string }>({
     isOpen: false,
     postId: '',
@@ -802,7 +804,7 @@ const HomeView: React.FC = () => {
   const renderModeHeader = () => (
     <div className="mx-auto mb-5 flex w-full max-w-6xl justify-center sm:justify-end">
       <div className="relative inline-flex items-stretch border-2 border-ink bg-white p-1 shadow-sketch doodle-border !rounded-lg">
-        <span className="pointer-events-none absolute -top-3 left-3 select-none rotate-[-2deg] border border-ink bg-alert px-2 py-0.5 font-hand text-[11px] font-bold leading-none text-ink">
+        <span className="pointer-events-auto absolute -top-3 left-3 cursor-default select-none rotate-[-2deg] border border-ink bg-alert px-2 py-0.5 font-hand text-[11px] font-bold leading-none text-ink">
           浏览方式
         </span>
         <button
@@ -935,13 +937,9 @@ const HomeView: React.FC = () => {
                     热门
                   </span>
                 )}
-                <button
-                  type="button"
-                  onClick={() => handleFavorite(currentPost.id)}
-                  className={`flex shrink-0 items-center justify-center rounded-full border-2 border-ink px-2.5 py-2 shadow-sketch transition-all active:translate-x-[2px] active:translate-y-[2px] active:shadow-sketch-active ${isFavorited(currentPost.id) ? 'bg-marker-yellow hover:bg-marker-yellow/90' : 'bg-white hover:bg-highlight'}`}
-                >
-                  <Star className="h-5 w-5" fill={isFavorited(currentPost.id) ? 'currentColor' : 'none'} />
-                </button>
+                {currentPost.isFeatured && (
+                  <FeaturedBadge />
+                )}
               </div>
             </div>
 
@@ -1013,14 +1011,14 @@ const HomeView: React.FC = () => {
                   <Share2 className="h-[22px] w-[22px]" />
                   <span className="font-hand text-base font-bold">分享</span>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => openReportModal(currentPost)}
-                  className="flex items-center gap-1 border-l-2 border-dotted border-paper-rule pl-2 text-pencil/70 transition-colors hover:text-melon-deep"
-                >
-                  <Flag className="h-5 w-5" />
-                  <span className="font-hand pt-0.5 text-sm font-bold">举报</span>
-                </button>
+                <PostActionMenu
+                  post={currentPost}
+                  isFavorited={isFavorited(currentPost.id)}
+                  onFavorite={() => handleFavorite(currentPost.id)}
+                  onReport={() => openReportModal(currentPost)}
+                  onRequestFeature={() => setFeatureRequestPost(currentPost)}
+                  triggerClassName="text-ink hover:text-leaf-dark"
+                />
               </div>
             </div>
           </div>
@@ -1066,6 +1064,7 @@ const HomeView: React.FC = () => {
             onFavorite={() => handleFavorite(post.id)}
             onShare={() => copyShareLink(post.id)}
             onReport={() => openReportModal(post)}
+            onRequestFeature={() => setFeatureRequestPost(post)}
             onTagClick={openTagSearch}
           />
           );
@@ -1223,6 +1222,11 @@ const HomeView: React.FC = () => {
         contentPreview={reportModal.content.substring(0, 80)}
         canRequestPostDeletion={reportModal.viewerIsAuthor && reportModal.viewerDeleteRequestStatus !== 'pending'}
         onRequestPostDeletion={handleRequestPostDeletionFromReport}
+      />
+
+      <FeatureRequestConfirmModal
+        post={featureRequestPost}
+        onClose={() => setFeatureRequestPost(null)}
       />
 
       <Modal isOpen={deleteRequestModal.isOpen} onClose={closeDeleteRequestModal} title="申请删除帖子">

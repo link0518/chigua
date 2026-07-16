@@ -6,6 +6,7 @@ import { useApp } from '../store/AppContext';
 import { SketchButton, Badge } from './SketchUI';
 import { buildPostPath } from './clipboard';
 import ColorfulName from './ColorfulName';
+import FeaturedBadge from './FeaturedBadge';
 
 const PAGE_SIZE = 20;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -354,6 +355,7 @@ const SearchView: React.FC = () => {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-pencil w-4 h-4" />
                 <input
                   type="text"
+                  autoFocus
                   value={keyword}
                   onChange={(event) => setKeyword(event.target.value)}
                   placeholder="输入关键词，或输入 #标签"
@@ -453,6 +455,9 @@ const SearchView: React.FC = () => {
             <div key={post.id} className="min-w-0 rounded-lg border-2 border-ink bg-white p-5 shadow-sketch transition-all hover:shadow-sketch-hover">
               <div className="mb-2 flex min-w-0 flex-wrap gap-2">
                 {post.isHot && <Badge color="bg-highlight">热门</Badge>}
+                {post.isFeatured && (
+                  <FeaturedBadge />
+                )}
                 {(post.tags || []).slice(0, 2).map((tag) => (
                   <button
                     type="button"

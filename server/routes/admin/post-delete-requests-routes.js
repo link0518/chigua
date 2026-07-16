@@ -165,7 +165,7 @@ export const registerAdminPostDeleteRequestsRoutes = (app, deps) => {
       }
 
       if (action === 'approve') {
-        db.prepare('UPDATE posts SET deleted = 1, deleted_at = ? WHERE id = ?')
+        db.prepare('UPDATE posts SET deleted = 1, deleted_at = ?, featured = 0, featured_at = NULL WHERE id = ?')
           .run(now, existing.post_id);
         moderationRepository.resolvePendingReportsForPosts(
           [existing.post_id],

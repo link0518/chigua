@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Flag, Gavel, BarChart2, Bell, Search, Trash2, Ban, Eye, EyeOff, LayoutDashboard, LogOut, CheckCircle, XCircle, FileText, Pencil, RotateCcw, Shield, ClipboardList, MessageSquare, Menu, X, Settings, BookOpen, AlertTriangle, UserCog, Store } from 'lucide-react';
+import { Flag, Gavel, BarChart2, Bell, Search, Trash2, Ban, Eye, EyeOff, LayoutDashboard, LogOut, CheckCircle, XCircle, FileText, Pencil, RotateCcw, Shield, ClipboardList, MessageSquare, Menu, X, Settings, BookOpen, AlertTriangle, UserCog, Store, Star } from 'lucide-react';
 import { SketchButton, Badge } from './SketchUI';
 import { AdminAuditLog, AdminComment, AdminHiddenItem, AdminPermissionDefinitions, AdminPermissions, AdminUserAccount, AdminPost, FeedbackMessage, PostDeleteRequest, Report, UpdateAnnouncementItem } from '../types';
 import { useApp } from '../store/AppContext';
@@ -15,6 +15,7 @@ import {
 import MarkdownRenderer from './MarkdownRenderer';
 import AdminWikiPanel from './AdminWikiPanel';
 import AdminRumorPanel from './AdminRumorPanel';
+import AdminFeaturedPanel from './AdminFeaturedPanel';
 import { copyTextToClipboard } from './clipboard';
 import AdminOverviewView from '@/features/admin/views/AdminOverviewView';
 import AdminFeedbackView from '@/features/admin/views/AdminFeedbackView';
@@ -53,7 +54,7 @@ import AdminModerationDrawer, {
 } from '@/features/admin/components/AdminModerationDrawer';
 import AdminActionDrawer from '@/features/admin/components/AdminActionDrawer';
 
-type AdminView = 'overview' | 'reports' | 'processed' | 'posts' | 'hidden' | 'deleteRequests' | 'bans' | 'audit' | 'feedback' | 'announcement' | 'settings' | 'shop' | 'wiki' | 'rumors' | 'adminUsers';
+type AdminView = 'overview' | 'reports' | 'processed' | 'posts' | 'hidden' | 'deleteRequests' | 'bans' | 'audit' | 'feedback' | 'announcement' | 'settings' | 'shop' | 'wiki' | 'rumors' | 'features' | 'adminUsers';
 type PostStatusFilter = 'all' | 'active' | 'hidden' | 'deleted';
 type PostSort = 'time' | 'hot' | 'reports';
 type HiddenTypeFilter = 'all' | 'post' | 'comment';
@@ -349,6 +350,7 @@ const AdminDashboard: React.FC = () => {
   const [feedbackUnreadCount, setFeedbackUnreadCount] = useState(0);
   const [wikiPendingCount, setWikiPendingCount] = useState(0);
   const [rumorPendingCount, setRumorPendingCount] = useState(0);
+  const [featurePendingCount, setFeaturePendingCount] = useState(0);
   const [feedbackLoading, setFeedbackLoading] = useState(false);
   const [adminUsers, setAdminUsers] = useState<AdminUserAccount[]>([]);
   const [adminUsersLoading, setAdminUsersLoading] = useState(false);
@@ -858,6 +860,23 @@ const AdminDashboard: React.FC = () => {
     }
   }, [canReadContentReview]);
 
+  const fetchFeaturePendingCount = useCallback(async () => {
+    if (!canReadContentReview) {
+      setFeaturePendingCount(0);
+      return;
+    }
+    try {
+      const data = await api.getAdminPostFeatures({
+        mode: 'pending',
+        page: 1,
+        limit: 1,
+      });
+      setFeaturePendingCount(Number(data?.total || 0));
+    } catch {
+      setFeaturePendingCount(0);
+    }
+  }, [canReadContentReview]);
+
   const fetchAnnouncement = useCallback(async () => {
     if (!canReadPublish) {
       setAnnouncementText('');
@@ -1046,7 +1065,8 @@ const AdminDashboard: React.FC = () => {
     fetchDeleteRequestPendingCount().catch(() => { });
     fetchWikiPendingCount().catch(() => { });
     fetchRumorPendingCount().catch(() => { });
-  }, [currentView, fetchDeleteRequestPendingCount, fetchFeedbackUnreadCount, fetchHiddenPendingCount, fetchRumorPendingCount, fetchWikiPendingCount]);
+    fetchFeaturePendingCount().catch(() => { });
+  }, [currentView, fetchDeleteRequestPendingCount, fetchFeaturePendingCount, fetchFeedbackUnreadCount, fetchHiddenPendingCount, fetchRumorPendingCount, fetchWikiPendingCount]);
 
   useEffect(() => {
     if (currentView !== 'announcement') {
@@ -2432,6 +2452,7 @@ const AdminDashboard: React.FC = () => {
           { view: 'overview', icon: <LayoutDashboard size={18} />, label: '待办工作台', visible: true },
           { view: 'reports', icon: <Flag size={18} />, label: '待处理举报', badge: pendingReportCount, visible: canReadContentReview },
           { view: 'rumors', icon: <AlertTriangle size={18} />, label: '谣言审核', badge: rumorPendingCount, visible: canReadContentReview },
+          { view: 'features', icon: <Star size={18} />, label: '精华管理', badge: featurePendingCount, visible: canReadContentReview },
           { view: 'deleteRequests', icon: <Trash2 size={18} />, label: '删除申请', badge: deleteRequestPendingCount, visible: canReadContentReview },
           { view: 'wiki', icon: <BookOpen size={18} />, label: '瓜条审核', badge: wikiPendingCount, visible: canReadWiki },
           { view: 'feedback', icon: <MessageSquare size={18} />, label: '留言管理', badge: feedbackUnreadCount, visible: canReadFeedback },
@@ -2606,6 +2627,7 @@ const AdminDashboard: React.FC = () => {
               {currentView === 'shop' && <><Store /> 商城管理</>}
               {currentView === 'wiki' && <><BookOpen /> 瓜条审核</>}
               {currentView === 'rumors' && <><AlertTriangle /> 谣言审核</>}
+              {currentView === 'features' && <><Star /> 精华管理</>}
               {currentView === 'feedback' && <><MessageSquare /> 留言管理</>}
               {currentView === 'reports' && <><Flag /> 待处理举报</>}
               {currentView === 'processed' && <><Gavel /> 已处理</>}
@@ -3247,6 +3269,10 @@ const AdminDashboard: React.FC = () => {
 
             {currentView === 'rumors' && (
               <AdminRumorPanel showToast={showToast} onPendingCountChange={fetchRumorPendingCount} canManage={canManageContentReview} />
+            )}
+
+            {currentView === 'features' && (
+              <AdminFeaturedPanel showToast={showToast} onPendingCountChange={fetchFeaturePendingCount} canManage={canManageContentReview} />
             )}
 
             {/* Feedback View */}

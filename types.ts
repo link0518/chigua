@@ -2,6 +2,7 @@ export enum ViewType {
   HOME = 'HOME',
   SUBMISSION = 'SUBMISSION',
   FEED = 'FEED',
+  FEATURED = 'FEATURED',
   SEARCH = 'SEARCH',
   FAVORITES = 'FAVORITES',
   WIKI = 'WIKI',
@@ -30,6 +31,9 @@ export interface Post {
   viewerFavorited?: boolean;
   viewerIsAuthor?: boolean;
   viewerDeleteRequestStatus?: 'pending' | null;
+  isFeatured?: boolean;
+  featuredAt?: number | null;
+  viewerFeatureRequestStatus?: 'pending' | 'approved' | 'rejected' | null;
   /** 作者装备的昵称框 id */
   authorFrameId?: string | null;
   /** 发帖快照：炫彩昵称样式 id */
@@ -108,6 +112,13 @@ export interface CommentPostIdentity {
   role: 'op' | 'guest';
 }
 
+export interface FeatureRequestSubmissionResult {
+  id: string;
+  postId: string;
+  status: 'pending';
+  createdAt: number;
+}
+
 /** 搜索结果按帖子聚合，命中的评论仅返回当前页所需的预览。 */
 export interface SearchPost extends Post {
   matchedComments?: Comment[];
@@ -125,7 +136,9 @@ export interface NotificationItem {
     | 'rumor_rejected'
     | 'feedback_reply'
     | 'post_delete_request_approved'
-    | 'post_delete_request_rejected';
+    | 'post_delete_request_rejected'
+    | 'post_feature_request_approved'
+    | 'post_feature_request_rejected';
   postId?: string | null;
   commentId?: string | null;
   preview?: string | null;
@@ -218,6 +231,8 @@ export interface AdminPost extends AdminIdentityInfo {
   hidden?: boolean;
   hiddenAt?: number | null;
   hiddenReviewStatus?: 'pending' | 'kept' | null;
+  isFeatured?: boolean;
+  featuredAt?: number | null;
   hotScore?: number;
   matchedComments?: AdminComment[];
   matchedCommentCount?: number;
@@ -354,6 +369,48 @@ export interface PostDeleteRequest extends AdminIdentityInfo {
   reviewedBy?: number | null;
   reviewedByUsername?: string | null;
   reviewReason?: string | null;
+}
+
+export interface AdminFeaturePendingItem {
+  postId: string;
+  postContent: string;
+  postCreatedAt: number;
+  postDeleted: boolean;
+  postHidden: boolean;
+  isFeatured: boolean;
+  featuredAt?: number | null;
+  requestCount: number;
+  requesterCount: number;
+  firstRequestedAt: number;
+  latestRequestedAt: number;
+  latestRequestedTime?: string;
+}
+
+export interface AdminFeaturedPostItem {
+  postId: string;
+  postContent: string;
+  postCreatedAt: number;
+  featuredAt?: number | null;
+  isFeatured: boolean;
+}
+
+export interface AdminFeatureProcessedItem {
+  id: string;
+  postId: string;
+  postContent: string;
+  status: 'approved' | 'rejected';
+  createdAt: number;
+  reviewedAt?: number | null;
+  reviewedBy?: number | null;
+  reviewedByUsername?: string | null;
+  reviewReason?: string | null;
+  requesterIdentityKey?: string | null;
+  requesterLegacyFingerprint?: string | null;
+  requesterIp?: string | null;
+  postDeleted: boolean;
+  postHidden: boolean;
+  isFeatured: boolean;
+  featuredAt?: number | null;
 }
 
 export interface UpdateAnnouncementItem {

@@ -8,7 +8,7 @@ export const ADMIN_PERMISSION_MODULES = [
   {
     key: 'content_review',
     label: '内容审核',
-    description: '举报、隐藏内容、谣言审核',
+    description: '举报、隐藏内容、谣言与精华审核',
   },
   {
     key: 'posts',

@@ -18,6 +18,9 @@ export const resolveViewFromPath = (path: string) => {
   if (normalized === '/favorites') {
     return ViewType.FAVORITES;
   }
+  if (normalized === '/featured') {
+    return ViewType.FEATURED;
+  }
   if (normalized === '/wiki' || /^\/wiki\/[^/]+$/.test(normalized)) {
     return ViewType.WIKI;
   }
@@ -36,6 +39,9 @@ export const getPathForView = (view: ViewType) => {
   }
   if (view === ViewType.FAVORITES) {
     return '/favorites';
+  }
+  if (view === ViewType.FEATURED) {
+    return '/featured';
   }
   if (view === ViewType.WIKI) {
     return '/wiki';

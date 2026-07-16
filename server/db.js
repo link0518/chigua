@@ -43,6 +43,8 @@ CREATE TABLE IF NOT EXISTS posts (
   dislikes_count INTEGER NOT NULL DEFAULT 0,
   comments_count INTEGER NOT NULL DEFAULT 0,
   views_count INTEGER NOT NULL DEFAULT 0,
+  featured INTEGER NOT NULL DEFAULT 0,
+  featured_at INTEGER,
   comment_identity_enabled INTEGER NOT NULL DEFAULT 0,
   comment_identity_guest_seq INTEGER NOT NULL DEFAULT 0
 );
@@ -221,6 +223,22 @@ CREATE TABLE IF NOT EXISTS post_delete_requests (
   review_reason TEXT
 );
 
+CREATE TABLE IF NOT EXISTS post_feature_requests (
+  id TEXT PRIMARY KEY,
+  post_id TEXT NOT NULL,
+  requester_identity_key TEXT NOT NULL,
+  requester_legacy_fingerprint TEXT,
+  requester_ip TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  created_at INTEGER NOT NULL,
+  reviewed_at INTEGER,
+  reviewed_by INTEGER,
+  reviewed_by_username TEXT,
+  review_reason TEXT,
+  UNIQUE(post_id, requester_identity_key),
+  FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS notifications (
   id TEXT PRIMARY KEY,
   recipient_fingerprint TEXT NOT NULL,
@@ -391,6 +409,9 @@ ensureColumn('posts', 'rumor_status', 'TEXT');
 ensureColumn('posts', 'rumor_status_updated_at', 'INTEGER');
 ensureColumn('posts', 'comment_identity_enabled', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('posts', 'comment_identity_guest_seq', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('posts', 'featured', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('posts', 'featured_at', 'INTEGER');
+ensureColumn('post_feature_requests', 'requester_legacy_fingerprint', 'TEXT');
 // 发帖时快照的昵称框（仅新帖生效，不随装备变更回溯）
 ensureColumn('posts', 'author_frame_id', 'TEXT');
 // 发帖时快照的炫彩昵称样式（发帖/回复均写入）
@@ -591,8 +612,12 @@ const ensureIndexes = () => {
   CREATE INDEX IF NOT EXISTS idx_posts_deleted ON posts(deleted);
   CREATE INDEX IF NOT EXISTS idx_posts_hidden_deleted_created_at ON posts(hidden, deleted, created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_posts_rumor_status_updated_at ON posts(rumor_status, rumor_status_updated_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_posts_featured_at ON posts(featured, featured_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_post_reactions_created_at ON post_reactions(created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_post_reactions_fingerprint_created_at ON post_reactions_fingerprint(created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_post_reactions_fingerprint_post_id ON post_reactions_fingerprint(post_id);
   CREATE INDEX IF NOT EXISTS idx_post_reactions_fingerprint_fingerprint_created_at ON post_reactions_fingerprint(fingerprint, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_post_favorites_created_at ON post_favorites(created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_post_favorites_fingerprint_created_at ON post_favorites(fingerprint, created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_comments_post_id ON comments(post_id);
   CREATE INDEX IF NOT EXISTS idx_comments_created_at ON comments(created_at);
@@ -614,6 +639,12 @@ const ensureIndexes = () => {
   CREATE INDEX IF NOT EXISTS idx_post_delete_requests_status_created_at ON post_delete_requests(status, created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_post_delete_requests_post_status ON post_delete_requests(post_id, status);
   CREATE INDEX IF NOT EXISTS idx_post_delete_requests_requester_created_at ON post_delete_requests(requester_fingerprint, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_post_feature_requests_status_created_at ON post_feature_requests(status, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_post_feature_requests_post_status ON post_feature_requests(post_id, status);
+  CREATE INDEX IF NOT EXISTS idx_post_feature_requests_identity_created_at ON post_feature_requests(requester_identity_key, created_at DESC);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_post_feature_requests_post_legacy_identity_unique
+    ON post_feature_requests(post_id, requester_legacy_fingerprint)
+    WHERE requester_legacy_fingerprint IS NOT NULL AND requester_legacy_fingerprint != '';
   CREATE INDEX IF NOT EXISTS idx_update_announcements_updated_at ON update_announcements(updated_at DESC);
   CREATE INDEX IF NOT EXISTS idx_wiki_entries_status_deleted_updated_at ON wiki_entries(status, deleted, updated_at DESC);
   CREATE INDEX IF NOT EXISTS idx_wiki_entries_slug ON wiki_entries(slug);

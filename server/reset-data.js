@@ -8,6 +8,7 @@ const tables = [
   'comment_report_fingerprints',
   'comments',
   'post_delete_requests',
+  'post_feature_requests',
   'post_reactions',
   'post_favorites',
   'post_views',

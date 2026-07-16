@@ -13,10 +13,12 @@ test('database bootstrap does not require cosmetic catalog tables to exist first
   const script = `
     const mod = await import(${JSON.stringify(dbModuleUrl)});
     const tables = mod.db.prepare(
-      "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('posts', 'user_cosmetics') ORDER BY name"
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('post_feature_requests', 'posts', 'user_cosmetics') ORDER BY name"
     ).all().map((row) => row.name);
+    const postColumns = mod.db.prepare('PRAGMA table_info(posts)').all().map((row) => row.name);
+    const featureRequestColumns = mod.db.prepare('PRAGMA table_info(post_feature_requests)').all().map((row) => row.name);
     mod.db.close();
-    console.log(JSON.stringify(tables));
+    console.log(JSON.stringify({ tables, postColumns, featureRequestColumns }));
   `;
 
   const result = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
@@ -26,7 +28,11 @@ test('database bootstrap does not require cosmetic catalog tables to exist first
 
   try {
     assert.equal(result.status, 0, result.stderr || result.stdout);
-    assert.deepEqual(JSON.parse(result.stdout.trim()), ['posts', 'user_cosmetics']);
+    const payload = JSON.parse(result.stdout.trim());
+    assert.deepEqual(payload.tables, ['post_feature_requests', 'posts', 'user_cosmetics']);
+    assert.ok(payload.postColumns.includes('featured'));
+    assert.ok(payload.postColumns.includes('featured_at'));
+    assert.ok(payload.featureRequestColumns.includes('requester_legacy_fingerprint'));
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }

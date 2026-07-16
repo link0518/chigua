@@ -21,6 +21,7 @@ const DEFAULT_RATE_LIMITS = Object.freeze({
   post: { limit: 2, windowMs: 30 * 60 * 1000 },
   comment: { limit: 1, windowMs: 10 * 1000 },
   report: { limit: 1, windowMs: 60 * 1000 },
+  feature: { limit: 5, windowMs: 60 * 60 * 1000 },
   feedback: { limit: 1, windowMs: 60 * 60 * 1000 },
   wiki: { limit: 3, windowMs: 60 * 60 * 1000 },
   upload: { limit: 12, windowMs: 60 * 1000 },

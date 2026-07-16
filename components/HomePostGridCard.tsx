@@ -2,10 +2,8 @@ import React from 'react';
 import {
   AlertTriangle,
   ArrowUpRight,
-  Flag,
   MessageCircle,
   Share2,
-  Star,
   ThumbsDown,
   ThumbsUp,
   UserX,
@@ -14,7 +12,9 @@ import {
 import type { Post } from '../types';
 import DeveloperMiniCard from './DeveloperMiniCard';
 import NicknameFrameCard from './NicknameFrameCard';
+import PostActionMenu from './PostActionMenu';
 import { useFrameRegistryVersion } from './nicknameFrames';
+import FeaturedBadge from './FeaturedBadge';
 
 const MARKDOWN_IMAGE_RE = /!\[[^\]]*]\([^)]+\)/g;
 const MARKDOWN_LINK_RE = /\[([^\]]+)\]\([^)]+\)/g;
@@ -52,6 +52,7 @@ interface HomePostGridCardProps {
   onFavorite: () => void;
   onShare: () => void;
   onReport: () => void;
+  onRequestFeature: () => void;
   onTagClick: (tag: string) => void;
 }
 
@@ -66,6 +67,7 @@ const HomePostGridCard: React.FC<HomePostGridCardProps> = ({
   onFavorite,
   onShare,
   onReport,
+  onRequestFeature,
   onTagClick,
 }) => {
   useFrameRegistryVersion();
@@ -110,15 +112,9 @@ const HomePostGridCard: React.FC<HomePostGridCardProps> = ({
                   热门
                 </span>
               )}
-              <button
-                type="button"
-                onClick={onFavorite}
-                className={`inline-flex h-10 w-10 items-center justify-center rounded-full border-2 border-ink transition-all shadow-sketch active:translate-x-[2px] active:translate-y-[2px] active:shadow-sketch-active ${isFavorited ? 'bg-marker-yellow text-ink hover:bg-marker-yellow/90' : 'bg-paper-card text-ink hover:bg-highlight'}`}
-                title={isFavorited ? '取消收藏' : '收藏'}
-                aria-label={isFavorited ? '取消收藏' : '收藏'}
-              >
-                <Star className="h-4 w-4" fill={isFavorited ? 'currentColor' : 'none'} />
-              </button>
+              {post.isFeatured && (
+                <FeaturedBadge />
+              )}
             </div>
           </div>
 
@@ -199,15 +195,14 @@ const HomePostGridCard: React.FC<HomePostGridCardProps> = ({
               >
                 <Share2 className="h-4 w-4" />
               </button>
-              <button
-                type="button"
-                onClick={onReport}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-ink/20 bg-paper-card text-pencil/70 transition-colors hover:text-melon-deep"
-                aria-label="举报帖子"
-                title="举报帖子"
-              >
-                <Flag className="h-4 w-4" />
-              </button>
+              <PostActionMenu
+                post={post}
+                isFavorited={isFavorited}
+                onFavorite={onFavorite}
+                onReport={onReport}
+                onRequestFeature={onRequestFeature}
+                triggerClassName="text-pencil hover:text-ink"
+              />
             </div>
           </div>
         </div>
