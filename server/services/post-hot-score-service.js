@@ -1,6 +1,13 @@
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 const CHINA_TIMEZONE_OFFSET_MS = 8 * HOUR_MS;
+const MIN_HOT_INTERACTION_IDENTITIES = 3;
+
+export const DEFAULT_HOT_CACHE_TTL_MS = Object.freeze({
+  today: 15 * 60 * 1000,
+  week: 30 * 60 * 1000,
+  all: 60 * 60 * 1000,
+});
 
 const HOT_FILTER_CONFIG = {
   today: {
@@ -51,9 +58,52 @@ export const calculateInteractionHotScore = ({
 export const createPostHotScoreService = ({
   db,
   nowProvider = () => Date.now(),
-  cacheTtlMs = 30 * 1000,
+  cacheTtlMs = DEFAULT_HOT_CACHE_TTL_MS,
 }) => {
   const cache = new Map();
+  let readCandidateRows = null;
+
+  const resolveCacheTtlMs = (filter) => {
+    // 兼容旧调用传入单个数值；默认按榜单时效性使用分级 TTL。
+    const configured = typeof cacheTtlMs === 'number'
+      ? cacheTtlMs
+      : cacheTtlMs?.[filter];
+    const fallback = DEFAULT_HOT_CACHE_TTL_MS[filter];
+    const normalized = Number(configured ?? fallback);
+    return Number.isFinite(normalized) ? Math.max(0, normalized) : fallback;
+  };
+
+  const resolveCacheBoundary = (filter, now) => (
+    filter === 'today' ? resolveWindowStart(filter, now) : null
+  );
+
+  const readCachedEntry = (filter, now) => {
+    const ttlMs = resolveCacheTtlMs(filter);
+    const boundary = resolveCacheBoundary(filter, now);
+    const cached = cache.get(filter);
+    if (
+      ttlMs > 0
+      && cached
+      && cached.boundary === boundary
+      && now - cached.createdAt < ttlMs
+    ) {
+      return cached;
+    }
+    return null;
+  };
+
+  const writeCacheEntry = (filter, now, snapshot) => {
+    const entry = {
+      boundary: resolveCacheBoundary(filter, now),
+      createdAt: now,
+      snapshot,
+      ranking: null,
+    };
+    if (resolveCacheTtlMs(filter) > 0) {
+      cache.set(filter, entry);
+    }
+    return entry;
+  };
   const buildSnapshotRowsSql = (windowed) => {
     // 时间窗口必须直接作用于 created_at，避免可空 OR 条件让 SQLite 放弃时间索引。
     const windowCondition = windowed ? 'AND created_at >= @windowStart' : '';
@@ -107,12 +157,16 @@ export const createPostHotScoreService = ({
             THEN 'post-identity:' || TRIM(post_identity_key)
           WHEN TRIM(COALESCE(ip, '')) != ''
             THEN 'ip:' || TRIM(ip)
-          ELSE 'comment:' || id
         END AS identity_key,
         created_at
       FROM comments
       WHERE deleted = 0
         AND hidden = 0
+        AND (
+          TRIM(COALESCE(fingerprint, '')) != ''
+          OR TRIM(COALESCE(post_identity_key, '')) != ''
+          OR TRIM(COALESCE(ip, '')) != ''
+        )
         ${windowCondition}
     ),
     ranked_comments AS (
@@ -245,32 +299,95 @@ export const createPostHotScoreService = ({
     return snapshot;
   };
 
+  const buildRanking = (snapshot) => {
+    const hotPostIds = [];
+    snapshot.forEach((metrics, postId) => {
+      if (Number(metrics?.interactionIdentityCount || 0) > 0) {
+        hotPostIds.push(postId);
+      }
+    });
+    if (!hotPostIds.length) {
+      return [];
+    }
+
+    if (!readCandidateRows) {
+      // 排行缓存只保存排序字段；公开可见性和用户态字段都在每次分页请求时实时补全。
+      readCandidateRows = db.prepare(`
+        SELECT posts.id, posts.created_at
+        FROM json_each(?) AS hot_posts
+        CROSS JOIN posts ON posts.id = hot_posts.value
+        ORDER BY posts.created_at DESC
+      `);
+    }
+
+    return readCandidateRows
+      .all(JSON.stringify(hotPostIds))
+      .map((row) => {
+        const metrics = snapshot.get(row.id);
+        return {
+          id: row.id,
+          score: metrics.score,
+          interactionIdentityCount: metrics.interactionIdentityCount,
+          lastInteractionAt: metrics.lastInteractionAt,
+          createdAt: Number(row.created_at || 0),
+          eligible: metrics.interactionIdentityCount >= MIN_HOT_INTERACTION_IDENTITIES,
+        };
+      })
+      .sort((left, right) => (
+        Number(right.eligible) - Number(left.eligible)
+        || right.score - left.score
+        || right.lastInteractionAt - left.lastInteractionAt
+        || right.createdAt - left.createdAt
+      ));
+  };
+
+  const getOrCreateEntry = (filter) => {
+    const normalizedFilter = normalizeHotFilter(filter);
+    const now = Number(nowProvider());
+    const cached = readCachedEntry(normalizedFilter, now);
+    if (cached) {
+      return cached;
+    }
+    return writeCacheEntry(
+      normalizedFilter,
+      now,
+      buildSnapshot(normalizedFilter, now)
+    );
+  };
+
+  const getOrBuildRankingEntry = (filter) => {
+    const normalizedFilter = normalizeHotFilter(filter);
+    const entry = getOrCreateEntry(normalizedFilter);
+    if (!entry.ranking) {
+      entry.ranking = buildRanking(entry.snapshot);
+    }
+    const ttlExpiresAt = entry.createdAt + resolveCacheTtlMs(normalizedFilter);
+    const boundaryExpiresAt = normalizedFilter === 'today'
+      ? entry.boundary + DAY_MS
+      : Number.POSITIVE_INFINITY;
+    return {
+      entry,
+      normalizedFilter,
+      expiresAt: Math.min(ttlExpiresAt, boundaryExpiresAt),
+    };
+  };
+
   return {
     getSnapshot(filter) {
-      const normalizedFilter = normalizeHotFilter(filter);
-      const now = Number(nowProvider());
-      const cacheBoundary = normalizedFilter === 'today'
-        ? resolveWindowStart(normalizedFilter, now)
-        : null;
-      const cached = cache.get(normalizedFilter);
-      if (
-        cacheTtlMs > 0
-        && cached
-        && cached.boundary === cacheBoundary
-        && now - cached.createdAt < cacheTtlMs
-      ) {
-        return cached.snapshot;
-      }
-
-      const snapshot = buildSnapshot(normalizedFilter, now);
-      if (cacheTtlMs > 0) {
-        cache.set(normalizedFilter, {
-          boundary: cacheBoundary,
-          createdAt: now,
-          snapshot,
-        });
-      }
-      return snapshot;
+      return getOrCreateEntry(filter).snapshot;
+    },
+    getRanking(filter) {
+      return getOrBuildRankingEntry(filter).entry.ranking;
+    },
+    getRankingState(filter) {
+      const { entry, expiresAt } = getOrBuildRankingEntry(filter);
+      const currentTime = Number(nowProvider());
+      return {
+        ranking: entry.ranking,
+        updatedAt: entry.createdAt,
+        expiresAt,
+        expiresInMs: Math.max(0, expiresAt - currentTime),
+      };
     },
     invalidate() {
       cache.clear();

@@ -80,7 +80,12 @@
 帖子：
 
 - `GET /api/posts/home`：首页帖子列表（分页）
-- `GET /api/posts/feed`：榜单/热门流（带筛选参数）
+- `GET /api/posts/feed`：榜单/热门流；支持 `filter=today|week|all`、`limit`（默认 30，最大 50）、`offset` 和可选 `search`
+  - 响应包含 `items`、`total`、`nextOffset`、`hasMore`、`rankingUpdatedAt`、`rankingExpiresAt`、`rankingExpiresInMs`
+  - `rankingUpdatedAt` 为兼容旧字段名保留的不透明结果版本，绑定排行快照、筛选条件和当前有序公开候选；后续页必须回传首批版本，结果变化时接口返回 `resetRequired=true`，客户端需从 `offset=0` 重新加载
+  - `search` 最长 80 个字符，`%`、`_` 按普通字符匹配，不作为 SQL 通配符
+  - 公共排行按今日 15 分钟、近 7 天 30 分钟、历史 60 分钟缓存；隐藏、删除和恢复公开会在分页时实时过滤，完整帖子和当前访客的点赞、收藏等状态仅按页补全
+  - Web 前端最多缓存完整帖子 2 分钟，并按正文有效期和排行有效期中较早者自动刷新；窗口重新聚焦或页面恢复可见时会补检缓存状态
 - `GET /api/posts/search`：帖子搜索（分页）
 - `POST /api/posts`：发帖（通常需要 turnstile 校验）
 - `GET /api/posts/:id`：帖子详情

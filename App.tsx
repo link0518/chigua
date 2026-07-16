@@ -35,12 +35,15 @@ import HeaderDecoration from './components/CNY/HeaderDecoration';
 import CNYAtmosphereBackground from './components/CNY/CNYAtmosphereBackground';
 import UserMeModal from './components/UserMeModal';
 import { buildPostPath } from './components/clipboard';
-import AppViewRenderer from '@/features/app/AppViewRenderer';
+import AppViewRenderer, { prefetchFeedView } from '@/features/app/AppViewRenderer';
+import ViewLoadErrorBoundary from '@/features/app/ViewLoadErrorBoundary';
 import { getPathForView, resolveViewFromPath } from '@/features/app/routing';
 import { useAccessStatus } from '@/features/app/hooks/useAccessStatus';
 import { useStreakCelebration } from '@/features/app/hooks/useStreakCelebration';
 import WikiLoadingScreen from './components/wiki/WikiLoadingScreen';
 import SiteFooter from './components/SiteFooter';
+import { setFrameRegistry } from './components/nicknameFrames';
+import { setNameStyleRegistry } from './components/nameStyles';
 
 const syncDocumentThemeClass = (className: string, enabled: boolean) => {
   document.documentElement.classList.toggle(className, enabled);
@@ -48,7 +51,7 @@ const syncDocumentThemeClass = (className: string, enabled: boolean) => {
 };
 
 const App: React.FC = () => {
-  const { loadSettings, state } = useApp();
+  const { loadSettings, prefetchFeedPosts, state } = useApp();
   const [currentView, setCurrentView] = useState<ViewType>(() => resolveViewFromPath(window.location.pathname));
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [headerCompact, setHeaderCompact] = useState(() => window.scrollY > 36);
@@ -77,12 +80,36 @@ const App: React.FC = () => {
     currentView,
   });
 
+  const prefetchHotFeed = useCallback(() => {
+    prefetchFeedView();
+    void prefetchFeedPosts('today').catch(() => { });
+  }, [prefetchFeedPosts]);
+
   useEffect(() => {
     const timer = window.setTimeout(() => setBackgroundTasksReady(true), 15000);
     return () => {
       clearTimeout(timer);
     };
   }, []);
+
+  useEffect(() => {
+    const runPrefetch = () => prefetchFeedView();
+    if (typeof window.requestIdleCallback === 'function') {
+      const idleCallbackId = window.requestIdleCallback(runPrefetch, { timeout: 3000 });
+      return () => window.cancelIdleCallback(idleCallbackId);
+    }
+
+    // Safari 等不支持空闲回调的浏览器延迟加载，避免阻塞首屏关键资源。
+    const timer = window.setTimeout(runPrefetch, 1500);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (currentView === ViewType.FEED) {
+      // 直达 /feed 时让组件代码与默认榜单请求并行，FeedView 会复用同一请求。
+      prefetchHotFeed();
+    }
+  }, [currentView, prefetchHotFeed]);
 
   useEffect(() => {
     let animationFrame: number | null = null;
@@ -186,20 +213,14 @@ const App: React.FC = () => {
       .then((data) => {
         if (!active) return;
         const items = Array.isArray(data?.items) ? data.items : [];
-        import('./components/nicknameFrames').then(({ setFrameRegistry }) => {
-          if (!active) return;
-          setFrameRegistry(items);
-        });
+        setFrameRegistry(items);
       })
       .catch(() => { });
     api.getNameStyles()
       .then((data) => {
         if (!active) return;
         const items = Array.isArray(data?.items) ? data.items : [];
-        import('./components/nameStyles').then(({ setNameStyleRegistry }) => {
-          if (!active) return;
-          setNameStyleRegistry(items);
-        });
+        setNameStyleRegistry(items);
       })
       .catch(() => { });
     return () => {
@@ -409,6 +430,9 @@ const App: React.FC = () => {
   }, []);
 
   const navigate = useCallback((view: ViewType) => {
+    if (view === ViewType.FEED) {
+      prefetchHotFeed();
+    }
     const targetPath = getPathForView(view);
     const shouldRefreshHome = view === ViewType.HOME && currentView === ViewType.HOME;
     setCurrentView(view);
@@ -420,7 +444,7 @@ const App: React.FC = () => {
     if (shouldRefreshHome) {
       window.dispatchEvent(new CustomEvent('home:refresh'));
     }
-  }, [currentView]);
+  }, [currentView, prefetchHotFeed]);
 
   useEffect(() => {
     if (!backgroundTasksReady) {
@@ -487,12 +511,15 @@ const App: React.FC = () => {
     label: string;
     icon: React.ReactNode;
     onClick: () => void;
+    onIntent?: () => void;
     active?: boolean;
     dot?: boolean;
-  }> = ({ label, icon, onClick, active = false, dot = false }) => (
+  }> = ({ label, icon, onClick, onIntent, active = false, dot = false }) => (
     <button
       type="button"
       onMouseDown={(event) => event.preventDefault()}
+      onMouseEnter={onIntent}
+      onFocus={onIntent}
       onClick={onClick}
       aria-current={active ? 'page' : undefined}
       className={`doodle-side-nav-item group relative flex w-full items-center gap-3 px-3 py-3 text-left font-hand text-lg font-bold transition-all active:translate-x-px active:translate-y-px ${active
@@ -512,9 +539,17 @@ const App: React.FC = () => {
     </button>
   );
 
-  const MobileNavItem: React.FC<{ label: string; onClick: () => void; dot?: boolean }> = ({ label, onClick, dot = false }) => (
+  const MobileNavItem: React.FC<{
+    label: string;
+    onClick: () => void;
+    onIntent?: () => void;
+    dot?: boolean;
+  }> = ({ label, onClick, onIntent, dot = false }) => (
     <button
       type="button"
+      onMouseEnter={onIntent}
+      onFocus={onIntent}
+      onTouchStart={onIntent}
       onClick={onClick}
       className={`w-full flex items-center justify-between rounded-lg border-2 px-4 py-3 font-hand text-lg font-bold transition-all ${isCnyTheme ? 'border-cny-dark-red bg-cny-red text-cny-gold hover:bg-cny-dark-red' : 'border-ink bg-white hover:bg-highlight'}`}
     >
@@ -708,6 +743,7 @@ const App: React.FC = () => {
               />
               <MobileNavItem
                 label="热门榜单"
+                onIntent={prefetchHotFeed}
                 onClick={() => {
                   navigate(ViewType.FEED);
                   setMobileMenuOpen(false);
@@ -770,6 +806,7 @@ const App: React.FC = () => {
               label="热门"
               icon={<Flame className="size-5" />}
               active={currentView === ViewType.FEED}
+              onIntent={prefetchHotFeed}
               onClick={() => navigate(ViewType.FEED)}
             />
             <SideNavItem
@@ -832,10 +869,15 @@ const App: React.FC = () => {
             )
           )}
         >
-          <AppViewRenderer
-            currentView={currentView}
+          <ViewLoadErrorBoundary
+            key={currentView}
             onNavigateHome={() => navigate(ViewType.HOME)}
-          />
+          >
+            <AppViewRenderer
+              currentView={currentView}
+              onNavigateHome={() => navigate(ViewType.HOME)}
+            />
+          </ViewLoadErrorBoundary>
         </React.Suspense>
       </div>
 

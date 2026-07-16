@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ThumbsUp, ThumbsDown, MessageSquare, Share2, UserX } from 'lucide-react';
 import { Post } from '../types';
 import { Badge, roughBorderClassSm } from './SketchUI';
@@ -140,7 +140,18 @@ const PostItem: React.FC<{
 };
 
 const FeedView: React.FC = () => {
-  const { state, loadFeedPosts, likePost, dislikePost, isLiked, isDisliked, isFavorited, toggleFavoritePost, showToast } = useApp();
+  const {
+    state,
+    loadFeedPosts,
+    cancelFeedPostsLoad,
+    likePost,
+    dislikePost,
+    isLiked,
+    isDisliked,
+    isFavorited,
+    toggleFavoritePost,
+    showToast,
+  } = useApp();
   const [filter, setFilter] = useState<FilterType>('today');
   const [reportModal, setReportModal] = useState<{ isOpen: boolean; postId: string; content: string }>({
     isOpen: false,
@@ -148,10 +159,61 @@ const FeedView: React.FC = () => {
     content: '',
   });
   const [featureRequestPost, setFeatureRequestPost] = useState<Post | null>(null);
+  const lastResumeCheckAtRef = useRef(0);
+
+  const refreshFeed = useCallback(() => {
+    loadFeedPosts(filter).catch(() => {
+      // 错误由 AppContext 统一写入 feedError，避免重复弹出 toast。
+    });
+  }, [filter, loadFeedPosts]);
 
   useEffect(() => {
-    loadFeedPosts(filter).catch(() => {});
-  }, [filter, loadFeedPosts]);
+    refreshFeed();
+    return cancelFeedPostsLoad;
+  }, [cancelFeedPostsLoad, refreshFeed]);
+
+  useEffect(() => {
+    if (
+      !state.feedRefreshAt
+      || state.feedLoading
+      || state.feedRefreshing
+      || state.feedError
+    ) {
+      return undefined;
+    }
+
+    const delay = Math.max(state.feedRefreshAt - Date.now(), 0);
+    const timer = window.setTimeout(() => {
+      refreshFeed();
+    }, Math.min(delay, 2_147_000_000));
+    return () => window.clearTimeout(timer);
+  }, [refreshFeed, state.feedError, state.feedLoading, state.feedRefreshAt, state.feedRefreshing]);
+
+  useEffect(() => {
+    const refreshWhenVisible = () => {
+      if (
+        document.visibilityState !== 'visible'
+        || state.feedLoading
+        || state.feedRefreshing
+      ) {
+        return;
+      }
+      const now = Date.now();
+      // visibilitychange 与 focus 经常连续触发，短时间内只检查一次缓存状态。
+      if (now - lastResumeCheckAtRef.current < 500) {
+        return;
+      }
+      lastResumeCheckAtRef.current = now;
+      refreshFeed();
+    };
+
+    window.addEventListener('focus', refreshWhenVisible);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    return () => {
+      window.removeEventListener('focus', refreshWhenVisible);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+    };
+  }, [refreshFeed, state.feedLoading, state.feedRefreshing]);
 
   const posts = useMemo(() => {
     const visiblePosts = state.feedPosts.filter((post) => (
@@ -260,14 +322,56 @@ const FeedView: React.FC = () => {
         </div>
 
         {/* Post Count */}
-        <div className="mt-4 text-sm text-pencil">
-          共 {state.feedTotal} 条内容，仅展示前 {DISPLAY_LIMIT} 条
+        <div className="mt-4 text-sm text-pencil" aria-live="polite">
+          {state.feedLoading && displayedPosts.length === 0 ? (
+            '正在加载热门内容…'
+          ) : (
+            <>
+              共 {state.feedTotal} 条内容，仅展示前 {DISPLAY_LIMIT} 条
+              {state.feedRefreshing && ' · 正在刷新榜单…'}
+            </>
+          )}
         </div>
       </div>
 
       {/* Posts List */}
       <div className="flex flex-col">
-        {displayedPosts.length === 0 ? (
+        {state.feedError && displayedPosts.length > 0 && (
+          <div
+            className="mb-6 rounded-lg border-2 border-alert bg-alert/10 px-4 py-3 text-ink"
+            role="alert"
+          >
+            <p className="font-hand font-bold">热门内容刷新失败：{state.feedError}</p>
+            <button
+              type="button"
+              className="mt-2 font-hand font-bold underline decoration-wavy underline-offset-4 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={state.feedLoading || state.feedRefreshing}
+              onClick={refreshFeed}
+            >
+              重新加载
+            </button>
+          </div>
+        )}
+        {state.feedLoading && displayedPosts.length === 0 ? (
+          <div className="text-center py-16 text-pencil">
+            <span className="text-5xl mb-4 block" aria-hidden="true">🍉</span>
+            <p className="font-hand text-lg">正在加载热门内容，请稍候…</p>
+          </div>
+        ) : state.feedError && displayedPosts.length === 0 ? (
+          <div className="text-center py-16" role="alert">
+            <span className="text-6xl mb-4 block" aria-hidden="true">🍉</span>
+            <h3 className="font-display text-2xl text-ink mb-2">热门内容加载失败</h3>
+            <p className="font-hand text-lg text-pencil mb-4">{state.feedError}</p>
+            <button
+              type="button"
+              className="rounded-lg border-2 border-ink bg-highlight px-5 py-2 font-hand font-bold shadow-sketch transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={state.feedLoading || state.feedRefreshing}
+              onClick={refreshFeed}
+            >
+              重新加载
+            </button>
+          </div>
+        ) : displayedPosts.length === 0 ? (
           <div className="text-center py-16">
             <span className="text-6xl mb-4 block">🍉</span>
             <h3 className="font-display text-2xl text-ink mb-2">暂无内容</h3>

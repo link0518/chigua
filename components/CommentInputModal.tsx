@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Image, Send, Smile } from 'lucide-react';
 import Modal from './Modal';
@@ -14,6 +14,8 @@ interface CommentInputModalProps {
   onSubmit: (text: string) => Promise<void> | void;
   maxLength: number;
   submitting: boolean;
+  uploading: boolean;
+  tryAcquireUpload: () => (() => void) | null;
   showToast: (message: string, type?: 'success' | 'error' | 'info' | 'warning') => void;
   title?: string;
   initialText?: string;
@@ -27,6 +29,8 @@ const CommentInputModal: React.FC<CommentInputModalProps> = ({
   onSubmit,
   maxLength,
   submitting,
+  uploading,
+  tryAcquireUpload,
   showToast,
   title = '写评论',
   initialText = '',
@@ -35,7 +39,6 @@ const CommentInputModal: React.FC<CommentInputModalProps> = ({
 }) => {
   const [text, setText] = useState(initialText);
   const [memeOpen, setMemeOpen] = useState(false);
-  const [uploading, setUploading] = useState(false);
   const [viewportTopInset, setViewportTopInset] = useState(0);
   const [panelMaxHeight, setPanelMaxHeight] = useState<number | null>(null);
   const isMobile = typeof window !== 'undefined' ? window.matchMedia('(max-width: 767px)').matches : false;
@@ -43,9 +46,23 @@ const CommentInputModal: React.FC<CommentInputModalProps> = ({
   const { textareaRef, insertMeme } = useMemeInsert(text, setText);
   const { insertAtCursor } = useInsertAtCursor(text, setText, textareaRef);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
+  const uploadDraftVersionRef = useRef(0);
+
+  useLayoutEffect(() => {
+    // 弹窗关闭、重新打开或切换到另一份初始草稿后，使旧上传结果失效。
+    uploadDraftVersionRef.current += 1;
+    return () => {
+      uploadDraftVersionRef.current += 1;
+    };
+  }, [initialText, isOpen]);
+
+  const handleClose = () => {
+    uploadDraftVersionRef.current += 1;
+    onClose();
+  };
 
   const handlePickUpload = () => {
-    if (uploading) {
+    if (uploading || submitting) {
       return;
     }
     uploadInputRef.current?.click();
@@ -56,18 +73,32 @@ const CommentInputModal: React.FC<CommentInputModalProps> = ({
       return;
     }
     if (!isImageUploadFile(file)) {
+      showToast('只支持上传图片文件', 'warning');
       return;
     }
 
-    setUploading(true);
+    const releaseUpload = tryAcquireUpload();
+    if (!releaseUpload) {
+      showToast('图片上传或评论提交正在进行，请稍候', 'info');
+      return;
+    }
+
+    const draftVersion = uploadDraftVersionRef.current;
     try {
-      insertAtCursor(await uploadImageAsMarkdown(file, { usage: 'comment' }));
+      const markdown = await uploadImageAsMarkdown(file, { usage: 'comment' });
+      if (uploadDraftVersionRef.current !== draftVersion) {
+        return;
+      }
+      insertAtCursor(markdown);
       showToast('图片上传成功', 'success');
     } catch (error) {
+      if (uploadDraftVersionRef.current !== draftVersion) {
+        return;
+      }
       const message = error instanceof Error ? error.message : '图片上传失败，请稍后重试';
       showToast(message, 'error');
     } finally {
-      setUploading(false);
+      releaseUpload();
     }
   };
 
@@ -124,6 +155,10 @@ const CommentInputModal: React.FC<CommentInputModalProps> = ({
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (uploading) {
+      showToast('图片上传完成后才能发布评论', 'warning');
+      return;
+    }
     const trimmed = text.trim();
     if (!trimmed) {
       await onSubmit('');
@@ -140,7 +175,7 @@ const CommentInputModal: React.FC<CommentInputModalProps> = ({
   return createPortal(
     <Modal
       isOpen={isOpen}
-      onClose={onClose}
+      onClose={handleClose}
       title={title}
       titleClassName="mb-2"
       panelClassName="max-w-xl p-4 sm:p-6 overflow-hidden"
@@ -215,7 +250,7 @@ const CommentInputModal: React.FC<CommentInputModalProps> = ({
             />
             <SketchIconButton
               onClick={handlePickUpload}
-              disabled={uploading}
+              disabled={uploading || submitting}
               label={uploading ? '上传中' : '上传图片'}
               icon={<Image className="w-4 h-4" />}
               variant="doodle"
@@ -247,7 +282,7 @@ const CommentInputModal: React.FC<CommentInputModalProps> = ({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               className="px-4 h-10 border-2 border-ink rounded-lg bg-white hover:bg-highlight transition-colors shadow-sketch font-hand font-bold"
             >
               取消
@@ -255,7 +290,7 @@ const CommentInputModal: React.FC<CommentInputModalProps> = ({
             <SketchButton
               type="submit"
               className="px-4 h-10 flex items-center justify-center gap-2"
-              disabled={submitting || !text.trim() || text.trim().length > maxLength}
+              disabled={submitting || uploading || !text.trim() || text.trim().length > maxLength}
             >
               <span>发布</span>
               <Send className="w-4 h-4" />

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AlertTriangle, Image, Send, Smile, ThumbsUp } from 'lucide-react';
 import { SketchButton } from './SketchUI';
 import { api } from '../api';
@@ -170,6 +170,9 @@ const CommentModal: React.FC<CommentModalProps> = ({
   const { insertAtCursor } = useInsertAtCursor(text, setText, inlineTextareaRef);
   const overlayTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
+  const uploadLockRef = useRef(false);
+  const submittingRef = useRef(false);
+  const uploadDraftVersionRef = useRef(0);
   const [uploading, setUploading] = useState(false);
   const [keyboardInset, setKeyboardInset] = useState(0);
   const [keyboardMode, setKeyboardMode] = useState(false);
@@ -200,11 +203,42 @@ const CommentModal: React.FC<CommentModalProps> = ({
     }));
   };
 
+  useLayoutEffect(() => {
+    // 关闭评论区、切换帖子或卸载后，旧上传结果不能写入新的草稿。
+    uploadDraftVersionRef.current += 1;
+    return () => {
+      uploadDraftVersionRef.current += 1;
+    };
+  }, [isOpen, postId]);
+
+  const tryAcquireUpload = () => {
+    if (uploadLockRef.current || submittingRef.current) {
+      return null;
+    }
+
+    uploadLockRef.current = true;
+    setUploading(true);
+    let released = false;
+    return () => {
+      if (released) {
+        return;
+      }
+      released = true;
+      uploadLockRef.current = false;
+      setUploading(false);
+    };
+  };
+
   const handlePickUpload = () => {
-    if (uploading) {
+    if (uploadLockRef.current || submittingRef.current) {
       return;
     }
     uploadInputRef.current?.click();
+  };
+
+  const handleClose = () => {
+    uploadDraftVersionRef.current += 1;
+    onClose();
   };
 
   const handleUploadFile = async (file: File) => {
@@ -216,15 +250,28 @@ const CommentModal: React.FC<CommentModalProps> = ({
       return;
     }
 
-    setUploading(true);
+    const releaseUpload = tryAcquireUpload();
+    if (!releaseUpload) {
+      showToast('图片上传或评论提交正在进行，请稍候', 'info');
+      return;
+    }
+
+    const draftVersion = uploadDraftVersionRef.current;
     try {
-      insertAtCursor(await uploadImageAsMarkdown(file, { usage: 'comment' }));
+      const markdown = await uploadImageAsMarkdown(file, { usage: 'comment' });
+      if (uploadDraftVersionRef.current !== draftVersion) {
+        return;
+      }
+      insertAtCursor(markdown);
       showToast('图片上传成功', 'success');
     } catch (error) {
+      if (uploadDraftVersionRef.current !== draftVersion) {
+        return;
+      }
       const message = error instanceof Error ? error.message : '图片上传失败，请稍后重试';
       showToast(message, 'error');
     } finally {
-      setUploading(false);
+      releaseUpload();
     }
   };
 
@@ -643,7 +690,11 @@ const CommentModal: React.FC<CommentModalProps> = ({
   };
 
   const submitText = async (nextText: string) => {
-    if (submitting) {
+    if (submittingRef.current) {
+      return false;
+    }
+    if (uploadLockRef.current) {
+      showToast('图片上传完成后才能发布评论', 'warning');
       return false;
     }
     const trimmed = nextText.trim();
@@ -656,6 +707,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
       return false;
     }
 
+    submittingRef.current = true;
     setSubmitting(true);
     try {
       let turnstileToken = '';
@@ -695,6 +747,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
           return next;
         });
       }
+      uploadDraftVersionRef.current += 1;
       setText('');
       setReplyToId(null);
       showToast('评论已发布', 'success');
@@ -704,6 +757,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
       showToast(message, 'error');
       return false;
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   };
@@ -782,7 +836,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
         </div>
         <button
           type="button"
-          onClick={onClose}
+          onClick={handleClose}
           className="text-xs font-sans text-gray-500 hover:text-ink transition-colors"
         >
           收起
@@ -1016,6 +1070,21 @@ const CommentModal: React.FC<CommentModalProps> = ({
             ref={inlineTextareaRef}
             value={text}
             onChange={(e) => setText(e.target.value)}
+            onPaste={(e) => {
+              const items = e.clipboardData?.items;
+              if (!items) return;
+              for (let i = 0; i < items.length; i++) {
+                const item = items[i];
+                if (item.kind === 'file' && item.type.startsWith('image/')) {
+                  const file = item.getAsFile();
+                  if (file) {
+                    e.preventDefault();
+                    void handleUploadFile(file);
+                    return;
+                  }
+                }
+              }
+            }}
             placeholder="留下你的评论..."
             maxLength={MAX_LENGTH + 10}
             className="min-w-0 flex-1 h-16 p-3 border-2 border-ink rounded-lg resize-none font-sans bg-white focus:outline-none focus:shadow-sketch-sm transition-shadow"
@@ -1042,10 +1111,10 @@ const CommentModal: React.FC<CommentModalProps> = ({
           <button
             type="button"
             onClick={handlePickUpload}
-            disabled={uploading}
+            disabled={uploading || submitting}
             className="shrink-0 px-3 h-16 flex items-center justify-center border-2 border-ink rounded-lg bg-white hover:bg-highlight transition-colors shadow-sketch disabled:opacity-60"
             aria-label="上传图片"
-            title={uploading ? '正在上传...' : '上传图片'}
+            title={uploading ? '正在上传...' : submitting ? '评论提交中' : '上传图片'}
           >
             <Image className="w-4 h-4" />
           </button>
@@ -1073,7 +1142,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
           <SketchButton
             type="submit"
             className="shrink-0 px-3 h-16 flex items-center justify-center"
-            disabled={submitting}
+            disabled={submitting || uploading}
             aria-label="发布评论"
           >
             <Send className="w-4 h-4" />
@@ -1094,6 +1163,8 @@ const CommentModal: React.FC<CommentModalProps> = ({
         initialText={text}
         maxLength={MAX_LENGTH}
         submitting={submitting}
+        uploading={uploading}
+        tryAcquireUpload={tryAcquireUpload}
         showToast={showToast}
         onSubmit={async (nextText) => {
           setText(nextText);

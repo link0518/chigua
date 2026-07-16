@@ -33,10 +33,17 @@ export const registerPublicPostsRoutes = (app, deps) => {
   const MAX_POST_TAGS = 2;
   const MAX_TAG_LENGTH = 6;
   const MAX_DEFAULT_TAGS = 50;
-  const MIN_HOT_INTERACTION_IDENTITIES = 3;
+  const MAX_FEED_SEARCH_LENGTH = 80;
+  const MIN_FEED_RESULT_VERSION = 1_000_000_000_000n;
+  const FEED_RESULT_VERSION_RANGE = BigInt(Number.MAX_SAFE_INTEGER)
+    - MIN_FEED_RESULT_VERSION
+    + 1n;
   const DAY_MS = 24 * 60 * 60 * 1000;
   const MAX_SEARCH_RANGE_DAYS = 30;
   const DATE_INPUT_RE = /^\d{4}-\d{2}-\d{2}$/;
+  const FEED_FILTERS = new Set(['today', 'week', 'all']);
+  let readVisibleFeedCandidateRows = null;
+  let readSearchedFeedCandidateRows = null;
 
   const normalizeTag = (value) => String(value || '')
     .trim()
@@ -78,6 +85,27 @@ export const registerPublicPostsRoutes = (app, deps) => {
     }
     const normalized = Math.floor(parsed);
     return normalized >= 1 ? normalized : fallback;
+  };
+  const parseNonNegativeInt = (value, fallback = 0) => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) {
+      return fallback;
+    }
+    return Math.max(0, Math.floor(parsed));
+  };
+  const resolveFeedResultVersion = ({ filter, search, rankingUpdatedAt, candidates }) => {
+    const payload = JSON.stringify({
+      filter,
+      search,
+      rankingUpdatedAt,
+      candidateIds: candidates.map((candidate) => candidate.id),
+    });
+    const digest = crypto.createHash('sha256').update(payload, 'utf8').digest('hex');
+    const hashValue = BigInt(`0x${digest}`);
+    // 保持在 JS 安全整数和客户端“毫秒时间戳”归一化区间内，但语义上仅作为不透明版本号。
+    return Number(
+      MIN_FEED_RESULT_VERSION + (hashValue % FEED_RESULT_VERSION_RANGE)
+    );
   };
   const buildJsonTagLikePattern = (value) => `%${escapeLike(JSON.stringify(String(value || '')))}%`;
   const parseDateInput = (value) => {
@@ -284,38 +312,107 @@ app.get('/api/posts/feed', (req, res) => {
   if (!checkBanFor(req, res, 'view', '你已被限制浏览')) {
     return;
   }
-  const filter = String(req.query.filter || 'week');
+  const requestedFilter = String(req.query.filter || 'week');
+  const filter = FEED_FILTERS.has(requestedFilter) ? requestedFilter : 'week';
   const search = String(req.query.search || '').trim();
+  if (search.length > MAX_FEED_SEARCH_LENGTH) {
+    return res.status(400).json({
+      error: `热门搜索关键词不能超过 ${MAX_FEED_SEARCH_LENGTH} 个字符`,
+    });
+  }
+  const limit = Math.min(parsePositiveInt(req.query.limit, 30), 50);
+  const offset = parseNonNegativeInt(req.query.offset);
+  const expectedRankingUpdatedAt = parseNonNegativeInt(req.query.rankingUpdatedAt);
   const dateKey = formatDateKey();
   trackDailyVisit(dateKey, req.sessionID);
   const viewerIdentityHashes = getIdentityLookupHashes(req, res);
   const viewerSelect = buildViewerSelect(viewerIdentityHashes);
   const viewerAuthorSelect = buildViewerAuthorSelect(viewerIdentityHashes);
 
-  const conditions = ['posts.deleted = 0', 'posts.hidden = 0'];
-  const searchParams = [];
-
-  if (search) {
-    conditions.push('(posts.id LIKE ? OR posts.content LIKE ? OR posts.ip LIKE ? OR posts.fingerprint LIKE ?)');
-    const keyword = `%${search}%`;
-    searchParams.push(keyword, keyword, keyword, keyword);
-  }
-
-  const hotSnapshot = postHotScoreService.getSnapshot(filter);
-  // 快照已经给出候选范围，只读取有正向互动的帖子，避免每次扫描完整帖子表。
-  const hotPostIds = [];
-  hotSnapshot.forEach((metrics, postId) => {
-    if (Number(metrics?.interactionIdentityCount || 0) > 0) {
-      hotPostIds.push(postId);
+  const rankingState = postHotScoreService.getRankingState(filter);
+  let rankedCandidates = [];
+  if (rankingState.ranking.length) {
+    const rankingById = new Map(
+      rankingState.ranking.map((candidate) => [candidate.id, candidate])
+    );
+    const rankingIdsJson = JSON.stringify(rankingState.ranking.map((candidate) => candidate.id));
+    let publicCandidateRows;
+    if (search) {
+      const keyword = `%${escapeLike(search)}%`;
+      // 一次集合查询完成公开状态校验和搜索匹配，不按候选逐条访问数据库。
+      if (!readSearchedFeedCandidateRows) {
+        readSearchedFeedCandidateRows = db.prepare(`
+          SELECT posts.id
+          FROM json_each(?) AS hot_posts
+          CROSS JOIN posts ON posts.id = hot_posts.value
+          WHERE posts.deleted = 0
+            AND posts.hidden = 0
+            AND (
+              posts.id LIKE ? ESCAPE '\\'
+              OR posts.content LIKE ? ESCAPE '\\'
+              OR posts.ip LIKE ? ESCAPE '\\'
+              OR posts.fingerprint LIKE ? ESCAPE '\\'
+            )
+          ORDER BY CAST(hot_posts.key AS INTEGER) ASC
+        `);
+      }
+      publicCandidateRows = readSearchedFeedCandidateRows
+        .all(rankingIdsJson, keyword, keyword, keyword, keyword);
+    } else {
+      if (!readVisibleFeedCandidateRows) {
+        readVisibleFeedCandidateRows = db.prepare(`
+          SELECT posts.id
+          FROM json_each(?) AS hot_posts
+          CROSS JOIN posts ON posts.id = hot_posts.value
+          WHERE posts.deleted = 0 AND posts.hidden = 0
+          ORDER BY CAST(hot_posts.key AS INTEGER) ASC
+        `);
+      }
+      publicCandidateRows = readVisibleFeedCandidateRows.all(rankingIdsJson);
     }
-  });
-  if (!hotPostIds.length) {
-    return res.json({ items: [], total: 0 });
+    rankedCandidates = publicCandidateRows
+      .map((row) => rankingById.get(row.id))
+      .filter(Boolean);
   }
 
-  const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  const total = rankedCandidates.length;
+  const rankingVersion = resolveFeedResultVersion({
+    filter,
+    search,
+    rankingUpdatedAt: rankingState.updatedAt,
+    candidates: rankedCandidates,
+  });
+  if (
+    offset > 0
+    && expectedRankingUpdatedAt > 0
+    && expectedRankingUpdatedAt !== rankingVersion
+  ) {
+    return res.json({
+      items: [],
+      total,
+      nextOffset: 0,
+      hasMore: total > 0,
+      resetRequired: true,
+      rankingUpdatedAt: rankingVersion,
+      rankingExpiresAt: rankingState.expiresAt,
+      rankingExpiresInMs: rankingState.expiresInMs,
+    });
+  }
+  const pageCandidates = rankedCandidates.slice(offset, offset + limit);
+  const nextOffset = offset + pageCandidates.length;
+  const responseMeta = {
+    total,
+    nextOffset,
+    hasMore: nextOffset < total,
+    rankingUpdatedAt: rankingVersion,
+    rankingExpiresAt: rankingState.expiresAt,
+    rankingExpiresInMs: rankingState.expiresInMs,
+  };
+  if (!pageCandidates.length) {
+    return res.json({ items: [], ...responseMeta });
+  }
 
-  // CROSS JOIN 固定候选 ID 为驱动表，防止 SQLite 为满足排序而重新扫描完整 posts 表。
+  // 只 hydrate 当前候选页；缓存期内被隐藏或删除的 ID 会在这里再次被拦截。
   const rows = db
     .prepare(
       `
@@ -324,32 +421,29 @@ app.get('/api/posts/feed', (req, res) => {
         ${viewerAuthorSelect.sql}
       FROM json_each(?) AS hot_posts
       CROSS JOIN posts ON posts.id = hot_posts.value
-      ${whereClause}
-      ORDER BY posts.created_at DESC
+      WHERE posts.deleted = 0 AND posts.hidden = 0
+      ORDER BY CAST(hot_posts.key AS INTEGER) ASC
       `
     )
     .all(
       ...viewerSelect.params,
       ...viewerAuthorSelect.params,
-      JSON.stringify(hotPostIds),
-      ...searchParams
+      JSON.stringify(pageCandidates.map((candidate) => candidate.id))
     );
 
-  const rankedRows = rows
-    .map((row) => ({ row, metrics: hotSnapshot.get(row.id) }))
-    .sort((left, right) => {
-      const leftEligible = left.metrics.interactionIdentityCount >= MIN_HOT_INTERACTION_IDENTITIES ? 1 : 0;
-      const rightEligible = right.metrics.interactionIdentityCount >= MIN_HOT_INTERACTION_IDENTITIES ? 1 : 0;
-      return rightEligible - leftEligible
-        || right.metrics.score - left.metrics.score
-        || right.metrics.lastInteractionAt - left.metrics.lastInteractionAt
-        || right.row.created_at - left.row.created_at;
-    });
-  const posts = rankedRows.map(({ row, metrics }, index) => mapPostRow(
-    { ...row, hot_score: metrics.score },
-    index < 3 && metrics.interactionIdentityCount >= MIN_HOT_INTERACTION_IDENTITIES
-  ));
-  res.json({ items: posts, total: posts.length });
+  const rowById = new Map(rows.map((row) => [row.id, row]));
+  const posts = [];
+  pageCandidates.forEach((candidate, pageIndex) => {
+    const row = rowById.get(candidate.id);
+    if (!row) {
+      return;
+    }
+    posts.push(mapPostRow(
+      { ...row, hot_score: candidate.score },
+      offset + pageIndex < 3 && candidate.eligible
+    ));
+  });
+  res.json({ items: posts, ...responseMeta });
 });
 
 app.get('/api/posts/featured', (req, res) => {

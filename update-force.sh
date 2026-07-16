@@ -4,6 +4,8 @@ set -euo pipefail
 APP_DIR="$(pwd)"
 ENV_FILE="${APP_DIR}/.env.local"
 ENV_EXAMPLE="${APP_DIR}/.env.example"
+WEB_PORT="${WEB_PORT:-4396}"
+PM2_WEB_NAME="${PM2_WEB_NAME:-chigua-web}"
 
 log() {
   printf "[update-force] %s\n" "$1"
@@ -43,6 +45,15 @@ ensure_node() {
   as_root apt-get install -y curl
   curl -fsSL https://deb.nodesource.com/setup_20.x | as_root bash -
   as_root apt-get install -y nodejs
+}
+
+ensure_curl() {
+  if require_cmd curl; then
+    return
+  fi
+  log "Installing curl..."
+  as_root apt-get update -y
+  as_root apt-get install -y curl
 }
 
 ensure_pm2() {
@@ -189,6 +200,61 @@ build_app() {
   npm run build
 }
 
+FRONTEND_HEALTH_ERROR=""
+
+check_frontend_route() {
+  local route="$1"
+  local body_file="$2"
+  local health_meta health_status health_content_type
+
+  if ! health_meta="$(curl -fsS --max-time 5 -o "$body_file" -w '%{http_code}\n%{content_type}' "http://127.0.0.1:${WEB_PORT}${route}" 2>/dev/null)"; then
+    FRONTEND_HEALTH_ERROR="${route} request failed"
+    return 1
+  fi
+
+  health_status="$(printf '%s\n' "$health_meta" | sed -n '1p')"
+  health_content_type="$(printf '%s\n' "$health_meta" | sed -n '2p')"
+  if [ "$health_status" != "200" ]; then
+    FRONTEND_HEALTH_ERROR="${route} returned HTTP ${health_status}"
+    return 1
+  fi
+  case "$health_content_type" in
+    text/html*) ;;
+    *)
+      FRONTEND_HEALTH_ERROR="${route} returned non-HTML content type: ${health_content_type}"
+      return 1
+      ;;
+  esac
+  if ! grep -Eiq '<!doctype[[:space:]]+html|<html([[:space:]>])' "$body_file"; then
+    FRONTEND_HEALTH_ERROR="${route} response body is not HTML"
+    return 1
+  fi
+  if ! grep -Fq 'id="root"' "$body_file"; then
+    FRONTEND_HEALTH_ERROR="${route} response is missing the application root"
+    return 1
+  fi
+}
+
+wait_for_frontend() {
+  local attempt=1
+  local body_file
+  body_file="$(mktemp /tmp/chigua-web-health.XXXXXX)"
+
+  while ! check_frontend_route "/" "$body_file" || ! check_frontend_route "/feed" "$body_file"; do
+    if [ "$attempt" -ge 30 ]; then
+      log "Frontend health check failed after ${attempt} attempts: ${FRONTEND_HEALTH_ERROR}"
+      pm2 logs "$PM2_WEB_NAME" --lines 30 --nostream >&2 || true
+      rm -f "$body_file"
+      return 1
+    fi
+    sleep 1
+    attempt=$((attempt + 1))
+  done
+
+  rm -f "$body_file"
+  log "Frontend health ok: / and /feed returned HTTP 200 HTML"
+}
+
 restart_services() {
   log "Restarting API (pm2)..."
   if pm2 describe chigua-api >/dev/null 2>&1; then
@@ -198,25 +264,26 @@ restart_services() {
   fi
 
   log "Restarting frontend (pm2 serve)..."
-  if pm2 describe chigua-web >/dev/null 2>&1; then
-    pm2 restart chigua-web
-  else
-    pm2 serve dist 4396 --spa --name chigua-web
+  if pm2 describe "$PM2_WEB_NAME" >/dev/null 2>&1; then
+    pm2 delete "$PM2_WEB_NAME"
   fi
+  pm2 serve dist "$WEB_PORT" --spa --name "$PM2_WEB_NAME"
 
   pm2 save
+  wait_for_frontend
 }
 
 main() {
   ensure_git
   ensure_node
+  ensure_curl
   ensure_pm2
   sync_repo_force
   ensure_env
   install_deps
   build_app
   restart_services
-  log "Done. API: 4395, Web: 4396"
+  log "Done. API: 4395, Web: ${WEB_PORT}"
 }
 
 main "$@"

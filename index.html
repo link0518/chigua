@@ -20,8 +20,12 @@
       }
     })();
   </script>
-  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@200;400;600;700;800&family=Work+Sans:wght@300;400;500;600&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet" />
-  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+  <!-- 变量字体将 446 组 font-face 收敛为 110 组，并异步启用，避免外部字体阻塞首屏。 -->
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Manrope:wght@200..800&family=Work+Sans:wght@300..600&family=Noto+Sans+SC:wght@300..700&display=swap" />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@200..800&family=Work+Sans:wght@300..600&family=Noto+Sans+SC:wght@300..700&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
+  <noscript>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@200..800&family=Work+Sans:wght@300..600&family=Noto+Sans+SC:wght@300..700&display=swap" rel="stylesheet" />
+  </noscript>
   <link rel="stylesheet" href="/index.css" />
   <script type="application/ld+json">
 {

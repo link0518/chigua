@@ -3,7 +3,27 @@ import { ViewType } from '@/types';
 import HomeView from '@/components/HomeView';
 
 const SubmissionView = React.lazy(() => import('@/components/SubmissionView'));
-const FeedView = React.lazy(() => import('@/components/FeedView'));
+
+const importFeedView = () => import('@/components/FeedView');
+let feedViewPromise: ReturnType<typeof importFeedView> | null = null;
+
+const loadFeedView = () => {
+  if (!feedViewPromise) {
+    feedViewPromise = importFeedView().catch((error) => {
+      // 预取失败时允许首次渲染重新请求；渲染期失败由视图错误边界提供恢复入口。
+      feedViewPromise = null;
+      throw error;
+    });
+  }
+  return feedViewPromise;
+};
+
+export const prefetchFeedView = () => {
+  // 这里只加载组件代码；榜单数据由 App 的热门导航意图或 FeedView 挂载流程预取。
+  void loadFeedView().catch(() => undefined);
+};
+
+const FeedView = React.lazy(loadFeedView);
 const FeaturedView = React.lazy(() => import('@/components/FeaturedView'));
 const SearchView = React.lazy(() => import('@/components/SearchView'));
 const AdminGate = React.lazy(() => import('@/components/AdminGate'));

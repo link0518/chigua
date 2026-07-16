@@ -131,6 +131,7 @@ const main = async () => {
     const postId = await pickAnyPostId(baseUrl);
     const urls = [
       `${baseUrl}/`,
+      `${baseUrl}/feed`,
       `${baseUrl}/search`,
       `${baseUrl}/tiancai`,
     ];

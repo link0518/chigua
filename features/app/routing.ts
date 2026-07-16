@@ -21,6 +21,9 @@ export const resolveViewFromPath = (path: string) => {
   if (normalized === '/featured') {
     return ViewType.FEATURED;
   }
+  if (normalized === '/feed') {
+    return ViewType.FEED;
+  }
   if (normalized === '/wiki' || /^\/wiki\/[^/]+$/.test(normalized)) {
     return ViewType.WIKI;
   }
@@ -42,6 +45,9 @@ export const getPathForView = (view: ViewType) => {
   }
   if (view === ViewType.FEATURED) {
     return '/featured';
+  }
+  if (view === ViewType.FEED) {
+    return '/feed';
   }
   if (view === ViewType.WIKI) {
     return '/wiki';

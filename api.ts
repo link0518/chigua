@@ -120,7 +120,13 @@ export const api = {
   },
   getHomePosts: (limit, offset = 0) => apiFetch(`/posts/home${toQuery({ limit, offset })}`),
   getPostById: (postId) => apiFetch(`/posts/${postId}`),
-  getFeedPosts: (filter, search) => apiFetch(`/posts/feed${toQuery({ filter, search })}`),
+  getFeedPosts: (filter, search, limit = 30, offset = 0, rankingUpdatedAt) => apiFetch(`/posts/feed${toQuery({
+    filter,
+    search,
+    limit,
+    offset,
+    rankingUpdatedAt,
+  })}`),
   getFeaturedPosts: (limit = 20, offset = 0) => apiFetch(`/posts/featured${toQuery({ limit, offset })}`),
   getPostTags: (limit = 50) => apiFetch(`/posts/tags${toQuery({ limit })}`),
   searchPosts: (
