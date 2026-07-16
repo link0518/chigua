@@ -1,3 +1,5 @@
+import { createModerationRepository } from '../repositories/moderation-repository.js';
+
 export const AUTO_HIDE_THRESHOLD = 10;
 export const AUTO_HIDE_WINDOW_MS = 24 * 60 * 60 * 1000;
 export const HIDDEN_REVIEW_PENDING = 'pending';
@@ -43,30 +45,6 @@ const countPendingReports = (db, targetType, targetId, since) => {
         AND created_at >= ?
     `).get(targetId, since)?.count || 0
   );
-};
-
-const resolvePendingReportsForTarget = (db, targetType, targetId, action, resolvedAt) => {
-  if (!targetId) {
-    return 0;
-  }
-
-  const result = targetType === 'comment'
-    ? db.prepare(`
-      UPDATE reports
-      SET status = 'resolved', action = ?, resolved_at = ?
-      WHERE target_type = 'comment'
-        AND comment_id = ?
-        AND status = 'pending'
-    `).run(action, resolvedAt, targetId)
-    : db.prepare(`
-      UPDATE reports
-      SET status = 'resolved', action = ?, resolved_at = ?
-      WHERE target_type = 'post'
-        AND post_id = ?
-        AND status = 'pending'
-    `).run(action, resolvedAt, targetId);
-
-  return Number(result?.changes || 0);
 };
 
 const getHiddenTargetRow = (db, targetType, targetId) => {
@@ -127,64 +105,109 @@ const restoreCommentVisibility = (db, commentId, postId) => {
   tx();
 };
 
-export const createHiddenContentService = ({ db, logAdminAction, getAutoHideReportThreshold }) => ({
-  maybeAutoHideTarget({ targetType, targetId, now = Date.now() }) {
-    const since = now - AUTO_HIDE_WINDOW_MS;
-    const pendingCount = countPendingReports(db, targetType, targetId, since);
-    const threshold = resolveAutoHideThreshold(getAutoHideReportThreshold);
-    if (pendingCount < threshold) {
-      return { autoHidden: false, pendingCount };
-    }
-
-    const autoHidden = targetType === 'comment'
-      ? markCommentHidden(db, targetId, now)
-      : markPostHidden(db, targetId, now);
-
-    return { autoHidden, pendingCount };
-  },
-
-  handleHiddenContentAction({ req, targetType, targetId, action, reason = '', now = Date.now() }) {
-    if (!['post', 'comment'].includes(targetType) || !['keep', 'restore'].includes(action)) {
-      return null;
-    }
-
-    const row = getHiddenTargetRow(db, targetType, targetId);
-    if (!row) {
-      return null;
-    }
-    if (row.deleted === 1) {
-      return { error: '内容已删除，无法处理隐藏状态', code: 'deleted' };
-    }
-    if (row.hidden !== 1) {
-      return { error: '内容当前未处于隐藏状态', code: 'not_hidden' };
-    }
-
-    const before = {
-      hidden: true,
-      hiddenAt: row.hidden_at || null,
-      hiddenReviewStatus: row.hidden_review_status || null,
-    };
-
-    if (action === 'keep') {
-      const hiddenAt = row.hidden_at || now;
-      if (targetType === 'comment') {
-        db.prepare('UPDATE comments SET hidden = 1, hidden_at = ?, hidden_review_status = ? WHERE id = ?')
-          .run(hiddenAt, HIDDEN_REVIEW_KEPT, targetId);
-      } else {
-        db.prepare('UPDATE posts SET hidden = 1, hidden_at = ?, hidden_review_status = ? WHERE id = ?')
-          .run(hiddenAt, HIDDEN_REVIEW_KEPT, targetId);
+export const createHiddenContentService = ({ db, logAdminAction, getAutoHideReportThreshold }) => {
+  const moderationRepository = createModerationRepository(db);
+  return {
+    maybeAutoHideTarget({ targetType, targetId, now = Date.now() }) {
+      const since = now - AUTO_HIDE_WINDOW_MS;
+      const pendingCount = countPendingReports(db, targetType, targetId, since);
+      const threshold = resolveAutoHideThreshold(getAutoHideReportThreshold);
+      if (pendingCount < threshold) {
+        return { autoHidden: false, pendingCount };
       }
 
-      const resolvedReports = resolvePendingReportsForTarget(db, targetType, targetId, 'hidden_keep', now);
+      const autoHidden = targetType === 'comment'
+        ? markCommentHidden(db, targetId, now)
+        : markPostHidden(db, targetId, now);
+
+      return { autoHidden, pendingCount };
+    },
+
+    handleHiddenContentAction({ req, targetType, targetId, action, reason = '', now = Date.now() }) {
+      if (!['post', 'comment'].includes(targetType) || !['keep', 'restore'].includes(action)) {
+        return null;
+      }
+
+      const row = getHiddenTargetRow(db, targetType, targetId);
+      if (!row) {
+        return null;
+      }
+      if (row.deleted === 1) {
+        return { error: '内容已删除，无法处理隐藏状态', code: 'deleted' };
+      }
+      if (row.hidden !== 1) {
+        return { error: '内容当前未处于隐藏状态', code: 'not_hidden' };
+      }
+
+      const before = {
+        hidden: true,
+        hiddenAt: row.hidden_at || null,
+        hiddenReviewStatus: row.hidden_review_status || null,
+      };
+
+      if (action === 'keep') {
+        const hiddenAt = row.hidden_at || now;
+        if (targetType === 'comment') {
+          db.prepare('UPDATE comments SET hidden = 1, hidden_at = ?, hidden_review_status = ? WHERE id = ?')
+            .run(hiddenAt, HIDDEN_REVIEW_KEPT, targetId);
+        } else {
+          db.prepare('UPDATE posts SET hidden = 1, hidden_at = ?, hidden_review_status = ? WHERE id = ?')
+            .run(hiddenAt, HIDDEN_REVIEW_KEPT, targetId);
+        }
+
+        const resolvedReports = moderationRepository.resolvePendingReportsForTarget(
+          targetType,
+          targetId,
+          'hidden_keep',
+          now,
+          { includePostComments: targetType === 'post' }
+        );
+        logAdminAction?.(req, {
+          action: `${targetType}_hidden_keep`,
+          targetType,
+          targetId,
+          before,
+          after: {
+            hidden: true,
+            hiddenAt,
+            hiddenReviewStatus: HIDDEN_REVIEW_KEPT,
+            resolvedReports,
+          },
+          reason,
+        });
+
+        return {
+          id: targetId,
+          targetType,
+          action,
+          hidden: true,
+          hiddenAt,
+          hiddenReviewStatus: HIDDEN_REVIEW_KEPT,
+          resolvedReports,
+        };
+      }
+
+      if (targetType === 'comment') {
+        restoreCommentVisibility(db, targetId, row.post_id);
+      } else {
+        restorePostVisibility(db, targetId);
+      }
+
+      const resolvedReports = moderationRepository.resolvePendingReportsForTarget(
+        targetType,
+        targetId,
+        'hidden_restore',
+        now
+      );
       logAdminAction?.(req, {
-        action: `${targetType}_hidden_keep`,
+        action: `${targetType}_hidden_restore`,
         targetType,
         targetId,
         before,
         after: {
-          hidden: true,
-          hiddenAt,
-          hiddenReviewStatus: HIDDEN_REVIEW_KEPT,
+          hidden: false,
+          hiddenAt: null,
+          hiddenReviewStatus: null,
           resolvedReports,
         },
         reason,
@@ -194,42 +217,11 @@ export const createHiddenContentService = ({ db, logAdminAction, getAutoHideRepo
         id: targetId,
         targetType,
         action,
-        hidden: true,
-        hiddenAt,
-        hiddenReviewStatus: HIDDEN_REVIEW_KEPT,
-        resolvedReports,
-      };
-    }
-
-    if (targetType === 'comment') {
-      restoreCommentVisibility(db, targetId, row.post_id);
-    } else {
-      restorePostVisibility(db, targetId);
-    }
-
-    const resolvedReports = resolvePendingReportsForTarget(db, targetType, targetId, 'hidden_restore', now);
-    logAdminAction?.(req, {
-      action: `${targetType}_hidden_restore`,
-      targetType,
-      targetId,
-      before,
-      after: {
         hidden: false,
         hiddenAt: null,
         hiddenReviewStatus: null,
         resolvedReports,
-      },
-      reason,
-    });
-
-    return {
-      id: targetId,
-      targetType,
-      action,
-      hidden: false,
-      hiddenAt: null,
-      hiddenReviewStatus: null,
-      resolvedReports,
-    };
-  },
-});
+      };
+    },
+  };
+};

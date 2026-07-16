@@ -260,11 +260,12 @@ const formatTagsInput = (tags: string[]) => (Array.isArray(tags) ? tags : []).jo
 const WikiEntryEditor: React.FC<{
   open: boolean;
   entry?: WikiEntry | null;
+  revision?: WikiRevision | null;
   onClose: () => void;
   onSaved: () => void;
   showToast: AdminWikiPanelProps['showToast'];
   canManage: boolean;
-}> = ({ open, entry, onClose, onSaved, showToast, canManage }) => {
+}> = ({ open, entry, revision, onClose, onSaved, showToast, canManage }) => {
   const [name, setName] = useState('');
   const [narrative, setNarrative] = useState('');
   const [tagsInput, setTagsInput] = useState('');
@@ -294,13 +295,14 @@ const WikiEntryEditor: React.FC<{
     if (!open) {
       return;
     }
+    const source = revision?.data || entry;
     releaseAllObjectUrls();
-    setName(entry?.name || '');
-    setNarrative(entry?.narrative || '');
-    setTagsInput(formatTagsInput(entry?.tags || []));
-    setRelatedPostIds(Array.isArray(entry?.relatedPostIds) ? entry.relatedPostIds : []);
+    setName(source?.name || '');
+    setNarrative(source?.narrative || '');
+    setTagsInput(formatTagsInput(source?.tags || []));
+    setRelatedPostIds(Array.isArray(source?.relatedPostIds) ? source.relatedPostIds : []);
     setRelatedPostInput('');
-    const nextAttachmentDrafts = createAttachmentDrafts(entry?.attachments);
+    const nextAttachmentDrafts = createAttachmentDrafts(source?.attachments);
     setAttachmentDrafts(nextAttachmentDrafts);
     initialAttachmentUrlsRef.current = new Set(
       nextAttachmentDrafts.flatMap((attachment) => (
@@ -310,7 +312,7 @@ const WikiEntryEditor: React.FC<{
     setUploadProgress(null);
     setAttachmentViewer(null);
     setSubmitting(false);
-  }, [entry, open, releaseAllObjectUrls]);
+  }, [entry, open, releaseAllObjectUrls, revision]);
 
   useEffect(() => () => releaseAllObjectUrls(), [releaseAllObjectUrls]);
 
@@ -454,7 +456,7 @@ const WikiEntryEditor: React.FC<{
       return;
     }
 
-    const pastedFiles = Array.from(event.clipboardData?.items || []).flatMap((item) => {
+    const pastedFiles = Array.from<DataTransferItem>(event.clipboardData.items).flatMap((item) => {
       if (item.kind !== 'file') {
         return [];
       }
@@ -606,14 +608,16 @@ const WikiEntryEditor: React.FC<{
         tags: parseTagsInput(tagsInput),
         relatedPostIds,
         attachments,
-        editSummary: entry ? '管理员直接编辑' : '管理员创建',
+        editSummary: revision ? revision.editSummary : entry ? '管理员直接编辑' : '管理员创建',
       };
-      if (entry) {
+      if (revision) {
+        await api.updateAdminWikiRevision(revision.id, payload);
+      } else if (entry) {
         await api.updateAdminWikiEntry(entry.id, payload);
       } else {
         await api.createAdminWikiEntry(payload);
       }
-      showToast(entry ? '瓜条已更新' : '瓜条已创建', 'success');
+      showToast(revision ? '待审核稿件已更新' : entry ? '瓜条已更新' : '瓜条已创建', 'success');
       onSaved();
       releaseAllObjectUrls();
       onClose();
@@ -630,7 +634,7 @@ const WikiEntryEditor: React.FC<{
       <button type="button" className="absolute inset-0 bg-black/40" aria-label="关闭编辑窗口" onClick={handleClose} disabled={submitting} />
       <form onSubmit={handleSubmit} className="relative z-10 max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-lg border-2 border-ink bg-white p-6 shadow-sketch-lg">
         <div className="mb-4 flex items-center justify-between gap-4">
-          <h3 className="font-display text-2xl text-ink">{entry ? '编辑瓜条' : '新建瓜条'}</h3>
+          <h3 className="font-display text-2xl text-ink">{revision ? '编辑待审核稿件' : entry ? '编辑瓜条' : '新建瓜条'}</h3>
           <button type="button" onClick={handleClose} disabled={submitting} className="rounded-full p-2 text-pencil hover:bg-gray-100 hover:text-ink" aria-label="关闭编辑窗口">
             <X className="h-5 w-5" />
           </button>
@@ -661,7 +665,7 @@ const WikiEntryEditor: React.FC<{
               placeholder="请输入记录叙述，支持 Markdown。"
               maxLength={WIKI_NARRATIVE_MAX_LENGTH}
               minHeight="240px"
-              ariaLabel={entry ? '后台编辑瓜条 Markdown 编辑器' : '后台新建瓜条 Markdown 编辑器'}
+              ariaLabel={revision ? '后台编辑待审核瓜条 Markdown 编辑器' : entry ? '后台编辑瓜条 Markdown 编辑器' : '后台新建瓜条 Markdown 编辑器'}
               toolbarLabel="记录叙述"
               emptyPreviewText="预览区为空，请先填写记录叙述。"
               renderClassName="font-sans text-sm leading-relaxed text-ink [&_p]:mb-4 [&_blockquote]:my-4 [&_ol]:my-4 [&_ul]:my-4 [&_pre]:my-4"
@@ -876,6 +880,7 @@ const AdminWikiPanel: React.FC<AdminWikiPanelProps> = ({ showToast, onPendingCou
   const [entryLoading, setEntryLoading] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingEntry, setEditingEntry] = useState<WikiEntry | null>(null);
+  const [editingRevision, setEditingRevision] = useState<WikiRevision | null>(null);
   const [attachmentViewer, setAttachmentViewer] = useState<AttachmentViewerState | null>(null);
 
   const revisionPages = Math.max(Math.ceil(revisionTotal / WIKI_PAGE_SIZE), 1);
@@ -1115,6 +1120,18 @@ const AdminWikiPanel: React.FC<AdminWikiPanelProps> = ({ showToast, onPendingCou
                           type="button"
                           variant="secondary"
                           className="h-10 px-3 text-xs"
+                          onClick={() => {
+                            setEditingEntry(null);
+                            setEditingRevision(revision);
+                            setEditorOpen(true);
+                          }}
+                        >
+                          <Pencil className="mr-1 inline h-4 w-4" /> 编辑稿件
+                        </SketchButton>
+                        <SketchButton
+                          type="button"
+                          variant="secondary"
+                          className="h-10 px-3 text-xs"
                           onClick={() => handleRevisionAction(revision, 'approve')}
                         >
                           <CheckCircle className="mr-1 inline h-4 w-4" /> 通过
@@ -1180,6 +1197,7 @@ const AdminWikiPanel: React.FC<AdminWikiPanelProps> = ({ showToast, onPendingCou
               className="h-10 px-4 text-sm"
               disabled={!canManage}
               onClick={() => {
+                setEditingRevision(null);
                 setEditingEntry(null);
                 setEditorOpen(true);
               }}
@@ -1227,6 +1245,7 @@ const AdminWikiPanel: React.FC<AdminWikiPanelProps> = ({ showToast, onPendingCou
                         variant="secondary"
                         className="h-9 px-3 text-xs"
                         onClick={() => {
+                          setEditingRevision(null);
                           setEditingEntry(entry);
                           setEditorOpen(true);
                         }}
@@ -1266,7 +1285,12 @@ const AdminWikiPanel: React.FC<AdminWikiPanelProps> = ({ showToast, onPendingCou
       <WikiEntryEditor
         open={editorOpen}
         entry={editingEntry}
-        onClose={() => setEditorOpen(false)}
+        revision={editingRevision}
+        onClose={() => {
+          setEditorOpen(false);
+          setEditingEntry(null);
+          setEditingRevision(null);
+        }}
         onSaved={() => {
           loadEntries();
           loadRevisions();

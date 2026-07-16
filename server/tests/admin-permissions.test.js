@@ -160,12 +160,29 @@ test('read permission can list reports and manage permission is required for rep
       fingerprint TEXT,
       reporter_ip TEXT
     );
-    CREATE TABLE posts (id TEXT PRIMARY KEY, content TEXT, ip TEXT, session_id TEXT, fingerprint TEXT);
-    CREATE TABLE comments (id TEXT PRIMARY KEY, post_id TEXT, content TEXT, ip TEXT, fingerprint TEXT);
+    CREATE TABLE posts (
+      id TEXT PRIMARY KEY,
+      content TEXT,
+      ip TEXT,
+      session_id TEXT,
+      fingerprint TEXT,
+      deleted INTEGER NOT NULL DEFAULT 0,
+      hidden INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE comments (
+      id TEXT PRIMARY KEY,
+      post_id TEXT,
+      content TEXT,
+      ip TEXT,
+      fingerprint TEXT,
+      deleted INTEGER NOT NULL DEFAULT 0,
+      hidden INTEGER NOT NULL DEFAULT 0
+    );
   `);
+  db.prepare("INSERT INTO posts (id, content, deleted) VALUES ('post-1', 'content', 0)").run();
   db.prepare(`
     INSERT INTO reports (id, post_id, target_type, reason, content_snippet, created_at, status, risk_level)
-    VALUES ('r1', NULL, 'post', 'spam', 'spam', 1, 'pending', 'low')
+    VALUES ('r1', 'post-1', 'post', 'spam', 'spam', 1, 'pending', 'low')
   `).run();
 
   const app = createApp();

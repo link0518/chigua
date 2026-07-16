@@ -1,4 +1,5 @@
 import { buildAdminIdentity } from '../../admin-identity-utils.js';
+import { createModerationRepository } from '../../repositories/moderation-repository.js';
 
 export const registerAdminPostDeleteRequestsRoutes = (app, deps) => {
   const {
@@ -13,6 +14,7 @@ export const registerAdminPostDeleteRequestsRoutes = (app, deps) => {
     trimPreview = (value) => String(value || ''),
     resolveStoredIdentityHash,
   } = deps;
+  const moderationRepository = createModerationRepository(db);
 
   const resolveRequesterIdentity = ({ fingerprint, ip = '' }) => buildAdminIdentity({
     fingerprint,
@@ -165,6 +167,11 @@ export const registerAdminPostDeleteRequestsRoutes = (app, deps) => {
       if (action === 'approve') {
         db.prepare('UPDATE posts SET deleted = 1, deleted_at = ? WHERE id = ?')
           .run(now, existing.post_id);
+        moderationRepository.resolvePendingReportsForPosts(
+          [existing.post_id],
+          'delete_request_approved',
+          now
+        );
       }
 
       return getRequestWithPost(requestId);

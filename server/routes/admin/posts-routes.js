@@ -462,6 +462,7 @@ app.post('/api/admin/posts/batch', requireAdmin, requireAdminCsrf, requireAdminM
   if (action === 'delete') {
     db.prepare('UPDATE posts SET deleted = 1, deleted_at = ? WHERE id = ?')
       .run(now, postId);
+    moderationRepository.resolvePendingReportsForPosts([postId], 'post_delete', now);
   } else {
     db.prepare('UPDATE posts SET deleted = 0, deleted_at = NULL WHERE id = ?')
       .run(postId);
@@ -577,6 +578,12 @@ app.post('/api/admin/posts/batch', requireAdmin, requireAdminCsrf, requireAdminM
       'UPDATE posts SET comments_count = CASE WHEN comments_count - 1 < 0 THEN 0 ELSE comments_count - 1 END WHERE id = ?'
     ).run(row.post_id);
   }
+  moderationRepository.resolvePendingReportsForTarget(
+    'comment',
+    commentId,
+    action === 'ban' ? 'comment_ban' : 'comment_delete',
+    now
+  );
 
   logAdminAction(req, {
     action: action === 'ban' ? 'comment_ban' : 'comment_delete',

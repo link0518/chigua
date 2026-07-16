@@ -730,7 +730,7 @@ const App: React.FC = () => {
 
       {showSiteChrome && (
         <aside className={`doodle-side-nav fixed left-[10vw] z-40 hidden w-[176px] border-2 px-3 pb-3 pt-7 shadow-paper min-[1880px]:block ${isCnyTheme ? 'border-cny-gold bg-cny-paper/95' : 'is-pastel border-ink'}`}>
-          <span className={`doodle-side-nav-title ${isCnyTheme ? 'border-cny-gold bg-cny-red text-cny-gold' : 'border-ink bg-alert text-ink'}`}>
+          <span className={`doodle-side-nav-title pointer-events-none select-none ${isCnyTheme ? 'border-cny-gold bg-cny-red text-cny-gold' : 'border-ink bg-alert text-ink'}`}>
             瓜田导航
           </span>
           <nav aria-label="主导航" className="flex flex-col gap-2">

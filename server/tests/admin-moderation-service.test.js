@@ -265,6 +265,133 @@ test('举报处理 ban 在 deleteComment=true 时会删评论，并在有关联�
   db.close();
 });
 
+test('举报删除帖子会关闭同帖及其评论的全部待处理举报', () => {
+  const { db, service, req } = createHarness();
+  db.prepare('INSERT INTO posts (id, content, deleted, comments_count, created_at) VALUES (?, ?, 0, 1, ?)')
+    .run('post-1', 'post', 1700000000000);
+  db.prepare('INSERT INTO comments (id, post_id, content, deleted, created_at) VALUES (?, ?, ?, 0, ?)')
+    .run('comment-1', 'post-1', 'comment', 1700000000000);
+  db.prepare(`
+    INSERT INTO reports (id, status, action, target_type, post_id, comment_id)
+    VALUES
+      ('report-1', 'pending', NULL, 'post', 'post-1', NULL),
+      ('report-2', 'pending', NULL, 'post', 'post-1', NULL),
+      ('report-3', 'pending', NULL, 'comment', 'post-1', 'comment-1')
+  `).run();
+
+  service.executeReportAction({
+    req,
+    reportId: 'report-1',
+    action: 'delete',
+    reason: '违规内容',
+    now: 1700000001000,
+  });
+
+  assert.deepEqual(
+    db.prepare('SELECT status, action FROM reports ORDER BY id').all(),
+    [
+      { status: 'resolved', action: 'delete' },
+      { status: 'resolved', action: 'delete' },
+      { status: 'resolved', action: 'delete' },
+    ]
+  );
+
+  db.close();
+});
+
+test('忽略单条举报不会关闭同一目标的其他举报', () => {
+  const { db, service, req } = createHarness();
+  db.prepare(`
+    INSERT INTO reports (id, status, action, target_type, post_id, comment_id)
+    VALUES
+      ('report-1', 'pending', NULL, 'post', 'post-1', NULL),
+      ('report-2', 'pending', NULL, 'post', 'post-1', NULL)
+  `).run();
+
+  service.executeReportAction({
+    req,
+    reportId: 'report-1',
+    action: 'ignore',
+    reason: '举报不成立',
+    now: 1700000001000,
+  });
+
+  assert.deepEqual(
+    db.prepare('SELECT status, action FROM reports ORDER BY id').all(),
+    [
+      { status: 'ignored', action: 'ignore' },
+      { status: 'pending', action: null },
+    ]
+  );
+
+  db.close();
+});
+
+test('重复处理旧举报不会关闭同目标的新待处理举报', () => {
+  const { db, service, req } = createHarness();
+  db.prepare('INSERT INTO posts (id, content, deleted, comments_count, created_at) VALUES (?, ?, 0, 1, ?)')
+    .run('post-1', 'post', 1700000000000);
+  db.prepare('INSERT INTO comments (id, post_id, content, deleted, created_at) VALUES (?, ?, ?, 0, ?)')
+    .run('comment-1', 'post-1', 'comment', 1700000000000);
+  db.prepare(`
+    INSERT INTO reports (id, status, action, target_type, post_id, comment_id)
+    VALUES
+      ('report-old', 'resolved', 'ban', 'comment', 'post-1', 'comment-1'),
+      ('report-new', 'pending', NULL, 'comment', 'post-1', 'comment-1')
+  `).run();
+
+  const result = service.executeReportAction({
+    req,
+    reportId: 'report-old',
+    action: 'delete',
+    reason: '重复请求',
+    now: 1700000001000,
+  });
+
+  assert.deepEqual(result, { error: '举报已处理', code: 'already_processed' });
+  assert.deepEqual(
+    db.prepare('SELECT id, status, action FROM reports ORDER BY id').all(),
+    [
+      { id: 'report-new', status: 'pending', action: null },
+      { id: 'report-old', status: 'resolved', action: 'ban' },
+    ]
+  );
+  assert.equal(db.prepare('SELECT deleted FROM comments WHERE id = ?').get('comment-1').deleted, 0);
+  assert.equal(db.prepare('SELECT comments_count FROM posts WHERE id = ?').get('post-1').comments_count, 1);
+
+  db.close();
+});
+
+test('批量删除帖子会关闭帖子及其评论举报', () => {
+  const { db, service, req } = createHarness();
+  db.prepare('INSERT INTO posts (id, content, deleted, created_at) VALUES (?, ?, 0, ?)')
+    .run('post-1', 'post', 1700000000000);
+  db.prepare(`
+    INSERT INTO reports (id, status, action, target_type, post_id, comment_id)
+    VALUES
+      ('report-1', 'pending', NULL, 'post', 'post-1', NULL),
+      ('report-2', 'pending', NULL, 'comment', 'post-1', 'comment-1')
+  `).run();
+
+  service.executePostBatchAction({
+    req,
+    action: 'delete',
+    ids: ['post-1'],
+    reason: '批量清理',
+    now: 1700000001000,
+  });
+
+  assert.deepEqual(
+    db.prepare('SELECT status, action FROM reports ORDER BY id').all(),
+    [
+      { status: 'resolved', action: 'post_delete' },
+      { status: 'resolved', action: 'post_delete' },
+    ]
+  );
+
+  db.close();
+});
+
 test('手动封禁与解封会命中对应封禁表', () => {
   const { db, service, logs, req } = createHarness();
 

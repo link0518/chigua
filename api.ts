@@ -289,6 +289,10 @@ export const api = {
     method: 'POST',
     body: JSON.stringify({ action, reason }),
   }),
+  updateAdminWikiRevision: (revisionId, payload = {}) => apiFetch(`/admin/wiki/revisions/${encodeURIComponent(String(revisionId || ''))}/edit`, {
+    method: 'POST',
+    body: JSON.stringify(payload || {}),
+  }),
   updateAdminWikiEntry: (entryId, payload = {}) => apiFetch(`/admin/wiki/entries/${encodeURIComponent(String(entryId || ''))}/edit`, {
     method: 'POST',
     body: JSON.stringify(payload || {}),

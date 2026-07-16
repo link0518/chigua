@@ -87,6 +87,26 @@ export const registerAdminWikiRoutes = (app, deps) => {
 
   const mapAdminWikiRevision = (row, versionNumber = null) => {
     const revision = mapWikiRevisionRow(row, versionNumber);
+    if (row.action_type === 'edit' && row.entry_id) {
+      const entry = db.prepare('SELECT * FROM wiki_entries WHERE id = ?').get(row.entry_id);
+      if (entry) {
+        const fallbackData = mapWikiEntryRow(entry);
+        let rawData = {};
+        try {
+          const parsed = JSON.parse(String(row.data_json || '{}'));
+          rawData = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+        } catch {
+          rawData = {};
+        }
+        // 兼容旧格式编辑稿：缺失的新字段应继承当前瓜条，而不是在管理员保存时被清空。
+        if (!Object.prototype.hasOwnProperty.call(rawData, 'relatedPostIds')) {
+          revision.data.relatedPostIds = fallbackData.relatedPostIds;
+        }
+        if (!Object.prototype.hasOwnProperty.call(rawData, 'attachments')) {
+          revision.data.attachments = fallbackData.attachments;
+        }
+      }
+    }
     revision.relatedPosts = resolveWikiRelatedPosts(db, revision.data.relatedPostIds);
     return revision;
   };
@@ -500,6 +520,46 @@ export const registerAdminWikiRoutes = (app, deps) => {
       }
       return res.status(400).json({ error: error instanceof Error ? error.message : '审核失败' });
     }
+  });
+
+  app.post('/api/admin/wiki/revisions/:id/edit', requireAdmin, requireAdminCsrf, requireAdminManage, (req, res) => {
+    const id = String(req.params.id || '').trim();
+    const revision = getRevision(id);
+    if (!revision) {
+      return res.status(404).json({ error: '审核记录不存在' });
+    }
+    if (revision.status !== 'pending') {
+      return res.status(400).json({ error: '只能编辑待审核稿件' });
+    }
+
+    // 旧稿中的关联帖子可能在投稿后失效；这里只读取旧快照，最终保存内容由下方统一校验。
+    const currentData = mapAdminWikiRevision(revision).data;
+    const data = sanitizeAdminPayload(req.body || {}, res, currentData);
+    if (!data) {
+      return;
+    }
+
+    const result = db.prepare(
+      `
+      UPDATE wiki_entry_revisions
+      SET data_json = ?
+      WHERE id = ? AND status = 'pending'
+      `
+    ).run(serializeWikiRevisionData(data), id);
+    if (Number(result.changes || 0) !== 1) {
+      return res.status(400).json({ error: '该记录已处理' });
+    }
+
+    logAdminAction(req, {
+      action: 'wiki_revision_edit',
+      targetType: 'wiki_revision',
+      targetId: id,
+      before: currentData,
+      after: data,
+      reason: '管理员修订待审核稿件',
+    });
+
+    return res.json({ revision: mapAdminWikiRevision(getRevision(id)) });
   });
 
   app.post('/api/admin/wiki/entries/:id/edit', requireAdmin, requireAdminCsrf, requireAdminManage, (req, res) => {

@@ -66,6 +66,16 @@ const createDb = () => {
       created_at INTEGER NOT NULL,
       PRIMARY KEY (post_id, fingerprint)
     );
+
+    CREATE TABLE reports (
+      id TEXT PRIMARY KEY,
+      status TEXT NOT NULL,
+      action TEXT,
+      resolved_at INTEGER,
+      target_type TEXT NOT NULL,
+      post_id TEXT,
+      comment_id TEXT
+    );
   `);
   return db;
 };
@@ -307,6 +317,12 @@ test('admin can list pending delete requests and approve with soft delete notifi
     INSERT INTO post_delete_requests (id, post_id, requester_fingerprint, requester_ip, reason, status, created_at)
     VALUES ('request-1', 'post-1', 'owner-canonical', '127.0.0.2', '申请删除原因', 'pending', 2000)
   `).run();
+  db.prepare(`
+    INSERT INTO reports (id, status, target_type, post_id, comment_id)
+    VALUES
+      ('report-post', 'pending', 'post', 'post-1', NULL),
+      ('report-comment', 'pending', 'comment', 'post-1', 'comment-1')
+  `).run();
   const { routes, notifications, auditLogs } = registerAdminHarness(db);
 
   const listRes = await runHandlers(routes.get('GET /api/admin/post-delete-requests'), {
@@ -326,6 +342,13 @@ test('admin can list pending delete requests and approve with soft delete notifi
   assert.equal(actionRes.statusCode, 200);
   assert.equal(db.prepare('SELECT status FROM post_delete_requests WHERE id = ?').get('request-1').status, 'approved');
   assert.equal(db.prepare('SELECT deleted FROM posts WHERE id = ?').get('post-1').deleted, 1);
+  assert.deepEqual(
+    db.prepare('SELECT status, action FROM reports ORDER BY id').all(),
+    [
+      { status: 'resolved', action: 'delete_request_approved' },
+      { status: 'resolved', action: 'delete_request_approved' },
+    ]
+  );
   assert.equal(notifications.length, 1);
   assert.equal(notifications[0].recipientFingerprint, 'owner-canonical');
   assert.equal(notifications[0].type, 'post_delete_request_approved');

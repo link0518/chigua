@@ -802,7 +802,7 @@ const HomeView: React.FC = () => {
   const renderModeHeader = () => (
     <div className="mx-auto mb-5 flex w-full max-w-6xl justify-center sm:justify-end">
       <div className="relative inline-flex items-stretch border-2 border-ink bg-white p-1 shadow-sketch doodle-border !rounded-lg">
-        <span className="absolute -top-3 left-3 rotate-[-2deg] border border-ink bg-alert px-2 py-0.5 font-hand text-[11px] font-bold leading-none text-ink">
+        <span className="pointer-events-none absolute -top-3 left-3 select-none rotate-[-2deg] border border-ink bg-alert px-2 py-0.5 font-hand text-[11px] font-bold leading-none text-ink">
           浏览方式
         </span>
         <button

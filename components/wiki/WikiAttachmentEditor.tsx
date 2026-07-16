@@ -246,7 +246,7 @@ export const WikiAttachmentEditor: React.FC<WikiAttachmentEditorProps> = ({
       return;
     }
 
-    const pastedFiles = Array.from(event.clipboardData?.items || []).flatMap((item) => {
+    const pastedFiles = Array.from<DataTransferItem>(event.clipboardData.items).flatMap((item) => {
       if (item.kind !== 'file') {
         return [];
       }

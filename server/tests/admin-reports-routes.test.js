@@ -28,7 +28,9 @@ const createDb = () => {
       content TEXT,
       ip TEXT,
       session_id TEXT,
-      fingerprint TEXT
+      fingerprint TEXT,
+      deleted INTEGER NOT NULL DEFAULT 0,
+      hidden INTEGER NOT NULL DEFAULT 0
     );
 
     CREATE TABLE comments (
@@ -36,7 +38,9 @@ const createDb = () => {
       post_id TEXT,
       content TEXT,
       ip TEXT,
-      fingerprint TEXT
+      fingerprint TEXT,
+      deleted INTEGER NOT NULL DEFAULT 0,
+      hidden INTEGER NOT NULL DEFAULT 0
     );
   `);
   return db;
@@ -139,6 +143,57 @@ test('admin reports supports pending preview limit with total count', async () =
   assert.equal(res.payload.total, 3);
   assert.equal(res.payload.items.length, 2);
   assert.deepEqual(res.payload.items.map((item) => item.id), ['report-3', 'report-2']);
+
+  db.close();
+});
+
+test('admin reports pending list excludes deleted, hidden or unavailable targets', async () => {
+  const { db, routes } = createHarness();
+  seedPostReport(db, { id: 'report-active', postId: 'post-active', status: 'pending', createdAt: 1000 });
+  seedPostReport(db, { id: 'report-deleted', postId: 'post-deleted', status: 'pending', createdAt: 2000 });
+  seedPostReport(db, { id: 'report-hidden', postId: 'post-hidden', status: 'pending', createdAt: 2500 });
+  db.prepare('UPDATE posts SET deleted = 1 WHERE id = ?').run('post-deleted');
+  db.prepare('UPDATE posts SET hidden = 1 WHERE id = ?').run('post-hidden');
+  db.prepare(`
+    INSERT INTO posts (id, content, deleted, hidden)
+    VALUES ('post-comment-active', 'comment parent', 0, 0)
+  `).run();
+  db.prepare(`
+    INSERT INTO comments (id, post_id, content, deleted, hidden)
+    VALUES ('comment-hidden', 'post-comment-active', 'hidden comment', 0, 1)
+  `).run();
+  db.prepare(`
+    INSERT INTO reports (id, post_id, comment_id, target_type, reason, content_snippet, created_at, status, risk_level)
+    VALUES ('report-comment-hidden', 'post-comment-active', 'comment-hidden', 'comment', '垃圾广告', 'hidden comment', 2750, 'pending', 'low')
+  `).run();
+  db.prepare(`
+    INSERT INTO reports (id, post_id, comment_id, target_type, reason, content_snippet, created_at, status, risk_level)
+    VALUES ('report-missing', 'post-missing', NULL, 'post', '垃圾广告', 'missing', 3000, 'pending', 'low')
+  `).run();
+
+  const res = await runHandlers(routes.get('GET /api/reports'), {
+    query: { status: 'pending' },
+  });
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.payload.total, 1);
+  assert.deepEqual(res.payload.items.map((item) => item.id), ['report-active']);
+
+  db.close();
+});
+
+test('admin report action rejects an already processed report', async () => {
+  const { db, routes } = createHarness();
+  seedPostReport(db, { id: 'report-processed', postId: 'post-processed', status: 'resolved', createdAt: 1000 });
+
+  const res = await runHandlers(routes.get('POST /api/reports/:id/action'), {
+    params: { id: 'report-processed' },
+    body: { action: 'delete', reason: '重复请求' },
+  });
+
+  assert.equal(res.statusCode, 409);
+  assert.equal(res.payload.error, '举报已处理');
+  assert.equal(db.prepare('SELECT deleted FROM posts WHERE id = ?').get('post-processed').deleted, 0);
 
   db.close();
 });

@@ -111,6 +111,9 @@ export const createAdminModerationService = ({
         const deleted = action === 'delete' ? 1 : 0;
         const deletedAt = action === 'delete' ? now : null;
         repository.setPostsDeletedState(ids, deleted, deletedAt);
+        if (action === 'delete') {
+          repository.resolvePendingReportsForPosts(ids, 'post_delete', now);
+        }
 
         rows.forEach((row) => {
           logAdminAction(req, {
@@ -190,70 +193,90 @@ export const createAdminModerationService = ({
       if (!report) {
         return null;
       }
+      if (report.status !== 'pending') {
+        return { error: '举报已处理', code: 'already_processed' };
+      }
 
-      const nextStatus = action === 'ignore' ? 'ignored' : 'resolved';
-      repository.setReportResolution(reportId, nextStatus, action, now);
+      return repository.runInTransaction(() => {
+        const nextStatus = action === 'ignore' ? 'ignored' : 'resolved';
+        const claimed = repository.claimPendingReport(reportId, nextStatus, action, now);
+        if (!claimed) {
+          return { error: '举报已处理', code: 'already_processed' };
+        }
 
-      let targetIdentity = null;
-      if (action === 'delete' || action === 'ban') {
-        const isCommentTarget = report.target_type === 'comment' && report.comment_id;
-        if (isCommentTarget) {
-          const commentRow = repository.getCommentById(report.comment_id);
-          if (commentRow) {
-            const shouldDeleteReportedComment = action === 'delete' || (action === 'ban' && deleteComment);
-            if (shouldDeleteReportedComment && commentRow.deleted !== 1) {
-              repository.softDeleteComment(report.comment_id, now);
-              repository.decrementPostComments(report.post_id);
+        if (action !== 'ignore') {
+          const isCommentTarget = report.target_type === 'comment' && report.comment_id;
+          const targetId = isCommentTarget ? report.comment_id : report.post_id;
+          repository.resolvePendingReportsForTarget(
+            isCommentTarget ? 'comment' : 'post',
+            targetId,
+            action,
+            now,
+            { includePostComments: !isCommentTarget }
+          );
+        }
+
+        let targetIdentity = null;
+        if (action === 'delete' || action === 'ban') {
+          const isCommentTarget = report.target_type === 'comment' && report.comment_id;
+          if (isCommentTarget) {
+            const commentRow = repository.getCommentById(report.comment_id);
+            if (commentRow) {
+              const shouldDeleteReportedComment = action === 'delete' || (action === 'ban' && deleteComment);
+              if (shouldDeleteReportedComment && commentRow.deleted !== 1) {
+                repository.softDeleteComment(report.comment_id, now);
+                repository.decrementPostComments(commentRow.post_id);
+              }
+              targetIdentity = {
+                ip: commentRow.ip || null,
+                value: commentRow.fingerprint || null,
+                createdAt: commentRow.created_at,
+              };
             }
-            targetIdentity = {
-              ip: commentRow.ip || null,
-              value: commentRow.fingerprint || null,
-              createdAt: commentRow.created_at,
-            };
-          }
-        } else {
-          const postRow = repository.getPostIdentity(report.post_id);
-          repository.softDeletePost(report.post_id, now);
-          if (postRow) {
-            targetIdentity = {
-              ip: postRow.ip || null,
-              value: postRow.fingerprint || null,
-              createdAt: postRow.created_at,
-            };
+          } else {
+            const postRow = repository.getPostIdentity(report.post_id);
+            repository.softDeletePost(report.post_id, now);
+            if (postRow) {
+              targetIdentity = {
+                ip: postRow.ip || null,
+                value: postRow.fingerprint || null,
+                createdAt: postRow.created_at,
+              };
+            }
           }
         }
-      }
 
-      if (action === 'ban' && banOptions && targetIdentity) {
-        if (targetIdentity.ip) {
-          applyBan('ip', targetIdentity.ip, banOptions);
+        if (action === 'ban' && banOptions && targetIdentity) {
+          if (targetIdentity.ip) {
+            applyBan('ip', targetIdentity.ip, banOptions);
+          }
+          const target = normalizeStoredTarget(targetIdentity.value, resolveStoredIdentityHash);
+          if (target) {
+            applyBan(mapStoredTypeToBanType(target.type), target.value, banOptions);
+          }
         }
-        const target = normalizeStoredTarget(targetIdentity.value, resolveStoredIdentityHash);
-        if (target) {
-          applyBan(mapStoredTypeToBanType(target.type), target.value, banOptions);
-        }
-      }
 
-      logAdminAction(req, {
-        action: `report_${action}`,
-        targetType: 'report',
-        targetId: reportId,
-        before: { status: report.status, action: report.action || null },
-        after: { status: nextStatus, action },
-        reason,
+        logAdminAction(req, {
+          action: `report_${action}`,
+          targetType: 'report',
+          targetId: reportId,
+          before: { status: report.status, action: report.action || null },
+          after: { status: nextStatus, action },
+          reason,
+        });
+
+        if (action === 'ban' && targetIdentity) {
+          if (targetIdentity.ip) {
+            logBan(req, 'ip', targetIdentity.ip, reason, banOptions);
+          }
+          const target = normalizeStoredTarget(targetIdentity.value, resolveStoredIdentityHash);
+          if (target) {
+            logBan(req, mapStoredTypeToBanType(target.type), target.value, reason, banOptions);
+          }
+        }
+
+        return { status: nextStatus, action };
       });
-
-      if (action === 'ban' && targetIdentity) {
-        if (targetIdentity.ip) {
-          logBan(req, 'ip', targetIdentity.ip, reason, banOptions);
-        }
-        const target = normalizeStoredTarget(targetIdentity.value, resolveStoredIdentityHash);
-        if (target) {
-          logBan(req, mapStoredTypeToBanType(target.type), target.value, reason, banOptions);
-        }
-      }
-
-      return { status: nextStatus, action };
     },
 
     executeReportBatchResolve({ req, ids, reason, action = 'resolve', now = Date.now() }) {

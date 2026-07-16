@@ -26,6 +26,28 @@ export const registerAdminReportsRoutes = (app, deps) => {
     resolveStoredIdentityHash,
   });
   const EXCLUDE_RUMOR_REPORT_SQL = "((reports.reason_code IS NULL OR reports.reason_code != 'rumor') AND NOT (reports.reason_code IS NULL AND reports.reason = '举报谣言'))";
+  const REPORT_TARGET_JOINS_SQL = `
+    LEFT JOIN posts ON posts.id = reports.post_id
+    LEFT JOIN comments ON comments.id = reports.comment_id
+  `;
+  const ACTIONABLE_PENDING_REPORT_SQL = `(
+    reports.status != 'pending'
+    OR (
+      reports.target_type = 'post'
+      AND posts.id IS NOT NULL
+      AND COALESCE(posts.deleted, 0) != 1
+      AND COALESCE(posts.hidden, 0) != 1
+    )
+    OR (
+      reports.target_type = 'comment'
+      AND comments.id IS NOT NULL
+      AND COALESCE(comments.deleted, 0) != 1
+      AND COALESCE(comments.hidden, 0) != 1
+      AND posts.id IS NOT NULL
+      AND COALESCE(posts.deleted, 0) != 1
+      AND COALESCE(posts.hidden, 0) != 1
+    )
+  )`;
 
   const resolveAdminIdentity = ({ fingerprint, sessionId = '', ip = '' }) => buildAdminIdentity({
     fingerprint,
@@ -45,7 +67,7 @@ export const registerAdminReportsRoutes = (app, deps) => {
       ? Math.min(Math.floor(parsedLimit), 50)
       : 0;
 
-    const conditions = ["reports.target_type != 'chat'"];
+    const conditions = ["reports.target_type != 'chat'", ACTIONABLE_PENDING_REPORT_SQL];
     const params = [];
 
     if (status) {
@@ -61,7 +83,7 @@ export const registerAdminReportsRoutes = (app, deps) => {
     const limitClause = canUseSqlLimit ? 'LIMIT ?' : '';
     const total = canUseSqlLimit
       ? Number(
-        db.prepare(`SELECT COUNT(1) AS count FROM reports ${whereClause}`)
+        db.prepare(`SELECT COUNT(1) AS count FROM reports ${REPORT_TARGET_JOINS_SQL} ${whereClause}`)
           .get(...params)?.count || 0
       )
       : 0;
@@ -198,6 +220,10 @@ export const registerAdminReportsRoutes = (app, deps) => {
 
     if (!result) {
       return res.status(404).json({ error: '举报不存在' });
+    }
+    if (result.error) {
+      const statusCode = result.code === 'already_processed' ? 409 : 400;
+      return res.status(statusCode).json({ error: result.error });
     }
 
     return res.json(result);

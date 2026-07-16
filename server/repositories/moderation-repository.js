@@ -22,9 +22,71 @@ export const createModerationRepository = (db) => {
 
   const getReportById = (reportId) => db.prepare('SELECT * FROM reports WHERE id = ?').get(reportId);
 
-  const setReportResolution = (reportId, status, action, resolvedAt) => {
-    db.prepare('UPDATE reports SET status = ?, action = ?, resolved_at = ? WHERE id = ?')
-      .run(status, action, resolvedAt, reportId);
+  const claimPendingReport = (reportId, status, action, resolvedAt) => {
+    const result = db.prepare(`
+      UPDATE reports
+      SET status = ?, action = ?, resolved_at = ?
+      WHERE id = ? AND status = 'pending'
+    `).run(status, action, resolvedAt, reportId);
+    return Number(result?.changes || 0) === 1;
+  };
+
+  const runInTransaction = (operation) => db.transaction(operation)();
+
+  const resolvePendingReportsForTarget = (
+    targetType,
+    targetId,
+    action,
+    resolvedAt,
+    { includePostComments = false } = {}
+  ) => {
+    if (!targetId) {
+      return 0;
+    }
+
+    let result;
+    if (targetType === 'comment') {
+      result = db.prepare(`
+        UPDATE reports
+        SET status = 'resolved', action = ?, resolved_at = ?
+        WHERE target_type = 'comment'
+          AND comment_id = ?
+          AND status = 'pending'
+      `).run(action, resolvedAt, targetId);
+    } else if (includePostComments) {
+      result = db.prepare(`
+        UPDATE reports
+        SET status = 'resolved', action = ?, resolved_at = ?
+        WHERE post_id = ?
+          AND target_type IN ('post', 'comment')
+          AND status = 'pending'
+      `).run(action, resolvedAt, targetId);
+    } else {
+      result = db.prepare(`
+        UPDATE reports
+        SET status = 'resolved', action = ?, resolved_at = ?
+        WHERE target_type = 'post'
+          AND post_id = ?
+          AND status = 'pending'
+      `).run(action, resolvedAt, targetId);
+    }
+
+    return Number(result?.changes || 0);
+  };
+
+  const resolvePendingReportsForPosts = (postIds, action, resolvedAt) => {
+    if (!postIds.length) {
+      return 0;
+    }
+    const placeholders = buildPlaceholders(postIds);
+    const result = db.prepare(`
+      UPDATE reports
+      SET status = 'resolved', action = ?, resolved_at = ?
+      WHERE post_id IN (${placeholders})
+        AND target_type IN ('post', 'comment')
+        AND status = 'pending'
+    `).run(action, resolvedAt, ...postIds);
+    return Number(result?.changes || 0);
   };
 
   const getCommentById = (commentId) => db
@@ -107,7 +169,10 @@ export const createModerationRepository = (db) => {
     getPostsByIds,
     setPostsDeletedState,
     getReportById,
-    setReportResolution,
+    claimPendingReport,
+    runInTransaction,
+    resolvePendingReportsForTarget,
+    resolvePendingReportsForPosts,
     getCommentById,
     softDeleteComment,
     decrementPostComments,
