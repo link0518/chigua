@@ -1,12 +1,14 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Search, Star } from 'lucide-react';
 import { api } from '../api';
 import type { SearchPost } from '../types';
-import { useApp } from '../store/AppContext';
+import { useAppActions } from '../store/AppActionsContext';
+import { useUserPreferences } from '../store/UserPreferencesContext';
 import { SketchButton, Badge } from './SketchUI';
 import { buildPostPath } from './clipboard';
 import ColorfulName from './ColorfulName';
 import FeaturedBadge from './FeaturedBadge';
+import { usePostInteractionGuard } from './usePostInteractionGuard';
 
 const PAGE_SIZE = 20;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -162,7 +164,9 @@ const getHighlightedText = (text: string, keyword: string) => {
 };
 
 const SearchView: React.FC = () => {
-  const { showToast, isFavorited, toggleFavoritePost } = useApp();
+  const { showToast, toggleFavoritePost } = useAppActions();
+  const { isFavorited } = useUserPreferences();
+  const runPostInteraction = usePostInteractionGuard();
   const [keyword, setKeyword] = useState('');
   const [query, setQuery] = useState('');
   const [tagFilter, setTagFilter] = useState('');
@@ -174,6 +178,10 @@ const SearchView: React.FC = () => {
   const [items, setItems] = useState<SearchPost[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
+  const searchRequestRef = useRef<{ id: number; controller: AbortController | null }>({
+    id: 0,
+    controller: null,
+  });
 
   const totalPages = Math.max(Math.ceil(total / PAGE_SIZE), 1);
   const hasDateRange = Boolean(startDate && endDate);
@@ -197,8 +205,10 @@ const SearchView: React.FC = () => {
 
   const handleFavorite = async (postId: string) => {
     try {
-      const favorited = await toggleFavoritePost(postId);
-      showToast(favorited ? '已收藏' : '已取消收藏', 'success');
+      const result = await runPostInteraction(postId, () => toggleFavoritePost(postId));
+      if (result.executed) {
+        showToast(result.value ? '已收藏' : '已取消收藏', 'success');
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : '收藏失败，请稍后重试';
       showToast(message, 'error');
@@ -264,24 +274,47 @@ const SearchView: React.FC = () => {
     nextStartDate: string,
     nextEndDate: string
   ) => {
+    const requestId = searchRequestRef.current.id + 1;
+    searchRequestRef.current.controller?.abort();
+    const controller = new AbortController();
+    searchRequestRef.current = { id: requestId, controller };
     setLoading(true);
     try {
       const data = await api.searchPosts(nextQuery, nextPage, PAGE_SIZE, {
         tag: nextTag || undefined,
         startDate: nextStartDate || undefined,
         endDate: nextEndDate || undefined,
+        signal: controller.signal,
       });
+      if (searchRequestRef.current.id !== requestId) {
+        return;
+      }
       setItems(Array.isArray(data?.items) ? data.items : []);
       setTotal(Number(data?.total || 0));
     } catch (error) {
+      if (controller.signal.aborted || searchRequestRef.current.id !== requestId) {
+        return;
+      }
       const message = error instanceof Error ? error.message : '搜索失败，请稍后再试';
       showToast(message, 'error');
       setItems([]);
       setTotal(0);
     } finally {
-      setLoading(false);
+      if (searchRequestRef.current.id === requestId) {
+        searchRequestRef.current.controller = null;
+        setLoading(false);
+      }
     }
   }, [showToast]);
+
+  const cancelSearch = useCallback(() => {
+    const current = searchRequestRef.current;
+    current.controller?.abort();
+    searchRequestRef.current = {
+      id: current.id + 1,
+      controller: null,
+    };
+  }, []);
 
   useEffect(() => {
     syncFromLocation();
@@ -293,12 +326,15 @@ const SearchView: React.FC = () => {
 
   useEffect(() => {
     if (!searchActive) {
+      cancelSearch();
       setItems([]);
       setTotal(0);
-      return;
+      setLoading(false);
+      return undefined;
     }
-    runSearch(query, page, tagFilter, startDate, endDate);
-  }, [endDate, page, query, runSearch, searchActive, startDate, tagFilter]);
+    void runSearch(query, page, tagFilter, startDate, endDate);
+    return cancelSearch;
+  }, [cancelSearch, endDate, page, query, runSearch, searchActive, startDate, tagFilter]);
 
   const submitSearch = () => {
     const input = keyword.trim();

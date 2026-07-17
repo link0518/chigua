@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { Eye, EyeOff, Image, Smile } from 'lucide-react';
 
 import MarkdownEditor, {
@@ -11,6 +11,18 @@ import { DEFAULT_MEME_PACK } from './memeManifest';
 import { SketchIconButton } from './SketchIconButton';
 import { roughBorderClassSm } from './SketchUI';
 import { isImageUploadFile, uploadImageAsMarkdown } from './imageUpload';
+import { requestOverlayHistoryBack } from './overlayHistory';
+import useMediaQuery from './useMediaQuery';
+
+type MarkdownComposeHistoryState = Record<string, unknown> & {
+  markdownMemeOverlayId?: string;
+};
+
+const readMarkdownComposeHistoryState = (): MarkdownComposeHistoryState => (
+  window.history.state && typeof window.history.state === 'object'
+    ? window.history.state as MarkdownComposeHistoryState
+    : {}
+);
 
 const MARKDOWN_TOOLS: Array<{
   key: MarkdownEditorCommand;
@@ -66,6 +78,9 @@ const MarkdownComposeEditor: React.FC<MarkdownComposeEditorProps> = ({
   const [showPreview, setShowPreview] = useState(false);
   const [memeOpen, setMemeOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const isMobile = useMediaQuery('(max-width: 767px)');
+  const generatedMemeHistoryId = useId();
+  const memeHistoryId = `markdown-compose-meme:${generatedMemeHistoryId}`;
   const editorRef = useRef<MarkdownEditorHandle | null>(null);
   const memeButtonRef = useRef<HTMLButtonElement | null>(null);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
@@ -112,6 +127,58 @@ const MarkdownComposeEditor: React.FC<MarkdownComposeEditorProps> = ({
       editorRef.current?.focus();
     });
   }, [handleValueChange, readOnly, showPreview]);
+
+  const closeMemePicker = useCallback(() => {
+    const currentState = readMarkdownComposeHistoryState();
+    if (isMobile && currentState.markdownMemeOverlayId === memeHistoryId) {
+      requestOverlayHistoryBack();
+      return;
+    }
+    setMemeOpen(false);
+  }, [isMobile, memeHistoryId]);
+
+  const openMemePicker = useCallback(() => {
+    setMemeOpen(true);
+    if (!isMobile) {
+      return;
+    }
+    const currentState = readMarkdownComposeHistoryState();
+    if (currentState.markdownMemeOverlayId === memeHistoryId) {
+      return;
+    }
+    window.history.pushState({
+      ...currentState,
+      markdownMemeOverlayId: memeHistoryId,
+    }, '', window.location.pathname + window.location.search);
+  }, [isMobile, memeHistoryId]);
+
+  const toggleMemePicker = useCallback(() => {
+    if (memeOpen) {
+      closeMemePicker();
+      return;
+    }
+    openMemePicker();
+  }, [closeMemePicker, memeOpen, openMemePicker]);
+
+  useEffect(() => {
+    if (!isMobile) {
+      const currentState = readMarkdownComposeHistoryState();
+      if (currentState.markdownMemeOverlayId === memeHistoryId) {
+        const nextState = { ...currentState };
+        delete nextState.markdownMemeOverlayId;
+        window.history.replaceState(nextState, '', window.location.pathname + window.location.search);
+      }
+      setMemeOpen(false);
+      return undefined;
+    }
+
+    const syncMemeOverlay = () => {
+      setMemeOpen(readMarkdownComposeHistoryState().markdownMemeOverlayId === memeHistoryId);
+    };
+    syncMemeOverlay();
+    window.addEventListener('popstate', syncMemeOverlay);
+    return () => window.removeEventListener('popstate', syncMemeOverlay);
+  }, [isMobile, memeHistoryId]);
 
   const handleRunCommand = useCallback((command: MarkdownEditorCommand) => {
     if (readOnly || showPreview) {
@@ -214,7 +281,7 @@ const MarkdownComposeEditor: React.FC<MarkdownComposeEditorProps> = ({
           <div className="relative">
             <SketchIconButton
               ref={memeButtonRef}
-              onClick={() => setMemeOpen((prev) => !prev)}
+              onClick={toggleMemePicker}
               label="表情"
               icon={<Smile className="w-5 h-5" />}
               variant={memeOpen ? 'active' : 'doodle'}
@@ -223,12 +290,12 @@ const MarkdownComposeEditor: React.FC<MarkdownComposeEditorProps> = ({
             />
             <MemePicker
               open={memeOpen}
-              onClose={() => setMemeOpen(false)}
+              onClose={closeMemePicker}
               placement="down"
               anchorRef={memeButtonRef}
               onSelect={(packName, label) => {
                 insertIntoEditor(buildMemeShortcode(packName, label));
-                setMemeOpen(false);
+                closeMemePicker();
               }}
             />
           </div>

@@ -1,18 +1,21 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AlertTriangle, Image, Send, Smile, ThumbsUp } from 'lucide-react';
 import { SketchButton } from './SketchUI';
 import { api } from '../api';
 import { Comment } from '../types';
-import { useApp } from '../store/AppContext';
+import { useAppActions } from '../store/AppActionsContext';
+import { useAppShell } from '../store/AppShellContext';
 import MarkdownRenderer from './MarkdownRenderer';
 import Turnstile, { TurnstileHandle } from './Turnstile';
 import ReportModal from './ReportModal';
 import MemePicker, { useMemeInsert } from './MemePicker';
 import CommentInputModal from './CommentInputModal';
+import useMediaQuery from './useMediaQuery';
 import { useInsertAtCursor } from './useInsertAtCursor';
 import { isImageUploadFile, uploadImageAsMarkdown } from './imageUpload';
 import { AUTO_HIDDEN_EVENT, HIDDEN_COMMENT_PLACEHOLDER, type AutoHiddenEventDetail } from '../store/contentVisibility';
 import ColorfulName from './ColorfulName';
+import { requestOverlayHistoryBack, requestOverlayHistoryNavigation } from './overlayHistory';
 
 interface CommentModalProps {
   isOpen: boolean;
@@ -22,11 +25,39 @@ interface CommentModalProps {
   focusCommentId?: string | null;
 }
 
+type CommentHistoryState = Record<string, unknown> & {
+  homeOverlay?: 'comments' | 'comment-composer';
+  homeCommentPostId?: string;
+  homeSecondaryOverlay?: 'comment-report' | 'comment-meme' | 'markdown-image';
+  homeSecondaryOverlayId?: string;
+  homeSecondaryOverlayIndex?: number;
+};
+
+const readCommentHistoryState = (): CommentHistoryState => (
+  window.history.state && typeof window.history.state === 'object'
+    ? window.history.state as CommentHistoryState
+    : {}
+);
+
 const MAX_LENGTH = 300;
 const COMMENTS_CACHE_KEY_PREFIX = 'comments:v3';
 const PREVIOUS_COMMENTS_CACHE_KEY_PREFIX = 'comments:v2';
 const LEGACY_COMMENTS_CACHE_KEY_PREFIX = 'comments';
+const COMMENT_DRAFT_CACHE_KEY_PREFIX = 'comment-draft:v1';
 const COMMENT_IDENTITY_FALLBACK_LABEL = '匿名用户';
+
+const findCommentById = (items: Comment[], commentId: string): Comment | null => {
+  for (const item of items) {
+    if (item.id === commentId) {
+      return item;
+    }
+    const nested = findCommentById(item.replies || [], commentId);
+    if (nested) {
+      return nested;
+    }
+  }
+  return null;
+};
 
 const formatCompactTime = (value?: number | null) => {
   if (!value) {
@@ -134,9 +165,12 @@ const CommentModal: React.FC<CommentModalProps> = ({
   contentPreview,
   focusCommentId,
 }) => {
-  const { addComment, showToast, state } = useApp();
+  const { addComment, showToast } = useAppActions();
+  const { settings } = useAppShell();
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const [reloadVersion, setReloadVersion] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [text, setText] = useState('');
@@ -146,6 +180,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
   const [expandedRumorComments, setExpandedRumorComments] = useState<Set<string>>(new Set());
   const [lastAddedId, setLastAddedId] = useState<string | null>(null);
   const [focusTargetId, setFocusTargetId] = useState<string | null>(null);
+  const [highlightedCommentId, setHighlightedCommentId] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [reportModal, setReportModal] = useState<{ isOpen: boolean; commentId: string; content: string }>({
@@ -163,25 +198,40 @@ const CommentModal: React.FC<CommentModalProps> = ({
   const turnstileRef = useRef<TurnstileHandle | null>(null);
   const memeButtonRef = useRef<HTMLButtonElement | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
-  const inputOverlayRef = useRef<HTMLDivElement | null>(null);
   const pageSize = 10;
-  const turnstileEnabled = state.settings.turnstileEnabled;
-  const { textareaRef: inlineTextareaRef, insertMeme: inlineInsertMeme } = useMemeInsert(text, setText);
-  const { insertAtCursor } = useInsertAtCursor(text, setText, inlineTextareaRef);
-  const overlayTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const turnstileEnabled = settings.turnstileEnabled;
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const uploadLockRef = useRef(false);
   const submittingRef = useRef(false);
   const uploadDraftVersionRef = useRef(0);
+  const mobileDraftRef = useRef('');
+  const draftRevisionRef = useRef(0);
+  const composerSessionRef = useRef(0);
+  const currentPostIdRef = useRef(postId);
+  const draftWriteTimerRef = useRef<number | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [keyboardInset, setKeyboardInset] = useState(0);
-  const [keyboardMode, setKeyboardMode] = useState(false);
-  const [overlayTop, setOverlayTop] = useState<number | null>(null);
-  const [fallbackOverlayTop, setFallbackOverlayTop] = useState<number | null>(null);
   const [inputModalOpen, setInputModalOpen] = useState(false);
+  const inputModalOpenRef = useRef(false);
 
-  const isMobile = typeof window !== 'undefined' ? window.matchMedia('(max-width: 767px)').matches : false;
+  const isMobile = useMediaQuery('(max-width: 767px)');
+  const wasMobileRef = useRef(isMobile);
+  const updateInlineText = useCallback<React.Dispatch<React.SetStateAction<string>>>((nextValue) => {
+    const nextText = typeof nextValue === 'function'
+      ? nextValue(mobileDraftRef.current)
+      : nextValue;
+    if (mobileDraftRef.current !== nextText) {
+      draftRevisionRef.current += 1;
+    }
+    mobileDraftRef.current = nextText;
+    setText(nextText);
+  }, []);
+  const { textareaRef: inlineTextareaRef, insertMeme: inlineInsertMeme } = useMemeInsert(text, updateInlineText);
+  const { insertAtCursor } = useInsertAtCursor(text, updateInlineText, inlineTextareaRef);
   // debugComment 调试输出已移除
+
+  useLayoutEffect(() => {
+    currentPostIdRef.current = postId;
+  }, [postId]);
 
   useEffect(() => {
     commentsRef.current = comments;
@@ -202,6 +252,103 @@ const CommentModal: React.FC<CommentModalProps> = ({
       hasMore: nextHasMore,
     }));
   };
+
+  const writeCommentDraft = useCallback((nextText: string) => {
+    try {
+      const cacheKey = `${COMMENT_DRAFT_CACHE_KEY_PREFIX}:${postId}`;
+      if (nextText.trim()) {
+        sessionStorage.setItem(cacheKey, nextText);
+      } else {
+        sessionStorage.removeItem(cacheKey);
+      }
+    } catch {
+      // 草稿缓存失败不应阻断评论输入。
+    }
+  }, [postId]);
+
+  const clearScheduledDraftWrite = useCallback(() => {
+    if (draftWriteTimerRef.current !== null) {
+      window.clearTimeout(draftWriteTimerRef.current);
+      draftWriteTimerRef.current = null;
+    }
+  }, []);
+
+  const flushCommentDraft = useCallback((nextText: string) => {
+    clearScheduledDraftWrite();
+    writeCommentDraft(nextText);
+  }, [clearScheduledDraftWrite, writeCommentDraft]);
+
+  const scheduleCommentDraftWrite = useCallback((nextText: string) => {
+    clearScheduledDraftWrite();
+    draftWriteTimerRef.current = window.setTimeout(() => {
+      draftWriteTimerRef.current = null;
+      writeCommentDraft(nextText);
+    }, 250);
+  }, [clearScheduledDraftWrite, writeCommentDraft]);
+
+  const commitMobileDraft = useCallback(() => {
+    const nextText = mobileDraftRef.current;
+    setText(nextText);
+    flushCommentDraft(nextText);
+  }, [flushCommentDraft]);
+
+  useEffect(() => {
+    if (!isOpen || isMobile) {
+      return undefined;
+    }
+    if (mobileDraftRef.current !== text) {
+      mobileDraftRef.current = text;
+      draftRevisionRef.current += 1;
+    }
+    scheduleCommentDraftWrite(text);
+    return undefined;
+  }, [isMobile, isOpen, scheduleCommentDraftWrite, text]);
+
+  useEffect(() => {
+    if (!isOpen || isMobile) {
+      return undefined;
+    }
+    return () => {
+      flushCommentDraft(mobileDraftRef.current);
+    };
+  }, [flushCommentDraft, isMobile, isOpen, postId]);
+
+  useEffect(() => {
+    if (!isOpen || !isMobile) {
+      return undefined;
+    }
+    return () => {
+      if (inputModalOpenRef.current) {
+        flushCommentDraft(mobileDraftRef.current);
+      }
+    };
+  }, [flushCommentDraft, isMobile, isOpen, postId]);
+
+  useLayoutEffect(() => {
+    if (wasMobileRef.current && !isMobile && inputModalOpenRef.current) {
+      // 跨过移动断点时先同步本地草稿，避免桌面输入框和缓存回退到旧父状态。
+      commitMobileDraft();
+    }
+    wasMobileRef.current = isMobile;
+  }, [commitMobileDraft, isMobile]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return undefined;
+    }
+    const flushLatestDraft = () => flushCommentDraft(mobileDraftRef.current);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        flushLatestDraft();
+      }
+    };
+    window.addEventListener('pagehide', flushLatestDraft);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.removeEventListener('pagehide', flushLatestDraft);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [flushCommentDraft, isOpen]);
 
   useLayoutEffect(() => {
     // 关闭评论区、切换帖子或卸载后，旧上传结果不能写入新的草稿。
@@ -236,10 +383,10 @@ const CommentModal: React.FC<CommentModalProps> = ({
     uploadInputRef.current?.click();
   };
 
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
     uploadDraftVersionRef.current += 1;
     onClose();
-  };
+  }, [onClose]);
 
   const handleUploadFile = async (file: File) => {
     if (!file) {
@@ -275,108 +422,228 @@ const CommentModal: React.FC<CommentModalProps> = ({
     }
   };
 
-  useEffect(() => {
-    if (!isOpen) {
-      setKeyboardInset(0);
-      setKeyboardMode(false);
-      setOverlayTop(null);
-      setFallbackOverlayTop(null);
-      return;
-    }
-    const vv = window.visualViewport;
-    if (!vv) {
-      return;
-    }
-
-    let rafId: number | null = null;
-    const update = () => {
-      if (rafId) {
-        cancelAnimationFrame(rafId);
-      }
-      rafId = requestAnimationFrame(() => {
-        const viewportHeight = vv.height;
-        const layoutHeight = window.innerHeight;
-        const delta = Math.max(0, Math.round(layoutHeight - viewportHeight - vv.offsetTop));
-        setKeyboardInset(delta);
-        if (delta > 0) {
-          const centeredTop = Math.max(12, Math.round(vv.offsetTop + viewportHeight * 0.5));
-          setOverlayTop(centeredTop);
-        }
-      });
-    };
-
-    update();
-    vv.addEventListener('resize', update);
-    vv.addEventListener('scroll', update);
-    return () => {
-      if (rafId) {
-        cancelAnimationFrame(rafId);
-      }
-      vv.removeEventListener('resize', update);
-      vv.removeEventListener('scroll', update);
-    };
-  }, [isOpen]);
-
-  useEffect(() => {
-    if (!isOpen || !isMobile || !keyboardInset) {
-      return;
-    }
-    const update = () => {
-      // 计算 fallback 位置：屏幕顶部 1/3 处，确保不与键盘重叠
-      setFallbackOverlayTop(Math.max(12, Math.round(window.innerHeight * 0.15)));
-    };
-    update();
-    window.addEventListener('resize', update);
-    return () => window.removeEventListener('resize', update);
-  }, [isMobile, isOpen, keyboardInset]);
-
-  useEffect(() => {
-    if (!isOpen) {
-      return;
-    }
-    const onFocusOut = () => {
-      setOverlayTop(null);
-    };
-    rootRef.current?.addEventListener('focusout', onFocusOut);
-    return () => {
-      rootRef.current?.removeEventListener('focusout', onFocusOut);
-      document.body.style.overflow = '';
-    };
-  }, [isOpen]);
-
-  const openInputModal = () => {
+  const openInputModal = useCallback(() => {
     if (!isMobile) {
       return;
     }
+    if (!inputModalOpenRef.current) {
+      composerSessionRef.current += 1;
+    }
+    if (mobileDraftRef.current !== text) {
+      mobileDraftRef.current = text;
+      draftRevisionRef.current += 1;
+    }
+    inputModalOpenRef.current = true;
     setInputModalOpen(true);
+    const currentState = readCommentHistoryState();
+    if (currentState.homeOverlay !== 'comment-composer') {
+      window.history.pushState({
+        ...currentState,
+        homeOverlay: 'comment-composer',
+      }, '', window.location.pathname + window.location.search);
+    }
+  }, [isMobile, text]);
+
+  const closeInputModal = useCallback(() => {
+    commitMobileDraft();
+    const currentState = readCommentHistoryState();
+    if (currentState.homeOverlay === 'comment-composer') {
+      requestOverlayHistoryBack();
+      return;
+    }
+    inputModalOpenRef.current = false;
+    setInputModalOpen(false);
+  }, [commitMobileDraft]);
+
+  const openCommentReportModal = (commentId: string, content: string) => {
+    setReportModal({ isOpen: true, commentId, content });
+    if (!isMobile) {
+      return;
+    }
+    const currentState = readCommentHistoryState();
+    if (currentState.homeSecondaryOverlay === 'comment-report') {
+      return;
+    }
+    window.history.pushState({
+      ...currentState,
+      homeSecondaryOverlay: 'comment-report',
+      homeSecondaryOverlayId: commentId,
+    }, '', window.location.pathname + window.location.search);
   };
 
-  useEffect(() => {
+  const closeCommentReportModal = () => {
+    const currentState = readCommentHistoryState();
+    if (currentState.homeSecondaryOverlay === 'comment-report') {
+      requestOverlayHistoryBack();
+      return;
+    }
+    setReportModal({ isOpen: false, commentId: '', content: '' });
+  };
+
+  const closeInlineMemePicker = () => {
+    const currentState = readCommentHistoryState();
+    if (
+      currentState.homeSecondaryOverlay === 'comment-meme'
+      && currentState.homeSecondaryOverlayId === 'comment-inline'
+    ) {
+      if (isMobile) {
+        requestOverlayHistoryBack();
+        return;
+      }
+      // 跨断点后移动端历史层可能仍在，但桌面端监听已经卸载；同步关闭本地状态再退栈。
+      setMemeOpen(false);
+      requestOverlayHistoryBack();
+      return;
+    }
+    setMemeOpen(false);
+  };
+
+  const toggleInlineMemePicker = () => {
+    if (memeOpen) {
+      closeInlineMemePicker();
+      return;
+    }
+    setMemeOpen(true);
+  };
+
+  useLayoutEffect(() => {
     if (!isOpen || !isMobile) {
       return;
     }
-    if (inputModalOpen) {
-      document.body.style.overflow = 'hidden';
-      return;
+    let initialState = readCommentHistoryState();
+    if (!initialState.homeOverlay) {
+      const currentPath = window.location.pathname + window.location.search;
+      const searchParams = new URLSearchParams(window.location.search);
+      const hasRouteComment = searchParams.has('comment');
+      const secondaryOverlay = initialState.homeSecondaryOverlay;
+      const secondaryOverlayId = initialState.homeSecondaryOverlayId;
+      const secondaryOverlayIndex = initialState.homeSecondaryOverlayIndex;
+      const baseState = { ...initialState };
+      delete baseState.homeOverlay;
+      delete baseState.homeCommentPostId;
+      delete baseState.homeSecondaryOverlay;
+      delete baseState.homeSecondaryOverlayId;
+      delete baseState.homeSecondaryOverlayIndex;
+      const commentsState: CommentHistoryState = {
+        ...baseState,
+        homeOverlay: 'comments',
+        homeCommentPostId: postId,
+      };
+
+      if (hasRouteComment) {
+        searchParams.delete('comment');
+        const nextSearch = searchParams.toString();
+        const basePath = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}`;
+        window.history.replaceState(baseState, '', basePath);
+        window.history.pushState(commentsState, '', currentPath);
+        initialState = commentsState;
+      } else if (secondaryOverlay) {
+        // 子层先于评论层接管历史时，将当前记录改为评论，再把子层补回栈顶。
+        window.history.replaceState(commentsState, '', currentPath);
+        initialState = {
+          ...commentsState,
+          homeSecondaryOverlay: secondaryOverlay,
+          homeSecondaryOverlayId: secondaryOverlayId,
+          homeSecondaryOverlayIndex: secondaryOverlayIndex,
+        };
+        window.history.pushState(initialState, '', currentPath);
+      } else {
+        initialState = commentsState;
+        // 桌面评论在旋转或缩窄为移动布局后补建评论层，确保 Back 只收起评论。
+        window.history.pushState(initialState, '', currentPath);
+      }
     }
-    document.body.style.overflow = '';
-    return () => {
-      document.body.style.overflow = '';
+    if (
+      reportModal.isOpen
+      && reportModal.commentId
+      && initialState.homeSecondaryOverlay !== 'comment-report'
+    ) {
+      initialState = {
+        ...initialState,
+        homeSecondaryOverlay: 'comment-report',
+        homeSecondaryOverlayId: reportModal.commentId,
+      };
+      window.history.pushState(initialState, '', window.location.pathname + window.location.search);
+    } else if (
+      memeOpen
+      && initialState.homeSecondaryOverlay !== 'comment-meme'
+    ) {
+      initialState = {
+        ...initialState,
+        homeSecondaryOverlay: 'comment-meme',
+        homeSecondaryOverlayId: 'comment-inline',
+      };
+      window.history.pushState(initialState, '', window.location.pathname + window.location.search);
+    }
+    const initialInputModalOpen = initialState.homeOverlay === 'comment-composer';
+    if (initialInputModalOpen && !inputModalOpenRef.current) {
+      composerSessionRef.current += 1;
+    }
+    inputModalOpenRef.current = initialInputModalOpen;
+    setInputModalOpen(initialInputModalOpen);
+    const handlePopState = () => {
+      const currentState = readCommentHistoryState();
+      const nextInputModalOpen = currentState.homeOverlay === 'comment-composer';
+      if (inputModalOpenRef.current && !nextInputModalOpen) {
+        commitMobileDraft();
+      } else if (!inputModalOpenRef.current && nextInputModalOpen) {
+        composerSessionRef.current += 1;
+      }
+      inputModalOpenRef.current = nextInputModalOpen;
+      setInputModalOpen(nextInputModalOpen);
+      setMemeOpen(
+        currentState.homeSecondaryOverlay === 'comment-meme'
+        && currentState.homeSecondaryOverlayId === 'comment-inline'
+      );
+      if (currentState.homeSecondaryOverlay === 'comment-report' && currentState.homeSecondaryOverlayId) {
+        const targetComment = findCommentById(commentsRef.current, currentState.homeSecondaryOverlayId);
+        if (targetComment) {
+          setReportModal({ isOpen: true, commentId: targetComment.id, content: targetComment.content });
+        }
+      } else {
+        setReportModal({ isOpen: false, commentId: '', content: '' });
+      }
     };
-  }, [isMobile, inputModalOpen, isOpen]);
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [commitMobileDraft, isMobile, isOpen, memeOpen, postId, reportModal.commentId, reportModal.isOpen]);
 
   useEffect(() => {
-    if (!isOpen || !isMobile || keyboardInset <= 0) {
+    if (!isOpen || isMobile) {
       return;
     }
-    const root = rootRef.current;
-    if (!root) {
+    const currentState = readCommentHistoryState();
+    if (
+      currentState.homeSecondaryOverlay === 'comment-meme'
+      && currentState.homeSecondaryOverlayId === 'comment-inline'
+    ) {
+      // 从移动端回到桌面时移除仅用于移动端 Back 的表情层，保留当前桌面弹层状态。
+      requestOverlayHistoryBack();
       return;
     }
-    requestAnimationFrame(() => {
-      root.scrollIntoView({ block: 'end' });
-    });
-  }, [isMobile, isOpen, keyboardInset]);
+    if (currentState.homeOverlay !== 'comment-composer') {
+      return;
+    }
+    const composerMemeDepth = (
+      currentState.homeSecondaryOverlay === 'comment-meme'
+      && currentState.homeSecondaryOverlayId !== 'comment-inline'
+    ) ? 1 : 0;
+    requestOverlayHistoryNavigation(-(1 + composerMemeDepth));
+  }, [isMobile, isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || !isMobile || reportModal.isOpen) {
+      return;
+    }
+    const currentState = readCommentHistoryState();
+    if (currentState.homeSecondaryOverlay !== 'comment-report' || !currentState.homeSecondaryOverlayId) {
+      return;
+    }
+    const targetComment = findCommentById(comments, currentState.homeSecondaryOverlayId);
+    if (targetComment) {
+      setReportModal({ isOpen: true, commentId: targetComment.id, content: targetComment.content });
+    }
+  }, [comments, isMobile, isOpen, reportModal.isOpen]);
 
   useEffect(() => {
     if (!isOpen || !postId) return;
@@ -392,10 +659,24 @@ const CommentModal: React.FC<CommentModalProps> = ({
     setExpandedRumorComments(new Set());
     setLastAddedId(null);
     setFocusTargetId(null);
+    setHighlightedCommentId(null);
+    clearScheduledDraftWrite();
+    let restoredDraft = '';
+    try {
+      restoredDraft = sessionStorage.getItem(`${COMMENT_DRAFT_CACHE_KEY_PREFIX}:${postId}`) || '';
+    } catch {
+      restoredDraft = '';
+    }
+    if (mobileDraftRef.current !== restoredDraft) {
+      mobileDraftRef.current = restoredDraft;
+      draftRevisionRef.current += 1;
+    }
+    setText(restoredDraft);
     setReportModal({ isOpen: false, commentId: '', content: '' });
     setPage(0);
     setHasMore(true);
     setLoading(true);
+    setLoadError('');
     setLoadingMore(false);
     const cacheKey = `${COMMENTS_CACHE_KEY_PREFIX}:${postId}`;
     sessionStorage.removeItem(`${PREVIOUS_COMMENTS_CACHE_KEY_PREFIX}:${postId}`);
@@ -443,6 +724,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
           return;
         }
         const message = error instanceof Error ? error.message : '评论加载失败';
+        setLoadError(message);
         showToast(message, 'error');
       })
       .finally(() => {
@@ -456,7 +738,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
       }
       loadingMoreRef.current = false;
     };
-  }, [isOpen, postId, showToast]);
+  }, [clearScheduledDraftWrite, isOpen, postId, reloadVersion, showToast]);
 
   useEffect(() => {
     if (!isOpen || !postId || !focusCommentId) {
@@ -520,7 +802,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
     return () => {
       window.removeEventListener(AUTO_HIDDEN_EVENT, handleAutoHidden as EventListener);
     };
-  }, [isOpen, replyToId]);
+  }, [isOpen, postId, replyToId]);
 
   const handleLoadMore = async () => {
     if (loadingMoreRef.current || !hasMoreRef.current) {
@@ -707,6 +989,15 @@ const CommentModal: React.FC<CommentModalProps> = ({
       return false;
     }
 
+    if (mobileDraftRef.current !== nextText) {
+      mobileDraftRef.current = nextText;
+      draftRevisionRef.current += 1;
+    }
+    flushCommentDraft(nextText);
+    const submittedDraftRevision = draftRevisionRef.current;
+    const submittedComposerSession = composerSessionRef.current;
+    const submittedPostId = postId;
+    const submittedReplyToId = replyToId;
     submittingRef.current = true;
     setSubmitting(true);
     try {
@@ -717,41 +1008,65 @@ const CommentModal: React.FC<CommentModalProps> = ({
         }
         turnstileToken = await turnstileRef.current.execute();
       }
-      const comment = await addComment(postId, trimmed, turnstileToken, replyToId, replyToId);
-      let effectiveParentId = comment.parentId || null;
-      if (replyToId) {
-        const chain = findAncestorChain(comments, replyToId);
-        if (chain && chain.length > 1) {
-          effectiveParentId = chain[0];
+      const comment = await addComment(
+        submittedPostId,
+        trimmed,
+        turnstileToken,
+        submittedReplyToId,
+        submittedReplyToId,
+      );
+      const isCurrentPost = currentPostIdRef.current === submittedPostId;
+
+      if (isCurrentPost) {
+        const currentComments = commentsRef.current;
+        let effectiveParentId = comment.parentId || null;
+        if (submittedReplyToId) {
+          const chain = findAncestorChain(currentComments, submittedReplyToId);
+          if (chain && chain.length > 1) {
+            effectiveParentId = chain[0];
+          }
+        }
+
+        const nextComment = {
+          ...comment,
+          parentId: effectiveParentId,
+          replyToId: comment.replyToId || submittedReplyToId || null,
+          replies: comment.replies || [],
+        };
+        const expandedTargets = effectiveParentId
+          ? findAncestorChain(currentComments, effectiveParentId) || [effectiveParentId]
+          : [];
+        const nextComments = effectiveParentId
+          ? insertReply(currentComments, effectiveParentId, nextComment)
+          : mergeCommentLists(currentComments, [nextComment]);
+        commentsRef.current = nextComments;
+        setComments(nextComments);
+        writeCommentsCache(nextComments, pageRef.current, hasMoreRef.current);
+        setLastAddedId(nextComment.id);
+        if (expandedTargets.length) {
+          setExpandedThreads((prev) => {
+            const next = new Set(prev);
+            expandedTargets.forEach((id) => next.add(id));
+            return next;
+          });
         }
       }
 
-      const nextComment = { ...comment, parentId: effectiveParentId, replyToId: comment.replyToId || replyToId || null, replies: comment.replies || [] };
-      const expandedTargets = effectiveParentId
-        ? findAncestorChain(comments, effectiveParentId) || [effectiveParentId]
-        : [];
-      let nextComments: Comment[] = [];
-      setComments((prev) => {
-        nextComments = effectiveParentId
-          ? insertReply(prev, effectiveParentId, nextComment)
-          : mergeCommentLists(prev, [nextComment]);
-        commentsRef.current = nextComments;
-        return nextComments;
-      });
-      writeCommentsCache(nextComments, pageRef.current, hasMoreRef.current);
-      setLastAddedId(nextComment.id);
-      if (expandedTargets.length) {
-        setExpandedThreads((prev) => {
-          const next = new Set(prev);
-          expandedTargets.forEach((id) => next.add(id));
-          return next;
-        });
+      const shouldFinalizeDraft = (
+        isCurrentPost
+        && draftRevisionRef.current === submittedDraftRevision
+        && composerSessionRef.current === submittedComposerSession
+      );
+      if (shouldFinalizeDraft) {
+        uploadDraftVersionRef.current += 1;
+        mobileDraftRef.current = '';
+        draftRevisionRef.current += 1;
+        setText('');
+        flushCommentDraft('');
+        setReplyToId(null);
       }
-      uploadDraftVersionRef.current += 1;
-      setText('');
-      setReplyToId(null);
       showToast('评论已发布', 'success');
-      return true;
+      return shouldFinalizeDraft;
     } catch (error) {
       const message = error instanceof Error ? error.message : '评论失败，请稍后重试';
       showToast(message, 'error');
@@ -767,14 +1082,29 @@ const CommentModal: React.FC<CommentModalProps> = ({
     await submitText(text);
   };
 
+  const scrollCommentIntoView = (commentId: string) => {
+    const list = listRef.current;
+    const target = list?.querySelector<HTMLElement>(`[data-comment-id="${commentId}"]`);
+    if (!list || !target) {
+      return false;
+    }
+    const listRect = list.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    const nextTop = list.scrollTop
+      + targetRect.top
+      - listRect.top
+      - Math.max(0, (list.clientHeight - targetRect.height) / 2);
+    list.scrollTo({ top: Math.max(0, nextTop), behavior: 'smooth' });
+    return true;
+  };
+
   useEffect(() => {
     if (!lastAddedId || !listRef.current) {
       return;
     }
-    const target = listRef.current.querySelector(`[data-comment-id="${lastAddedId}"]`);
-    if (target) {
+    if (scrollCommentIntoView(lastAddedId)) {
       requestAnimationFrame(() => {
-        target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        setHighlightedCommentId(lastAddedId);
       });
     }
     setLastAddedId(null);
@@ -784,14 +1114,21 @@ const CommentModal: React.FC<CommentModalProps> = ({
     if (!focusTargetId || !listRef.current) {
       return;
     }
-    const target = listRef.current.querySelector(`[data-comment-id="${focusTargetId}"]`);
-    if (target) {
+    if (scrollCommentIntoView(focusTargetId)) {
       requestAnimationFrame(() => {
-        target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        setHighlightedCommentId(focusTargetId);
       });
     }
     setFocusTargetId(null);
   }, [focusTargetId, comments]);
+
+  useEffect(() => {
+    if (!highlightedCommentId) {
+      return;
+    }
+    const timer = window.setTimeout(() => setHighlightedCommentId(null), 1500);
+    return () => window.clearTimeout(timer);
+  }, [highlightedCommentId]);
 
   if (!isOpen) {
     return null;
@@ -820,16 +1157,13 @@ const CommentModal: React.FC<CommentModalProps> = ({
   const labelMap = buildLabelMap(comments);
   const replyTargetLabel = replyToId ? (labelMap.get(replyToId) || '') : '';
 
-  return (
+  const commentPanel = (
     <div
       ref={rootRef}
-      className="fixed inset-x-0 bottom-0 z-40 max-h-75vh-safe rounded-t-xl border border-gray-200 bg-white p-4 shadow-lg font-sans overflow-hidden flex flex-col animate-in slide-in-from-bottom-2 duration-200 md:static md:mt-4 md:max-h-none md:rounded-xl md:shadow-sm md:animate-none"
-      style={{
-        paddingBottom: keyboardInset ? keyboardInset + 16 : undefined,
-        bottom: undefined,
-      }}
+      tabIndex={-1}
+      className="fixed inset-x-0 bottom-0 z-40 flex max-h-75vh-safe flex-col overflow-hidden rounded-t-xl border border-gray-200 bg-white p-4 font-sans shadow-lg animate-in slide-in-from-bottom-2 duration-200 md:static md:mt-4 md:max-h-none md:rounded-xl md:shadow-sm md:animate-none"
     >
-      <div className="flex items-center justify-between mb-3 shrink-0">
+      <div className="mb-3 flex shrink-0 items-center justify-between">
         <div className="flex items-center gap-2">
           <h3 className="font-sans font-semibold text-lg text-ink">评论</h3>
           <span className="text-xs text-gray-500">{totalCount}</span>
@@ -843,7 +1177,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
         </button>
       </div>
 
-      <div className="p-3 bg-gray-50 border border-dashed border-ink rounded-lg mb-3 shrink-0">
+      <div className="mb-3 shrink-0 rounded-lg border border-dashed border-ink bg-gray-50 p-3">
         <div className="flex items-center justify-between gap-2 mb-2">
           <div className="text-xs text-gray-600 font-sans">
             {mostLikedComment ? '热门评论' : '暂无热门评论'}
@@ -872,6 +1206,8 @@ const CommentModal: React.FC<CommentModalProps> = ({
             <MarkdownRenderer
               content={mostLikedComment.content}
               enableImageViewer
+              historyOverlayKey={`comment-hot:${mostLikedComment.id}`}
+              historyCommentPostId={postId}
               className="markdown-preview text-sm text-pencil [&_.markdown-image]:max-h-24 md:[&_.markdown-image]:max-h-28 [&_.markdown-image]:object-contain [&_.markdown-image]:mx-auto [&_.markdown-image]:w-auto [&_.markdown-image]:!max-w-40 md:[&_.markdown-image]:!max-w-48"
             />
           </div>
@@ -886,7 +1222,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
 
       <div
         ref={listRef}
-        className="flex-1 min-h-0 overflow-y-auto rounded-lg border border-gray-200 bg-white flex flex-col gap-3 pr-1"
+        className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto rounded-lg border border-gray-200 bg-white pr-1"
       >
         {loading ? (
           <div className="flex flex-col gap-3 px-3 pt-3">
@@ -896,6 +1232,17 @@ const CommentModal: React.FC<CommentModalProps> = ({
                 <div className="h-3 w-5/6 bg-gray-200 rounded" />
               </div>
             ))}
+          </div>
+        ) : loadError && comments.length === 0 ? (
+          <div className="flex flex-col items-center gap-3 px-4 py-8 text-center">
+            <p className="text-sm text-red-600">{loadError}</p>
+            <button
+              type="button"
+              onClick={() => setReloadVersion((value) => value + 1)}
+              className="inline-flex min-h-11 items-center justify-center rounded-lg border-2 border-ink bg-white px-4 font-hand text-sm font-bold text-ink shadow-sketch transition-colors hover:bg-highlight"
+            >
+              重新加载
+            </button>
           </div>
         ) : comments.length === 0 ? (
           <div className="px-3 py-6 text-center text-gray-500 text-sm">还没有评论，来当第一个吃瓜群众吧！</div>
@@ -921,7 +1268,11 @@ const CommentModal: React.FC<CommentModalProps> = ({
                 const replyOrderMap = replies.length ? buildOrderMap(orderedReplies) : null;
 
                 return (
-                  <div key={item.id} data-comment-id={item.id} className={depth === 0 ? 'group px-3 pt-2' : 'group px-2.5 pt-1'}>
+                  <div
+                    key={item.id}
+                    data-comment-id={item.id}
+                    className={`${depth === 0 ? 'group px-3 pt-2' : 'group px-2.5 pt-1'} rounded-lg transition-colors duration-300 ${highlightedCommentId === item.id ? 'bg-highlight/70' : ''}`}
+                  >
                     <div className="flex flex-nowrap items-center justify-between gap-2 text-[12px] text-gray-500 font-sans">
                       <div className="flex min-w-0 flex-1 flex-nowrap items-center gap-1.5 overflow-hidden">
                         {/* 楼层 + 身份锁同一行，避免 ColorfulName / 窄屏把「楼主」挤下去 */}
@@ -929,6 +1280,11 @@ const CommentModal: React.FC<CommentModalProps> = ({
                           <span className="shrink-0 font-mono text-[12px] text-gray-500">
                             {threadLabel}楼
                           </span>
+                          {item.id === mostLikedComment?.id && (
+                            <span className="shrink-0 rounded-sm border border-ink/40 bg-highlight px-1.5 py-0.5 font-hand text-[10px] font-bold leading-none text-ink">
+                              热评
+                            </span>
+                          )}
                           <ColorfulName
                             styleId={item.authorNameStyleId}
                             className="min-w-0 truncate text-[12px] font-sans text-gray-800"
@@ -951,14 +1307,14 @@ const CommentModal: React.FC<CommentModalProps> = ({
                       </div>
                       <div className="flex shrink-0 flex-nowrap items-center gap-2 whitespace-nowrap">
                         <span className="text-gray-400" title={item.timestamp}>
-                          <span className="sm:inline hidden">{item.timestamp}</span>
-                          <span className="sm:hidden inline">{formatCompactTime(item.createdAt) || item.timestamp}</span>
+                          <span className="hidden sm:inline">{item.timestamp}</span>
+                          <span className="inline sm:hidden">{formatCompactTime(item.createdAt) || item.timestamp}</span>
                         </span>
                         {!isUnavailable && (
                           <button
                             type="button"
                             onClick={() => handleToggleLike(item.id)}
-                            className={`flex items-center gap-1 rounded-full px-2 py-1 border border-gray-200 bg-white hover:bg-highlight transition-colors ${item.viewerLiked ? 'text-blue-600' : 'text-gray-500'}`}
+                            className={`flex items-center gap-1 rounded-full border border-gray-200 bg-white px-2 py-1 transition-colors hover:bg-highlight ${item.viewerLiked ? 'text-blue-600' : 'text-gray-500'}`}
                             aria-label="点赞"
                             title={item.viewerLiked ? '取消点赞' : '点赞'}
                           >
@@ -969,8 +1325,8 @@ const CommentModal: React.FC<CommentModalProps> = ({
                         {!isUnavailable && (
                           <button
                             type="button"
-                            onClick={() => setReportModal({ isOpen: true, commentId: item.id, content: item.content })}
-                            className="text-gray-400 hover:text-red-600 transition-colors text-[12px] opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+                            onClick={() => openCommentReportModal(item.id, item.content)}
+                            className="text-[12px] text-gray-400 opacity-100 transition-colors hover:text-red-600 sm:opacity-0 sm:group-hover:opacity-100"
                             aria-label="举报"
                             title="举报"
                           >
@@ -981,7 +1337,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
                           <button
                             type="button"
                             onClick={() => setReplyToId(item.id)}
-                            className="text-gray-500 hover:text-ink transition-colors opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+                            className="text-gray-500 opacity-100 transition-colors hover:text-ink sm:opacity-0 sm:group-hover:opacity-100"
                             aria-label="回复"
                             title="回复"
                           >
@@ -1007,7 +1363,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
                         </div>
                       </div>
                     )}
-                    <div className={depth === 0 ? `text-[13px] mt-1 ${isUnavailable ? 'text-gray-400 italic' : 'text-ink'}` : `text-[12px] mt-0.5 ${isUnavailable ? 'text-gray-400 italic' : 'text-ink/90'}`}>
+                    <div className={depth === 0 ? `mt-1 text-[13px] ${isUnavailable ? 'text-gray-400 italic' : 'text-ink'}` : `mt-0.5 text-[12px] ${isUnavailable ? 'text-gray-400 italic' : 'text-ink/90'}`}>
                       {isRumor && !isRumorExpanded ? (
                         <div className="rounded-lg border border-dashed border-orange-200 bg-orange-50/50 px-3 py-3 text-[12px] leading-5 text-orange-700">
                           原文已折叠，点击“展开原文”查看。
@@ -1016,6 +1372,8 @@ const CommentModal: React.FC<CommentModalProps> = ({
                         <MarkdownRenderer
                           content={item.content}
                           enableImageViewer
+                          historyOverlayKey={`comment:${item.id}`}
+                          historyCommentPostId={postId}
                           className={`${depth === 0 ? 'leading-5' : 'leading-4'} [&_.markdown-image]:max-h-32 md:[&_.markdown-image]:max-h-44 [&_.markdown-image]:object-contain [&_.markdown-image]:mx-auto [&_.markdown-image]:w-auto [&_.markdown-image]:!max-w-52 md:[&_.markdown-image]:!max-w-64`}
                         />
                       )}
@@ -1032,7 +1390,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
                         <button
                           type="button"
                           onClick={() => toggleThread(item.id)}
-                          className="hover:text-ink transition-colors"
+                          className="transition-colors hover:text-ink"
                         >
                           {isExpanded ? '收起回复' : `查看 ${replies.length} 条回复`}
                         </button>
@@ -1052,7 +1410,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
         )}
       </div>
 
-      <form className="shrink-0 flex flex-col gap-3 mt-3" onSubmit={handleSubmit}>
+      <form className="mt-3 flex shrink-0 flex-col gap-3" onSubmit={handleSubmit}>
         {replyToId && (
           <div className="flex items-center justify-between text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
             <span>正在回复 {replyTargetLabel || '某一'}楼</span>
@@ -1069,7 +1427,8 @@ const CommentModal: React.FC<CommentModalProps> = ({
           <textarea
             ref={inlineTextareaRef}
             value={text}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => updateInlineText(e.target.value)}
+            onBlur={() => flushCommentDraft(mobileDraftRef.current)}
             onPaste={(e) => {
               const items = e.clipboardData?.items;
               if (!items) return;
@@ -1088,10 +1447,17 @@ const CommentModal: React.FC<CommentModalProps> = ({
             placeholder="留下你的评论..."
             maxLength={MAX_LENGTH + 10}
             className="min-w-0 flex-1 h-16 p-3 border-2 border-ink rounded-lg resize-none font-sans bg-white focus:outline-none focus:shadow-sketch-sm transition-shadow"
-            onFocus={() => {
+            onClick={() => {
               if (isMobile) {
                 openInputModal();
               }
+            }}
+            onKeyDown={(event) => {
+              if (!isMobile || (event.key !== 'Enter' && event.key !== ' ')) {
+                return;
+              }
+              event.preventDefault();
+              openInputModal();
             }}
             readOnly={isMobile}
           />
@@ -1122,7 +1488,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
             <button
               ref={memeButtonRef}
               type="button"
-              onClick={() => setMemeOpen((prev) => !prev)}
+              onClick={toggleInlineMemePicker}
               className="px-3 h-16 flex items-center justify-center border-2 border-ink rounded-lg bg-white hover:bg-highlight transition-colors shadow-sketch"
               aria-label="表情"
               title="表情"
@@ -1131,11 +1497,11 @@ const CommentModal: React.FC<CommentModalProps> = ({
             </button>
             <MemePicker
               open={memeOpen}
-              onClose={() => setMemeOpen(false)}
+              onClose={closeInlineMemePicker}
               anchorRef={memeButtonRef}
               onSelect={(packName, label) => {
                 inlineInsertMeme(packName, label);
-                setMemeOpen(false);
+                closeInlineMemePicker();
               }}
             />
           </div>
@@ -1155,8 +1521,9 @@ const CommentModal: React.FC<CommentModalProps> = ({
       </form>
 
       <CommentInputModal
+        key={postId}
         isOpen={isMobile && inputModalOpen}
-        onClose={() => setInputModalOpen(false)}
+        onClose={closeInputModal}
         title={replyToId ? '回复评论' : '写评论'}
         helperText={replyToId ? `正在回复 ${replyTargetLabel || '某一'}楼` : undefined}
         onCancelReply={replyToId ? () => setReplyToId(null) : undefined}
@@ -1167,10 +1534,9 @@ const CommentModal: React.FC<CommentModalProps> = ({
         tryAcquireUpload={tryAcquireUpload}
         showToast={showToast}
         onSubmit={async (nextText) => {
-          setText(nextText);
           const ok = await submitText(nextText);
           if (ok) {
-            setInputModalOpen(false);
+            closeInputModal();
           }
         }}
       />
@@ -1179,7 +1545,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
 
       <ReportModal
         isOpen={reportModal.isOpen}
-        onClose={() => setReportModal({ isOpen: false, commentId: '', content: '' })}
+        onClose={closeCommentReportModal}
         postId={postId}
         commentId={reportModal.commentId}
         targetType="comment"
@@ -1187,6 +1553,8 @@ const CommentModal: React.FC<CommentModalProps> = ({
       />
     </div>
   );
+
+  return commentPanel;
 };
 
 export default CommentModal;

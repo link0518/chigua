@@ -2,7 +2,9 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Flag, Gavel, BarChart2, Bell, Search, Trash2, Ban, Eye, EyeOff, LayoutDashboard, LogOut, CheckCircle, XCircle, FileText, Pencil, RotateCcw, Shield, ClipboardList, MessageSquare, Menu, X, Settings, BookOpen, AlertTriangle, UserCog, Store, Star } from 'lucide-react';
 import { SketchButton, Badge } from './SketchUI';
 import { AdminAuditLog, AdminComment, AdminHiddenItem, AdminPermissionDefinitions, AdminPermissions, AdminUserAccount, AdminPost, FeedbackMessage, PostDeleteRequest, Report, UpdateAnnouncementItem } from '../types';
-import { useApp } from '../store/AppContext';
+import { useAdmin } from '../store/AdminContext';
+import { useAppActions } from '../store/AppActionsContext';
+import { useAppShell } from '../store/AppShellContext';
 import Modal from './Modal';
 import { api } from '../api';
 import AdminIdentityCompact from './AdminIdentityCompact';
@@ -231,7 +233,18 @@ const buildBanSearchText = (item: ReturnType<typeof buildMergedBanItems>[number]
 };
 
 const AdminDashboard: React.FC = () => {
-  const { state, handleReport, showToast, getPendingReports, loadReports, loadStats, loadSettings, logoutAdmin } = useApp();
+  const {
+    adminSession,
+    reports,
+    stats,
+    handleReport,
+    getPendingReports,
+    loadReports,
+    loadStats,
+    logoutAdmin,
+  } = useAdmin();
+  const { showToast } = useAppActions();
+  const { loadSettings } = useAppShell();
   const [currentView, setCurrentView] = useState<AdminView>('overview');
   const [searchQuery, setSearchQuery] = useState('');
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -355,7 +368,7 @@ const AdminDashboard: React.FC = () => {
   const [adminUsers, setAdminUsers] = useState<AdminUserAccount[]>([]);
   const [adminUsersLoading, setAdminUsersLoading] = useState(false);
   const [adminUsersSubmitting, setAdminUsersSubmitting] = useState(false);
-  const [adminPermissionDefinitions, setAdminPermissionDefinitions] = useState<AdminPermissionDefinitions | null>(state.adminSession.permissionDefinitions || null);
+  const [adminPermissionDefinitions, setAdminPermissionDefinitions] = useState<AdminPermissionDefinitions | null>(adminSession.permissionDefinitions || null);
   const [feedbackActionModal, setFeedbackActionModal] = useState<{
     isOpen: boolean;
     feedbackId: string;
@@ -436,7 +449,6 @@ const AdminDashboard: React.FC = () => {
     setFeedbackPage(1);
   }, [debouncedFeedbackSearchInput]);
 
-  const adminSession = state.adminSession;
   const isSuperAdmin = Boolean(adminSession.isSuperAdmin);
   const canReadContentReview = hasPermission(adminSession, 'content_review', 'read');
   const canManageContentReview = hasPermission(adminSession, 'content_review', 'manage');
@@ -487,20 +499,20 @@ const AdminDashboard: React.FC = () => {
   const visitData = useMemo(() =>
     WEEK_DAYS.map((name, i) => ({
       name,
-      value: state.stats.weeklyVisits[i] || 0
-    })), [state.stats.weeklyVisits]);
+      value: stats.weeklyVisits[i] || 0
+    })), [stats.weeklyVisits]);
 
   const postVolumeData = useMemo(() =>
     WEEK_DAYS.map((name, i) => ({
       name,
-      value: state.stats.weeklyPosts[i] || 0
-    })), [state.stats.weeklyPosts]);
+      value: stats.weeklyPosts[i] || 0
+    })), [stats.weeklyPosts]);
   const totalWeeklyVisits = useMemo(() => visitData.reduce((sum, item) => sum + item.value, 0), [visitData]);
   const totalVocabularyPages = Math.max(Math.ceil(vocabularyTotal / VOCABULARY_PAGE_SIZE), 1);
 
 
-  const pendingReports = useMemo(() => getPendingReports(), [getPendingReports, state.reports]);
-  const processedReports = useMemo(() => state.reports.filter(r => r.status !== 'pending'), [state.reports]);
+  const pendingReports = useMemo(() => getPendingReports(), [getPendingReports, reports]);
+  const processedReports = useMemo(() => reports.filter(r => r.status !== 'pending'), [reports]);
   const pendingReportSearchItems = useMemo(
     () => pendingReports.map((report) => ({ report, searchText: buildReportSearchText(report) })),
     [pendingReports]
@@ -1110,7 +1122,7 @@ const AdminDashboard: React.FC = () => {
 
   useEffect(() => {
     setSelectedReports(new Set());
-  }, [currentView, searchQuery, state.reports]);
+  }, [currentView, reports, searchQuery]);
 
   const openReportBanDrawer = (
     reportId: string,
@@ -1122,7 +1134,7 @@ const AdminDashboard: React.FC = () => {
       showToast('当前账号只有查看权限，不能处理举报', 'warning');
       return;
     }
-    const report = state.reports.find((item) => item.id === reportId) || overviewPendingReports.find((item) => item.id === reportId);
+    const report = reports.find((item) => item.id === reportId) || overviewPendingReports.find((item) => item.id === reportId);
     const identity = report ? {
       ip: report.targetIp,
       sessionId: report.targetSessionId,
@@ -2721,9 +2733,9 @@ const AdminDashboard: React.FC = () => {
                 wikiPendingCount={wikiPendingCount}
                 rumorPendingCount={rumorPendingCount}
                 feedbackUnreadCount={feedbackUnreadCount}
-                totalPosts={state.stats.totalPosts}
-                totalVisits={state.stats.totalVisits}
-                onlineCount={state.stats.onlineCount}
+                totalPosts={stats.totalPosts}
+                totalVisits={stats.totalVisits}
+                onlineCount={stats.onlineCount}
                 totalWeeklyVisits={totalWeeklyVisits}
                 appVersionLabel={appVersionLabel}
                 postVolumeData={postVolumeData}

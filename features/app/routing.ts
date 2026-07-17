@@ -12,6 +12,9 @@ export const resolveViewFromPath = (path: string) => {
   if (normalized === '/tiancai') {
     return ViewType.ADMIN;
   }
+  if (normalized === '/submit') {
+    return ViewType.SUBMISSION;
+  }
   if (normalized === '/search') {
     return ViewType.SEARCH;
   }
@@ -36,6 +39,9 @@ export const resolveViewFromPath = (path: string) => {
 export const getPathForView = (view: ViewType) => {
   if (view === ViewType.ADMIN) {
     return '/tiancai';
+  }
+  if (view === ViewType.SUBMISSION) {
+    return '/submit';
   }
   if (view === ViewType.SEARCH) {
     return '/search';

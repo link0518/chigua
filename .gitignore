@@ -12,6 +12,9 @@ dist
 dist-ssr
 .lighthouseci
 .lh-tmp*
+.tmp-lighthouse-temp/
+.tmp-smoke-results/
+/scripts/tmp-*.mjs
 *.local
 server/data
 *.db
@@ -47,3 +50,8 @@ frame-packages/
 
 # 本地设计验收生成的临时浏览器配置，可能包含 Cookie、历史记录与登录数据
 /design-demos/.edge-profile-*/
+
+# 本地 AI/MCP 工具定义与设计演示，不随应用源码发布
+/mcps/
+/design-demos/
+/metadata.json

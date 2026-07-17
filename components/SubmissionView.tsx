@@ -2,7 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { EyeOff, Send } from 'lucide-react';
 
 import { api } from '../api';
-import { useApp } from '../store/AppContext';
+import { useAppActions } from '../store/AppActionsContext';
+import { useAppShell } from '../store/AppShellContext';
 import MarkdownComposeEditor from './MarkdownComposeEditor';
 import { SketchCard, SketchButton, Tape } from './SketchUI';
 import Turnstile, { TurnstileHandle } from './Turnstile';
@@ -14,7 +15,8 @@ const normalizeTag = (value: string) => value
   .replace(/\s+/g, ' ');
 
 const SubmissionView: React.FC = () => {
-  const { addPost, showToast, state } = useApp();
+  const { addPost, showToast } = useAppActions();
+  const { settings } = useAppShell();
   const [text, setText] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [tagsLoading, setTagsLoading] = useState(false);
@@ -25,7 +27,7 @@ const SubmissionView: React.FC = () => {
   const maxLength = 2000;
   const maxTags = 2;
   const maxTagLength = 6;
-  const turnstileEnabled = state.settings.turnstileEnabled;
+  const turnstileEnabled = settings.turnstileEnabled;
 
   useEffect(() => {
     let active = true;

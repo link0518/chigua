@@ -80,18 +80,17 @@ export const registerPublicPostsRoutes = (app, deps) => {
   const escapeLike = (value) => String(value).replace(/[\\%_]/g, (match) => `\\${match}`);
   const parsePositiveInt = (value, fallback) => {
     const parsed = Number(value);
-    if (!Number.isFinite(parsed)) {
+    if (!Number.isSafeInteger(parsed) || parsed < 1) {
       return fallback;
     }
-    const normalized = Math.floor(parsed);
-    return normalized >= 1 ? normalized : fallback;
+    return parsed;
   };
   const parseNonNegativeInt = (value, fallback = 0) => {
     const parsed = Number(value);
-    if (!Number.isFinite(parsed)) {
+    if (!Number.isSafeInteger(parsed) || parsed < 0) {
       return fallback;
     }
-    return Math.max(0, Math.floor(parsed));
+    return parsed;
   };
   const resolveFeedResultVersion = ({ filter, search, rankingUpdatedAt, candidates }) => {
     const payload = JSON.stringify({
@@ -272,8 +271,8 @@ app.get('/api/posts/home', (req, res) => {
   if (!checkBanFor(req, res, 'view', '你已被限制浏览')) {
     return;
   }
-  const limit = Math.min(Number(req.query.limit || 10), 50);
-  const offset = Math.max(Number(req.query.offset || 0), 0);
+  const limit = Math.min(parsePositiveInt(req.query.limit, 10), 50);
+  const offset = parseNonNegativeInt(req.query.offset);
   const dateKey = formatDateKey();
   trackDailyVisit(dateKey, req.sessionID);
   const viewerIdentityHashes = getIdentityLookupHashes(req, res);
@@ -350,14 +349,12 @@ app.get('/api/posts/feed', (req, res) => {
             AND (
               posts.id LIKE ? ESCAPE '\\'
               OR posts.content LIKE ? ESCAPE '\\'
-              OR posts.ip LIKE ? ESCAPE '\\'
-              OR posts.fingerprint LIKE ? ESCAPE '\\'
             )
           ORDER BY CAST(hot_posts.key AS INTEGER) ASC
         `);
       }
       publicCandidateRows = readSearchedFeedCandidateRows
-        .all(rankingIdsJson, keyword, keyword, keyword, keyword);
+        .all(rankingIdsJson, keyword, keyword);
     } else {
       if (!readVisibleFeedCandidateRows) {
         readVisibleFeedCandidateRows = db.prepare(`
@@ -450,8 +447,8 @@ app.get('/api/posts/featured', (req, res) => {
   if (!checkBanFor(req, res, 'view', '你已被限制浏览')) {
     return;
   }
-  const limit = Math.min(Math.max(Number(req.query.limit || 20), 1), 50);
-  const offset = Math.max(Number(req.query.offset || 0), 0);
+  const limit = Math.min(parsePositiveInt(req.query.limit, 20), 50);
+  const offset = parseNonNegativeInt(req.query.offset);
   const dateKey = formatDateKey();
   trackDailyVisit(dateKey, req.sessionID);
   const viewerIdentityHashes = getIdentityLookupHashes(req, res);
@@ -1070,18 +1067,21 @@ app.get('/api/favorites', (req, res) => {
     return;
   }
   const identityHashes = getIdentityLookupHashes(req, res);
-  const favoriteMatch = buildIdentityMatch('fingerprint', identityHashes);
+  const favoriteMatch = buildIdentityMatch('pf.fingerprint', identityHashes);
   const viewerReaction = buildViewerReactionSelect(identityHashes);
 
-  const limit = Math.min(Math.max(Number(req.query.limit || 20), 1), 50);
-  const offset = Math.max(Number(req.query.offset || 0), 0);
+  const limit = Math.min(parsePositiveInt(req.query.limit, 20), 50);
+  const offset = parseNonNegativeInt(req.query.offset);
 
   const total = db
     .prepare(`SELECT COUNT(1) AS count FROM (
-      SELECT post_id
-      FROM post_favorites
+      SELECT pf.post_id
+      FROM post_favorites pf
+      JOIN posts ON posts.id = pf.post_id
       WHERE ${favoriteMatch.clause}
-      GROUP BY post_id
+        AND posts.deleted = 0
+        AND posts.hidden = 0
+      GROUP BY pf.post_id
     ) favorite_posts`)
     .get(...favoriteMatch.params)?.count ?? 0;
 
@@ -1091,17 +1091,17 @@ app.get('/api/favorites', (req, res) => {
       SELECT posts.*, ${hotScoreSql} AS hot_score,
         ${viewerReaction.sql},
         1 AS viewer_favorited,
-        pf.created_at AS favorited_at
+        favorite_posts.created_at AS favorited_at
       FROM (
-        SELECT post_id, MAX(created_at) AS created_at
-        FROM post_favorites
+        SELECT pf.post_id, MAX(pf.created_at) AS created_at
+        FROM post_favorites pf
         WHERE ${favoriteMatch.clause}
-        GROUP BY post_id
-      ) pf
-      JOIN posts ON posts.id = pf.post_id
+        GROUP BY pf.post_id
+      ) favorite_posts
+      JOIN posts ON posts.id = favorite_posts.post_id
       WHERE posts.deleted = 0
         AND posts.hidden = 0
-      ORDER BY pf.created_at DESC
+      ORDER BY favorite_posts.created_at DESC
       LIMIT ? OFFSET ?
       `
     )

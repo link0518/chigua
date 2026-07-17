@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import '../../styles/wiki.css';
 import { api } from '../../api';
-import { useApp } from '../../store/AppContext';
+import { useAppShell } from '../../store/AppShellContext';
 import {
   PAGE_SIZE,
   WIKI_DETAIL_ENTER_MS,
@@ -33,7 +34,7 @@ const loadWikiEntryFormModal = () => import('./WikiEntryFormModal');
 const WikiEntryFormModal = React.lazy(loadWikiEntryFormModal);
 
 const WikiView: React.FC = () => {
-  const { state } = useApp();
+  const { settings } = useAppShell();
   const initialListState = useMemo(() => getWikiListStateFromHref(window.location.href), []);
   const [path, setPath] = useState(window.location.pathname);
   const [entries, setEntries] = useState<WikiEntry[]>([]);
@@ -418,7 +419,7 @@ const WikiView: React.FC = () => {
             mode={formMode}
             open={formOpen}
             entry={formEntry}
-            turnstileEnabled={state.settings.turnstileEnabled}
+            turnstileEnabled={settings.turnstileEnabled}
             onClose={() => setFormOpen(false)}
             onSubmitted={handleSubmitted}
           />

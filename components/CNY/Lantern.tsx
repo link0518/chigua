@@ -20,8 +20,9 @@ const Lantern: React.FC<LanternProps> = ({
 
   return (
     <div
-      className={`relative flex flex-col items-center animate-swing ${className}`}
+      className={`relative flex flex-col items-center animate-swing motion-reduce:animate-none ${className}`}
       style={{ animationDelay: `${delay}s` }}
+      aria-hidden="true"
     >
       <div className="w-[1px] h-20 bg-cny-gold/60 -mb-1 z-10" />
       <div className="relative z-20" style={bodyStyle}>

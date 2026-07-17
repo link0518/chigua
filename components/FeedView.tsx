@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ThumbsUp, ThumbsDown, MessageSquare, Share2, UserX } from 'lucide-react';
-import { Post } from '../types';
+import type { Post } from '../types';
 import { Badge, roughBorderClassSm } from './SketchUI';
-import { useApp } from '../store/AppContext';
+import { useFeed } from '../store/FeedContext';
+import type { FeedFilter } from '../store/FeedContext';
 import ReportModal from './ReportModal';
 import MarkdownRenderer from './MarkdownRenderer';
 import DeveloperMiniCard from './DeveloperMiniCard';
@@ -13,27 +14,48 @@ import { useFrameRegistryVersion } from './nicknameFrames';
 import { postMatchesHiddenFilters } from '../store/hiddenPostTags';
 import { buildPostPath, buildPostShareUrl, copyTextToClipboard } from './clipboard';
 import FeaturedBadge from './FeaturedBadge';
+import {
+  usePendingPostInteractionIds,
+  usePostInteractionGuard,
+} from './usePostInteractionGuard';
 
-type FilterType = 'week' | 'today' | 'all';
+type FilterType = FeedFilter;
 const DISPLAY_LIMIT = 10;
 
-const PostItem: React.FC<{
+interface PostItemProps {
   post: Post;
   rank?: number;
-  onLike: () => void;
-  onDislike: () => void;
-  onFavorite: () => void;
-  onComment: () => void;
-  onShare: () => void;
-  onReport: () => void;
-  onRequestFeature: () => void;
+  onLike: (postId: string) => void;
+  onDislike: (postId: string) => void;
+  onFavorite: (postId: string) => void;
+  onComment: (postId: string) => void;
+  onShare: (postId: string) => void;
+  onReport: (postId: string, content: string) => void;
+  onRequestFeature: (post: Post) => void;
   onTagClick: (tag: string) => void;
-  isLiked: boolean;
-  isDisliked: boolean;
-  isFavorited: boolean;
-}> = ({ post, rank, onLike, onDislike, onFavorite, onComment, onShare, onReport, onRequestFeature, onTagClick, isLiked, isDisliked, isFavorited }) => {
+  interactionPending: boolean;
+  deferRendering: boolean;
+}
+
+const PostItem: React.FC<PostItemProps> = React.memo(({
+  post,
+  rank,
+  onLike,
+  onDislike,
+  onFavorite,
+  onComment,
+  onShare,
+  onReport,
+  onRequestFeature,
+  onTagClick,
+  interactionPending,
+  deferRendering,
+}) => {
   useFrameRegistryVersion();
   const isDeveloperPost = post.author === 'admin';
+  const isLiked = post.viewerReaction === 'like';
+  const isDisliked = post.viewerReaction === 'dislike';
+  const isFavorited = Boolean(post.viewerFavorited);
   return (
     <div className={`relative group ${rank ? 'mb-10' : 'mb-6'} z-0`}>
       {/* Rank Badge */}
@@ -45,11 +67,16 @@ const PostItem: React.FC<{
         </div>
       )}
 
-      <div className={`bg-white border-2 border-ink p-6 transition-all hover:-translate-y-1 duration-200 ${rank && rank <= 3 ? 'shadow-sketch-lg hover:shadow-sketch-hover ' + roughBorderClassSm : 'shadow-sketch hover:shadow-sketch border-ink rounded-lg'}`}>
+      <div className={`bg-white border-2 border-ink p-6 transition-all hover:-translate-y-1 duration-200 ${deferRendering ? 'feed-post-render-deferred ' : ''}${rank && rank <= 3 ? 'shadow-sketch-lg hover:shadow-sketch-hover ' + roughBorderClassSm : 'shadow-sketch hover:shadow-sketch border-ink rounded-lg'}`}>
 
         {/* Header Tags */}
         <div className="flex gap-2 mb-3 flex-wrap">
           {post.isHot && <Badge color="bg-highlight">🔥 热门</Badge>}
+          {post.isFeatured && (
+            <span className="sm:hidden">
+              <FeaturedBadge />
+            </span>
+          )}
           {post.tags?.slice(0, 2).map(tag => (
              <button
               type="button"
@@ -90,54 +117,70 @@ const PostItem: React.FC<{
         </div>
 
         {/* Footer Actions */}
-        <div className="flex items-center justify-between pt-4 border-t-2 border-dashed border-gray-100">
-          <div className="flex items-center gap-6 text-pencil font-hand font-bold">
+        <div className="flex items-center justify-between gap-3 pt-4 border-t-2 border-dashed border-gray-100">
+          <div className="flex min-w-0 items-center gap-3 text-pencil font-hand font-bold sm:gap-6">
             <button
-              onClick={onLike}
-              className={`flex items-center gap-1 transition-colors group/btn ${isLiked ? 'text-blue-600' : 'hover:text-ink'}`}
+              type="button"
+              onClick={() => onLike(post.id)}
+              disabled={interactionPending}
+              aria-busy={interactionPending}
+              className={`flex shrink-0 items-center gap-1 transition-colors group/btn disabled:cursor-wait disabled:opacity-50 ${isLiked ? 'text-blue-600' : 'hover:text-ink'}`}
             >
               <ThumbsUp className={`w-5 h-5 group-hover/btn:scale-110 transition-transform ${isLiked ? 'fill-current' : ''}`} />
               <span>{post.likes > 1000 ? (post.likes / 1000).toFixed(1) + 'k' : post.likes}</span>
             </button>
             <button
-              onClick={onDislike}
-              className={`flex items-center gap-1 transition-colors ${isDisliked ? 'text-red-600' : 'hover:text-ink'}`}
+              type="button"
+              onClick={() => onDislike(post.id)}
+              disabled={interactionPending}
+              aria-busy={interactionPending}
+              className={`flex shrink-0 items-center gap-1 transition-colors disabled:cursor-wait disabled:opacity-50 ${isDisliked ? 'text-red-600' : 'hover:text-ink'}`}
             >
               <ThumbsDown className={`w-5 h-5 mt-1 ${isDisliked ? 'fill-current' : ''}`} />
               <span>{post.dislikes > 1000 ? (post.dislikes / 1000).toFixed(1) + 'k' : post.dislikes}</span>
             </button>
             {post.isFeatured && (
-              <FeaturedBadge />
+              <span className="hidden sm:inline-flex">
+                <FeaturedBadge />
+              </span>
             )}
             <button
-              onClick={onComment}
-              className="flex items-center gap-1 hover:text-ink transition-colors ml-auto"
+              onClick={() => onComment(post.id)}
+              className="flex shrink-0 items-center gap-1 hover:text-ink transition-colors ml-auto"
             >
               <MessageSquare className="w-5 h-5" />
               <span>{post.comments}</span>
             </button>
             <button
-              onClick={onShare}
-              className="flex items-center gap-1 hover:text-ink transition-colors"
+              onClick={() => onShare(post.id)}
+              className="flex shrink-0 items-center gap-1 hover:text-ink transition-colors"
             >
               <Share2 className="w-5 h-5" />
-              <span>分享</span>
+              <span className="hidden sm:inline">分享</span>
             </button>
           </div>
-          <PostActionMenu
-            post={post}
-            isFavorited={isFavorited}
-            onFavorite={onFavorite}
-            onReport={onReport}
-            onRequestFeature={onRequestFeature}
-            triggerClassName="text-pencil hover:text-ink"
-          />
+          <fieldset
+            disabled={interactionPending}
+            aria-busy={interactionPending}
+            className="m-0 min-w-0 shrink-0 border-0 p-0 disabled:cursor-wait disabled:opacity-50"
+          >
+            <PostActionMenu
+              post={post}
+              isFavorited={isFavorited}
+              onFavorite={() => onFavorite(post.id)}
+              onReport={() => onReport(post.id, post.content)}
+              onRequestFeature={() => onRequestFeature(post)}
+              triggerClassName="text-pencil hover:text-ink"
+            />
+          </fieldset>
         </div>
 
       </div>
     </div>
   );
-};
+});
+
+PostItem.displayName = 'PostItem';
 
 const FeedView: React.FC = () => {
   const {
@@ -146,12 +189,9 @@ const FeedView: React.FC = () => {
     cancelFeedPostsLoad,
     likePost,
     dislikePost,
-    isLiked,
-    isDisliked,
-    isFavorited,
     toggleFavoritePost,
     showToast,
-  } = useApp();
+  } = useFeed();
   const [filter, setFilter] = useState<FilterType>('today');
   const [reportModal, setReportModal] = useState<{ isOpen: boolean; postId: string; content: string }>({
     isOpen: false,
@@ -160,6 +200,8 @@ const FeedView: React.FC = () => {
   });
   const [featureRequestPost, setFeatureRequestPost] = useState<Post | null>(null);
   const lastResumeCheckAtRef = useRef(0);
+  const runPostInteraction = usePostInteractionGuard();
+  const interactionPendingPostIds = usePendingPostInteractionIds();
 
   const refreshFeed = useCallback(() => {
     loadFeedPosts(filter).catch(() => {
@@ -178,13 +220,16 @@ const FeedView: React.FC = () => {
       || state.feedLoading
       || state.feedRefreshing
       || state.feedError
+      || document.visibilityState !== 'visible'
     ) {
       return undefined;
     }
 
     const delay = Math.max(state.feedRefreshAt - Date.now(), 0);
     const timer = window.setTimeout(() => {
-      refreshFeed();
+      if (document.visibilityState === 'visible') {
+        refreshFeed();
+      }
     }, Math.min(delay, 2_147_000_000));
     return () => window.clearTimeout(timer);
   }, [refreshFeed, state.feedError, state.feedLoading, state.feedRefreshAt, state.feedRefreshing]);
@@ -215,69 +260,66 @@ const FeedView: React.FC = () => {
     };
   }, [refreshFeed, state.feedLoading, state.feedRefreshing]);
 
-  const posts = useMemo(() => {
-    const visiblePosts = state.feedPosts.filter((post) => (
+  const posts = useMemo(() => (
+    state.feedPosts.filter((post) => (
       !postMatchesHiddenFilters(post, state.hiddenPostTags, state.hiddenPostKeywords)
-    ));
-    // Add ranks to top posts
-    return visiblePosts.map((post, index) => ({
-      ...post,
-      rank: index + 1,
-    }));
-  }, [state.feedPosts, state.hiddenPostKeywords, state.hiddenPostTags]);
+    ))
+  ), [state.feedPosts, state.hiddenPostKeywords, state.hiddenPostTags]);
 
-  const displayedPosts = posts.slice(0, DISPLAY_LIMIT);
+  const displayedPosts = useMemo(() => posts.slice(0, DISPLAY_LIMIT), [posts]);
 
-  const handleLike = async (postId: string) => {
+  const handleLike = useCallback(async (postId: string) => {
     try {
-      await likePost(postId);
+      await runPostInteraction(postId, () => likePost(postId));
     } catch (error) {
       const message = error instanceof Error ? error.message : '点赞失败，请稍后重试';
       showToast(message, 'error');
     }
-  };
+  }, [likePost, runPostInteraction, showToast]);
 
-  const handleDislike = async (postId: string) => {
+  const handleDislike = useCallback(async (postId: string) => {
     try {
-      await dislikePost(postId);
+      await runPostInteraction(postId, () => dislikePost(postId));
     } catch (error) {
       const message = error instanceof Error ? error.message : '操作失败，请稍后重试';
       showToast(message, 'error');
     }
-  };
+  }, [dislikePost, runPostInteraction, showToast]);
 
-  const handleFavorite = async (postId: string) => {
+  const handleFavorite = useCallback(async (postId: string) => {
     try {
-      const favorited = await toggleFavoritePost(postId);
-      showToast(favorited ? '已收藏' : '已取消收藏', 'success');
+      const result = await runPostInteraction(postId, () => toggleFavoritePost(postId));
+      if (result.executed) {
+        showToast(result.value ? '已收藏' : '已取消收藏', 'success');
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : '收藏失败，请稍后重试';
       showToast(message, 'error');
     }
-  };
+  }, [runPostInteraction, showToast, toggleFavoritePost]);
 
-  const handleReport = (postId: string, content: string) => {
+  const handleReport = useCallback((postId: string, content: string) => {
     setReportModal({ isOpen: true, postId, content });
-  };
+  }, []);
 
-  const handleShare = async (postId: string) => {
+  const handleShare = useCallback(async (postId: string) => {
     try {
       await copyTextToClipboard(buildPostShareUrl(postId));
       showToast('分享链接已复制', 'success');
     } catch {
       showToast('复制失败，请手动复制链接', 'error');
     }
-  };
+  }, [showToast]);
 
-  const handleComment = (postId: string, content: string) => {
+  const handleComment = useCallback((postId: string) => {
     const targetPath = buildPostPath(postId);
     if (window.location.pathname + window.location.search !== targetPath) {
       window.history.pushState({}, '', targetPath);
       window.dispatchEvent(new PopStateEvent('popstate'));
     }
-  };
+  }, []);
 
-  const handleTagClick = (tag: string) => {
+  const handleTagClick = useCallback((tag: string) => {
     const normalized = String(tag || '').trim();
     if (!normalized) {
       return;
@@ -289,7 +331,19 @@ const FeedView: React.FC = () => {
       window.history.pushState({}, '', targetPath);
       window.dispatchEvent(new PopStateEvent('popstate'));
     }
-  };
+  }, []);
+
+  const handleRequestFeature = useCallback((post: Post) => {
+    setFeatureRequestPost(post);
+  }, []);
+
+  const closeReportModal = useCallback(() => {
+    setReportModal({ isOpen: false, postId: '', content: '' });
+  }, []);
+
+  const closeFeatureRequestModal = useCallback(() => {
+    setFeatureRequestPost(null);
+  }, []);
 
   return (
     <div className="max-w-2xl mx-auto px-4 pb-20 pt-6">
@@ -378,22 +432,21 @@ const FeedView: React.FC = () => {
             <p className="font-hand text-lg text-pencil">快去投稿第一个瓜吧！</p>
           </div>
         ) : (
-          displayedPosts.map(post => (
+          displayedPosts.map((post, index) => (
             <PostItem
               key={post.id}
               post={post}
-              rank={post.rank}
-              onLike={() => handleLike(post.id)}
-              onDislike={() => handleDislike(post.id)}
-              onFavorite={() => handleFavorite(post.id)}
-              onComment={() => handleComment(post.id, post.content)}
-              onShare={() => handleShare(post.id)}
-              onReport={() => handleReport(post.id, post.content)}
-              onRequestFeature={() => setFeatureRequestPost(post)}
+              rank={index + 1}
+              onLike={handleLike}
+              onDislike={handleDislike}
+              onFavorite={handleFavorite}
+              onComment={handleComment}
+              onShare={handleShare}
+              onReport={handleReport}
+              onRequestFeature={handleRequestFeature}
               onTagClick={handleTagClick}
-              isLiked={isLiked(post.id)}
-              isDisliked={isDisliked(post.id)}
-              isFavorited={isFavorited(post.id)}
+              interactionPending={interactionPendingPostIds.has(post.id)}
+              deferRendering={index >= 2}
             />
           ))
         )}
@@ -409,18 +462,18 @@ const FeedView: React.FC = () => {
       {/* Report Modal */}
       <ReportModal
         isOpen={reportModal.isOpen}
-        onClose={() => setReportModal({ isOpen: false, postId: '', content: '' })}
+        onClose={closeReportModal}
         postId={reportModal.postId}
         contentPreview={reportModal.content.substring(0, 80)}
       />
 
       <FeatureRequestConfirmModal
         post={featureRequestPost}
-        onClose={() => setFeatureRequestPost(null)}
+        onClose={closeFeatureRequestModal}
       />
 
     </div>
   );
 };
 
-export default FeedView;
+export default React.memo(FeedView);

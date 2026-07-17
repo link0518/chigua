@@ -8,7 +8,7 @@ import type {
   AdminFeaturedPostItem,
   AdminPost,
 } from '../types';
-import type { Toast } from '../store/AppContext';
+import type { ToastMessage } from '../store/ToastUIContext';
 import MarkdownRenderer from './MarkdownRenderer';
 import Modal from './Modal';
 import { Badge, SketchButton } from './SketchUI';
@@ -19,7 +19,7 @@ type FeatureAction = 'approve' | 'reject' | 'add' | 'remove';
 type FeatureItem = AdminFeaturePendingItem | AdminFeaturedPostItem | AdminFeatureProcessedItem;
 
 interface AdminFeaturedPanelProps {
-  showToast: (message: string, type?: Toast['type']) => void;
+  showToast: (message: string, type?: ToastMessage['type']) => void;
   onPendingCountChange?: () => void;
   canManage?: boolean;
 }

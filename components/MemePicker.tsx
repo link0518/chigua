@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { X, Smile } from 'lucide-react';
 
 import { DEFAULT_MEME_PACK, MEME_PACKS, MEME_PACK_TO_ITEMS } from './memeManifest';
+import MobileBottomSheet from './MobileBottomSheet';
 
 type MemeItem = {
   file: string;
@@ -76,7 +77,7 @@ const MemePicker: React.FC<{
   const panelRef = useRef<HTMLDivElement | null>(null);
   const [desktopLayout, setDesktopLayout] = useState(() => {
     if (typeof window === 'undefined') return false;
-    return window.matchMedia('(min-width: 640px)').matches;
+    return window.matchMedia('(min-width: 768px)').matches;
   });
   const [desktopStyle, setDesktopStyle] = useState<React.CSSProperties>({});
 
@@ -102,7 +103,7 @@ const MemePicker: React.FC<{
   }, [open]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || !desktopLayout) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         onClose();
@@ -126,12 +127,12 @@ const MemePicker: React.FC<{
       document.removeEventListener('keydown', handleKeyDown);
       document.removeEventListener('click', handleClickCapture, true);
     };
-  }, [anchorRef, onClose, open]);
+  }, [anchorRef, desktopLayout, onClose, open]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    const media = window.matchMedia('(min-width: 640px)');
+    const media = window.matchMedia('(min-width: 768px)');
     const updateLayout = () => setDesktopLayout(media.matches);
     updateLayout();
 
@@ -216,13 +217,63 @@ const MemePicker: React.FC<{
     return null;
   }
 
-  const panel = (
+  const pickerBody = loading ? (
+    <div className="flex flex-1 min-h-0 items-center justify-center text-center text-sm text-pencil font-hand">加载中...</div>
+  ) : error ? (
+    <div className="flex flex-1 min-h-0 items-center justify-center text-center text-sm text-red-600 font-hand">{error}</div>
+  ) : items.length === 0 ? (
+    <div className="flex flex-1 min-h-0 items-center justify-center text-center text-sm text-pencil font-hand">暂无表情包</div>
+  ) : (
+    <div className="flex flex-1 min-h-0 gap-3">
+      <div className="h-full w-20 shrink-0 overflow-auto border-r border-gray-200 pr-1 md:w-24">
+        <div className="flex flex-col gap-1">
+          {packNames.map((name) => (
+            <button
+              key={name}
+              type="button"
+              onClick={() => setActivePack(name)}
+              className={`min-h-11 rounded-md border px-2 py-2 text-left font-hand text-sm transition-colors md:min-h-0 md:py-1 ${activePack === name ? 'border-ink bg-highlight text-ink' : 'border-transparent text-pencil hover:border-gray-200 hover:bg-gray-50'}`}
+              title={getPackDisplayName(name)}
+            >
+              {getPackDisplayName(name)}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex-1 min-h-0 overflow-auto pr-1">
+        <div className="grid auto-rows-max grid-cols-6 content-start gap-2 sm:grid-cols-8">
+          {items.map((item) => {
+            const src = `${DEFAULT_BASE_PATH}/${encodePathSegment(activePack)}/${encodePathSegment(item.file)}`;
+            return (
+              <button
+                key={`${activePack}:${item.file}`}
+                type="button"
+                onClick={() => onSelect(activePack, item.label)}
+                className="group relative w-full h-0 pb-[100%] rounded-lg border border-gray-200 hover:border-ink hover:bg-highlight transition-colors overflow-hidden"
+                title={item.label}
+                aria-label={item.label}
+              >
+                <img
+                  src={src}
+                  alt={item.label}
+                  loading="lazy"
+                  decoding="async"
+                  className="absolute inset-0 w-full h-full p-1 object-contain"
+                />
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+
+  const desktopPanel = (
     <div
       ref={panelRef}
-      className={desktopLayout
-        ? 'fixed bg-white border-2 border-ink rounded-xl shadow-sketch p-3 z-[60] flex flex-col'
-        : 'fixed inset-x-0 bottom-0 mx-auto w-full max-w-full bg-white border-2 border-ink shadow-sketch p-3 z-[60] rounded-t-xl flex flex-col h-[min(60vh,420px)]'}
-      style={desktopLayout ? desktopStyle : undefined}
+      className="fixed z-[90] flex flex-col rounded-xl border-2 border-ink bg-white p-3 shadow-sketch"
+      style={desktopStyle}
       role="dialog"
       aria-label="选择表情包"
     >
@@ -235,72 +286,51 @@ const MemePicker: React.FC<{
         <button
           type="button"
           onClick={onClose}
-          className="p-1 rounded-md border border-gray-200 hover:border-ink hover:bg-highlight transition-colors"
+          className="inline-flex h-11 w-11 items-center justify-center rounded-lg border border-gray-200 transition-colors hover:border-ink hover:bg-highlight md:h-8 md:w-8"
           aria-label="关闭表情包"
         >
           <X className="w-4 h-4" />
         </button>
       </div>
 
-      {loading ? (
-        <div className="flex-1 min-h-0 flex items-center justify-center text-center text-sm text-pencil font-hand">加载中...</div>
-      ) : error ? (
-        <div className="flex-1 min-h-0 flex items-center justify-center text-center text-sm text-red-600 font-hand">{error}</div>
-      ) : items.length === 0 ? (
-        <div className="flex-1 min-h-0 flex items-center justify-center text-center text-sm text-pencil font-hand">暂无表情包</div>
-      ) : (
-        <div className="flex flex-1 min-h-0 gap-3">
-          <div className="w-24 shrink-0 h-full overflow-auto pr-1 border-r border-gray-200">
-            <div className="flex flex-col gap-1">
-              {packNames.map((name) => (
-                <button
-                  key={name}
-                  type="button"
-                  onClick={() => setActivePack(name)}
-                  className={`text-left px-2 py-1 rounded-md border transition-colors font-hand text-sm ${activePack === name ? 'border-ink bg-highlight text-ink' : 'border-transparent hover:border-gray-200 hover:bg-gray-50 text-pencil'}`}
-                  title={getPackDisplayName(name)}
-                >
-                  {getPackDisplayName(name)}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="flex-1 min-h-0 overflow-auto pr-1">
-            <div className="grid grid-cols-6 sm:grid-cols-8 gap-2 content-start auto-rows-max">
-              {items.map((item) => {
-                const src = `${DEFAULT_BASE_PATH}/${encodePathSegment(activePack)}/${encodePathSegment(item.file)}`;
-                return (
-                  <button
-                    key={`${activePack}:${item.file}`}
-                    type="button"
-                    onClick={() => onSelect(activePack, item.label)}
-                    className="group relative w-full h-0 pb-[100%] rounded-lg border border-gray-200 hover:border-ink hover:bg-highlight transition-colors overflow-hidden"
-                    title={item.label}
-                    aria-label={item.label}
-                  >
-                    <img
-                      src={src}
-                      alt={item.label}
-                      loading="lazy"
-                      decoding="async"
-                      className="absolute inset-0 w-full h-full p-1 object-contain"
-                    />
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
+      {pickerBody}
     </div>
   );
 
   if (typeof document === 'undefined') {
-    return panel;
+    return desktopPanel;
   }
 
-  return createPortal(panel, document.body);
+  if (!desktopLayout) {
+    return (
+      <MobileBottomSheet
+        isOpen
+        onClose={onClose}
+        title={(
+          <span className="flex min-w-0 items-center gap-2">
+            <Smile className="h-4 w-4 shrink-0 text-pencil" aria-hidden="true" />
+            <span>表情包</span>
+            <span className="truncate text-xs font-normal text-pencil">{activePackDisplayName}</span>
+          </span>
+        )}
+        closeButtonAriaLabel="关闭表情包"
+        returnFocusRef={anchorRef as React.RefObject<HTMLElement | null> | undefined}
+        className="rounded-t-xl"
+        overlayClassName="z-[90]"
+        contentClassName="overflow-hidden"
+        panelStyle={{
+          height: 'min(60dvh, 420px)',
+          maxHeight: 'calc(100dvh - max(8px, env(safe-area-inset-top, 0px)))',
+        }}
+      >
+        <div className="flex h-full min-h-0 flex-col p-3">
+          {pickerBody}
+        </div>
+      </MobileBottomSheet>
+    );
+  }
+
+  return createPortal(desktopPanel, document.body);
 };
 
 export default MemePicker;

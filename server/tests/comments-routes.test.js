@@ -616,6 +616,42 @@ test('旧帖下新评论不会分配帖内身份', async () => {
   db.close();
 });
 
+test('评论分页会把负数或非安全整数参数回落到安全默认值', () => {
+  const db = createDb();
+  const notifications = [];
+  insertPost(db, {
+    id: 'post-comment-pagination',
+    fingerprint: 'post-owner',
+    createdAt: 1000,
+  });
+  const insertComment = db.prepare(`
+    INSERT INTO comments (
+      id, post_id, parent_id, reply_to_id, content, author, created_at, fingerprint,
+      deleted, hidden
+    ) VALUES (?, 'post-comment-pagination', NULL, NULL, ?, '匿名', ?, ?, 0, 0)
+  `);
+  for (let index = 0; index < 12; index += 1) {
+    insertComment.run(
+      `pagination-comment-${index}`,
+      `评论 ${index}`,
+      1001 + index,
+      `commenter-${index}`,
+    );
+  }
+  const handler = registerGetCommentsRoute(db, notifications);
+  const res = createResponse();
+
+  handler({
+    params: { id: 'post-comment-pagination' },
+    query: { limit: '-1', offset: String(Number.MAX_SAFE_INTEGER + 1) },
+  }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.payload.items.length, 10);
+  assert.equal(res.payload.total, 12);
+  db.close();
+});
+
 test('点赞他人评论时会向评论作者创建 comment_like 提醒', () => {
   const db = createDb();
   const notifications = [];

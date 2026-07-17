@@ -165,6 +165,7 @@ const buildDeps = (db, options = {}) => ({
     options.getIdentityLookupHashes?.(req, res) || options.identityHashes || []
   ),
   getRequestIdentityContext: () => ({ lookupHashes: options.identityHashes || [] }),
+  requireFingerprint: options.requireFingerprint || (() => options.identityHashes?.[0] || 'test-viewer'),
   startOfDay: (date) => {
     const normalized = new Date(date);
     normalized.setHours(0, 0, 0, 0);
@@ -232,6 +233,32 @@ test('精华列表只返回公开精华帖子并按加精时间倒序', () => {
   db.close();
 });
 
+test('精华分页会把无效 limit 和非安全 offset 回落到默认值', () => {
+  const db = createDb();
+  for (let index = 0; index < 21; index += 1) {
+    insertPost(db, {
+      id: `featured-page-${index}`,
+      featured: 1,
+      featuredAt: 1000 + index,
+    });
+  }
+  const app = createApp();
+  registerPublicPostsRoutes(app, buildDeps(db));
+  const handler = app.routes.get('GET /api/posts/featured');
+  const res = createResponse();
+
+  handler({
+    query: { limit: '-1', offset: String(Number.MAX_SAFE_INTEGER + 1) },
+    sessionID: 'featured-pagination-session',
+  }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.payload.total, 21);
+  assert.equal(res.payload.items.length, 20);
+  assert.equal(res.payload.items[0].id, 'featured-page-20');
+  db.close();
+});
+
 test('Cookie 轮换后帖子列表仍能通过 legacy 指纹返回原精华申请状态', () => {
   const db = createDb();
   insertPost(db, { id: 'requested-post', createdAt: 1000 });
@@ -256,6 +283,65 @@ test('Cookie 轮换后帖子列表仍能通过 legacy 指纹返回原精华申�
 
   assert.equal(res.statusCode, 200);
   assert.equal(res.payload.items[0].viewerFeatureRequestStatus, 'pending');
+  db.close();
+});
+
+test('首页分页会把负数或非安全整数参数回落到安全默认值', () => {
+  const db = createDb();
+  for (let index = 0; index < 12; index += 1) {
+    insertPost(db, {
+      id: `home-post-${index}`,
+      createdAt: 1000 + index,
+    });
+  }
+  const app = createApp();
+  registerPublicPostsRoutes(app, buildDeps(db));
+  const handler = app.routes.get('GET /api/posts/home');
+  const res = createResponse();
+
+  handler({
+    query: { limit: '-1', offset: String(Number.MAX_SAFE_INTEGER + 1) },
+    sessionID: 'home-pagination-session',
+  }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.payload.items.length, 10);
+  assert.equal(res.payload.total, 12);
+  db.close();
+});
+
+test('收藏列表只统计公开帖子，并对无效分页参数使用安全默认值', () => {
+  const db = createDb();
+  const identity = 'favorite-viewer';
+  const insertFavorite = db.prepare(`
+    INSERT INTO post_favorites (post_id, fingerprint, created_at)
+    VALUES (?, ?, ?)
+  `);
+  for (let index = 0; index < 21; index += 1) {
+    const postId = `favorite-visible-${index}`;
+    insertPost(db, { id: postId, createdAt: 1000 + index });
+    insertFavorite.run(postId, identity, 2000 + index);
+  }
+  insertPost(db, { id: 'favorite-hidden', hidden: 1 });
+  insertFavorite.run('favorite-hidden', identity, 3000);
+  insertPost(db, { id: 'favorite-deleted', deleted: 1 });
+  insertFavorite.run('favorite-deleted', identity, 3001);
+
+  const app = createApp();
+  registerPublicPostsRoutes(app, buildDeps(db, { identityHashes: [identity] }));
+  const handler = app.routes.get('GET /api/favorites');
+  const res = createResponse();
+
+  handler({
+    query: { limit: '-1', offset: String(Number.MAX_SAFE_INTEGER + 1) },
+  }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.payload.total, 21);
+  assert.equal(res.payload.items.length, 20);
+  assert.equal(res.payload.items[0].id, 'favorite-visible-20');
+  assert.equal(res.payload.items.some((item) => item.id === 'favorite-hidden'), false);
+  assert.equal(res.payload.items.some((item) => item.id === 'favorite-deleted'), false);
   db.close();
 });
 
@@ -553,7 +639,7 @@ test('热门榜单分页携带旧快照版本时要求客户端从第一页重�
   db.close();
 });
 
-test('热门列表搜索继续匹配帖子 ID、正文、IP 和指纹，并保持排行顺序', () => {
+test('热门列表搜索只匹配公开帖子 ID 和正文，不暴露 IP 或指纹检索能力', () => {
   const db = createDb();
   const posts = [
     { id: 'content-match', content: '正文包含 needle' },
@@ -576,12 +662,12 @@ test('热门列表搜索继续匹配帖子 ID、正文、IP 和指纹，并保�
     sessionID: 'feed-search-session',
   }, res);
 
-  assert.equal(res.payload.total, 4);
+  assert.equal(res.payload.total, 2);
   assert.deepEqual(
     res.payload.items.map((item) => item.id),
-    ['content-match', 'needle-id', 'ip-match', 'fingerprint-match']
+    ['content-match', 'needle-id']
   );
-  assert.equal(res.payload.nextOffset, 4);
+  assert.equal(res.payload.nextOffset, 2);
   assert.equal(res.payload.hasMore, false);
   db.close();
 });

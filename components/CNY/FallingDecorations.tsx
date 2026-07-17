@@ -1,4 +1,4 @@
-import React, { CSSProperties, useState } from 'react';
+import React, { CSSProperties, useMemo } from 'react';
 
 interface FallingItem {
   id: number;
@@ -75,11 +75,18 @@ const GoldIngotSVG: React.FC = () => (
   </svg>
 );
 
-const FallingDecorations: React.FC = () => {
-  const [items] = useState<FallingItem[]>(() => createFallingItems());
+interface FallingDecorationsProps {
+  count?: number;
+}
+
+const FallingDecorations: React.FC<FallingDecorationsProps> = ({ count = 18 }) => {
+  const items = useMemo(() => createFallingItems(count), [count]);
 
   return (
-    <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
+    <div
+      className="fixed inset-0 pointer-events-none overflow-hidden z-0 motion-reduce:hidden"
+      aria-hidden="true"
+    >
       <style
         dangerouslySetInnerHTML={{
           __html: `

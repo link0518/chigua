@@ -3,7 +3,7 @@ import { AlertTriangle, Flag, Trash2 } from 'lucide-react';
 
 import Modal from './Modal';
 import { SketchButton } from './SketchUI';
-import { useApp } from '../store/AppContext';
+import { useAppActions } from '../store/AppActionsContext';
 import type { ReportReasonCode, ReportSubmissionPayload } from '../types';
 
 interface ReportModalProps {
@@ -49,7 +49,7 @@ const ReportModal: React.FC<ReportModalProps> = ({
   canRequestPostDeletion = false,
   onRequestPostDeletion,
 }) => {
-  const { reportPost, reportComment, showToast } = useApp();
+  const { reportPost, reportComment, showToast } = useAppActions();
   const [selectedReason, setSelectedReason] = useState<string>('');
   const [otherReason, setOtherReason] = useState('');
   const [evidence, setEvidence] = useState('');

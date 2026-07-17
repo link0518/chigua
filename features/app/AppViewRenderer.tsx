@@ -35,7 +35,7 @@ interface AppViewRendererProps {
   onNavigateHome: () => void;
 }
 
-const AppViewRenderer: React.FC<AppViewRendererProps> = ({
+const AppViewRenderer: React.FC<AppViewRendererProps> = React.memo(({
   currentView,
   onNavigateHome,
 }) => {
@@ -58,10 +58,15 @@ const AppViewRenderer: React.FC<AppViewRendererProps> = ({
       return (
         <React.Suspense
           fallback={(
-            <div className="flex-grow w-full max-w-2xl mx-auto px-4 py-12 flex flex-col text-center min-h-70vh-safe">
-              <span className="text-5xl mb-4 block">⏳</span>
-              <h2 className="font-display text-3xl text-ink mb-2">后台加载中</h2>
-              <p className="font-hand text-lg text-pencil">马上就好</p>
+            <div
+              className="mx-auto flex min-h-70vh-safe w-full max-w-2xl flex-grow items-center justify-center px-4 py-12"
+              role="status"
+              aria-label="后台加载中"
+            >
+              <span
+                className="h-10 w-10 animate-spin rounded-full border-4 border-ink/20 border-t-ink motion-reduce:animate-none"
+                aria-hidden="true"
+              />
             </div>
           )}
         >
@@ -86,6 +91,8 @@ const AppViewRenderer: React.FC<AppViewRendererProps> = ({
     default:
       return <HomeView />;
   }
-};
+});
+
+AppViewRenderer.displayName = 'AppViewRenderer';
 
 export default AppViewRenderer;

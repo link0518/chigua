@@ -16,7 +16,7 @@ import {
 import { PhotoSlider } from 'react-photo-view';
 
 import { api } from '../api';
-import type { Toast } from '../store/AppContext';
+import type { ToastMessage } from '../store/ToastUIContext';
 import type { WikiAttachment, WikiEntry, WikiRelatedPost, WikiRevision } from '../types';
 import MarkdownRenderer from './MarkdownRenderer';
 import { Badge, SketchButton } from './SketchUI';
@@ -34,7 +34,7 @@ type RevisionActionType = 'all' | 'create' | 'edit';
 type EntryStatus = 'active' | 'deleted' | 'all';
 
 interface AdminWikiPanelProps {
-  showToast: (message: string, type?: Toast['type']) => void;
+  showToast: (message: string, type?: ToastMessage['type']) => void;
   onPendingCountChange?: () => void;
   canManage?: boolean;
 }

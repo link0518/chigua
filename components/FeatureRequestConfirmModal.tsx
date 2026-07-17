@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Star } from 'lucide-react';
 
-import { useApp } from '../store/AppContext';
+import { useAppActions } from '../store/AppActionsContext';
 import type { Post } from '../types';
 import Modal from './Modal';
 import { SketchButton } from './SketchUI';
@@ -12,7 +12,7 @@ interface FeatureRequestConfirmModalProps {
 }
 
 const FeatureRequestConfirmModal: React.FC<FeatureRequestConfirmModalProps> = ({ post, onClose }) => {
-  const { requestPostFeature, showToast } = useApp();
+  const { requestPostFeature, showToast } = useAppActions();
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {

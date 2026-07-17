@@ -15,11 +15,15 @@ import {
   Zap,
 } from 'lucide-react';
 import { api } from '../api';
-import { useApp } from '../store/AppContext';
+import { useAppActions } from '../store/AppActionsContext';
+import { useAppShell } from '../store/AppShellContext';
+import { useContent } from '../store/ContentContext';
+import { useUserPreferences } from '../store/UserPreferencesContext';
 import type { Post } from '../types';
 import CommentModal from './CommentModal';
 import DeveloperMiniCard from './DeveloperMiniCard';
 import FeatureRequestConfirmModal from './FeatureRequestConfirmModal';
+import { requestOverlayHistoryBack, requestOverlayHistoryNavigation } from './overlayHistory';
 import HomePostGridCard from './HomePostGridCard';
 import NicknameFrameCard from './NicknameFrameCard';
 import { useFrameRegistryVersion } from './nicknameFrames';
@@ -29,11 +33,21 @@ import ReportModal from './ReportModal';
 import PostActionMenu from './PostActionMenu';
 import { SketchButton } from './SketchUI';
 import Turnstile, { TurnstileHandle } from './Turnstile';
+import useMediaQuery from './useMediaQuery';
+import { usePostInteractionGuard } from './usePostInteractionGuard';
 import { postMatchesHiddenFilters } from '../store/hiddenPostTags';
 import { buildPostPath, buildPostShareUrl, copyTextToClipboard } from './clipboard';
 import FeaturedBadge from './FeaturedBadge';
 
 type HomeViewMode = 'focus' | 'grid';
+
+type HomeHistoryState = {
+  homeOverlay?: 'comments' | 'comment-composer';
+  homeCommentPostId?: string;
+  homeSecondaryOverlay?: 'comment-report' | 'comment-meme' | 'markdown-image' | 'post-report' | 'post-delete-request';
+  homeSecondaryOverlayId?: string;
+  homeSecondaryOverlayIndex?: number;
+};
 
 type HomeReportModalState = {
   isOpen: boolean;
@@ -45,7 +59,15 @@ type HomeReportModalState = {
 
 const HOME_FOCUS_PAGE_SIZE = 10;
 const HOME_GRID_PAGE_SIZE = 20;
+const HOME_ROUTE_MAX_PREFETCH_PAGES = 5;
+const HOME_ROUTE_PREFETCH_LIMIT = HOME_GRID_PAGE_SIZE * HOME_ROUTE_MAX_PREFETCH_PAGES;
 const HOME_VIEW_MODE_STORAGE_KEY = 'home:viewMode:v1';
+
+const readHomeHistoryState = (): HomeHistoryState => (
+  window.history.state && typeof window.history.state === 'object'
+    ? window.history.state as HomeHistoryState
+    : {}
+);
 
 const createEmptyReportModalState = (): HomeReportModalState => ({
   isOpen: false,
@@ -68,8 +90,11 @@ const parseHomeLocation = () => {
   const searchParams = new URLSearchParams(window.location.search);
   const rawHomeIndex = searchParams.get('homeIndex');
   const parsedHomeIndex = rawHomeIndex === null || rawHomeIndex.trim() === '' ? NaN : Number(rawHomeIndex);
-  const homeIndex = Number.isFinite(parsedHomeIndex) && parsedHomeIndex >= 0
+  const normalizedHomeIndex = Number.isFinite(parsedHomeIndex) && parsedHomeIndex >= 0
     ? Math.floor(parsedHomeIndex)
+    : null;
+  const homeIndex = normalizedHomeIndex !== null && normalizedHomeIndex < HOME_ROUTE_PREFETCH_LIMIT
+    ? normalizedHomeIndex
     : null;
   return {
     postId: sharedPathMatch ? decodeURIComponent(sharedPathMatch[1]) : '',
@@ -81,25 +106,32 @@ const parseHomeLocation = () => {
 const HomeView: React.FC = () => {
   // frames 异步加载完成后需重渲染，才能显示帖子 authorFrameId
   useFrameRegistryVersion();
+  const { homePosts, homeTotal, loadHomePosts } = useContent();
   const {
-    state,
-    getHomePosts,
-    likePost,
-    dislikePost,
+    hiddenPostTags,
+    hiddenPostKeywords,
     isLiked,
     isDisliked,
     isFavorited,
+  } = useUserPreferences();
+  const {
+    likePost,
+    dislikePost,
     toggleFavoritePost,
     showToast,
-    loadHomePosts,
     viewPost,
     upsertHomePost,
-  } = useApp();
+    removeHomePostsFromMemory,
+  } = useAppActions();
+  const { settings } = useAppShell();
+  const isMobileLayout = useMediaQuery('(max-width: 767px)');
+  const runPostInteraction = usePostInteractionGuard();
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [preferredViewMode, setPreferredViewMode] = useState<HomeViewMode>(() => readStoredHomeViewMode());
   const [routeState, setRouteState] = useState(parseHomeLocation);
   const [animate, setAnimate] = useState(false);
+  const [switchingPost, setSwitchingPost] = useState(false);
   const [commentModalOpen, setCommentModalOpen] = useState(false);
   const [commentPostId, setCommentPostId] = useState<string | null>(null);
   const [focusCommentId, setFocusCommentId] = useState<string | null>(null);
@@ -119,6 +151,9 @@ const HomeView: React.FC = () => {
   const [feedbackQq, setFeedbackQq] = useState('');
   const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
   const feedbackTurnstileRef = useRef<TurnstileHandle | null>(null);
+  const focusArticleRef = useRef<HTMLElement | null>(null);
+  const postSwitchTimerRef = useRef<number | null>(null);
+  const transientRoutePostIdsRef = useRef<Set<string>>(new Set());
   const [mascotClicks, setMascotClicks] = useState(0);
   const [mascotPop, setMascotPop] = useState(false);
   const [mascotBurstKey, setMascotBurstKey] = useState(0);
@@ -129,15 +164,35 @@ const HomeView: React.FC = () => {
   const [hasMore, setHasMore] = useState(true);
   const [pendingAdvance, setPendingAdvance] = useState(false);
   const [pendingGridPrefill, setPendingGridPrefill] = useState(false);
+  const [routePrefetchFailureKey, setRoutePrefetchFailureKey] = useState('');
   const prevPostCountRef = useRef(0);
   const handledRouteCommentKeyRef = useRef('');
+  const markHomePostsAsServerLoaded = useCallback((items: Post[]) => {
+    items.forEach((post) => {
+      transientRoutePostIdsRef.current.delete(post.id);
+    });
+  }, []);
   const routePostId = routeState.postId;
   const routeCommentId = routeState.commentId;
   const routeHomeIndex = routeState.homeIndex;
   const routeCommentKey = routePostId && routeCommentId ? `${routePostId}:${routeCommentId}` : '';
-  const allPosts = getHomePosts();
-  const hiddenPostTags = state.hiddenPostTags;
-  const hiddenPostKeywords = state.hiddenPostKeywords;
+  const allPosts = homePosts;
+  const homeIndexById = useMemo(
+    () => new Map(allPosts.map((post, index) => [post.id, index] as const)),
+    [allPosts]
+  );
+  const routeHomeIndexById = useMemo(() => {
+    const indexById = new Map<string, number>();
+    let serverIndex = 0;
+    allPosts.forEach((post) => {
+      if (transientRoutePostIdsRef.current.has(post.id)) {
+        return;
+      }
+      indexById.set(post.id, serverIndex);
+      serverIndex += 1;
+    });
+    return indexById;
+  }, [allPosts]);
   const posts = useMemo(
     () => (
       routePostId
@@ -146,11 +201,18 @@ const HomeView: React.FC = () => {
     ),
     [allPosts, hiddenPostKeywords, hiddenPostTags, routePostId]
   );
-  const loadedPostCount = allPosts.length;
+  // 直达详情按 ID 临时注入的帖子不属于已加载分页，不能占用服务端 offset。
+  const loadedPostCount = allPosts.reduce((count, post) => (
+    transientRoutePostIdsRef.current.has(post.id) ? count : count + 1
+  ), 0);
   const hasHiddenPostFilter = hiddenPostTags.length > 0 || hiddenPostKeywords.length > 0;
   const hiddenOnlyEmptyState = !routePostId && loadedPostCount > 0 && posts.length === 0 && hasHiddenPostFilter;
   const boundedIndex = posts.length ? Math.min(currentIndex, posts.length - 1) : 0;
-  const currentPost = posts[boundedIndex];
+  const routePostIndex = routePostId ? homeIndexById.get(routePostId) : undefined;
+  const currentPost = routePostId
+    ? routePostIndex === undefined ? undefined : allPosts[routePostIndex]
+    : posts[boundedIndex];
+  const routePostResolving = Boolean(routePostId && !currentPost);
   const commentTargetPost = useMemo(
     () => (commentPostId ? posts.find((post) => post.id === commentPostId) || null : currentPost || null),
     [commentPostId, currentPost, posts]
@@ -158,18 +220,59 @@ const HomeView: React.FC = () => {
   const effectiveViewMode: HomeViewMode = routePostId ? 'focus' : preferredViewMode;
   const shouldShowBanner = window.location.hostname === '933211.xyz';
   const isLatestPost = boundedIndex === 0;
-  const turnstileEnabled = state.settings.turnstileEnabled;
+  const turnstileEnabled = settings.turnstileEnabled;
   const initialLoadLimitRef = useRef(
     routePostId
-      ? Math.max(HOME_FOCUS_PAGE_SIZE, (routeHomeIndex ?? 0) + HOME_FOCUS_PAGE_SIZE)
+      ? Math.min(
+        HOME_ROUTE_PREFETCH_LIMIT,
+        Math.max(HOME_FOCUS_PAGE_SIZE, (routeHomeIndex ?? 0) + HOME_FOCUS_PAGE_SIZE)
+      )
       : preferredViewMode === 'focus'
         ? HOME_FOCUS_PAGE_SIZE
         : HOME_GRID_PAGE_SIZE
   );
 
   const syncRouteState = useCallback(() => {
-    setRouteState(parseHomeLocation());
-  }, []);
+    const nextRouteState = parseHomeLocation();
+    const historyState = readHomeHistoryState();
+    const overlay = historyState.homeOverlay;
+    const overlayPostId = nextRouteState.postId || historyState.homeCommentPostId || '';
+    const secondaryPost = historyState.homeSecondaryOverlayId
+      ? allPosts.find((post) => post.id === historyState.homeSecondaryOverlayId) || null
+      : null;
+    setRouteState(nextRouteState);
+    if (historyState.homeSecondaryOverlay === 'post-report' && secondaryPost) {
+      setReportModal({
+        isOpen: true,
+        postId: secondaryPost.id,
+        content: secondaryPost.content,
+        viewerIsAuthor: Boolean(secondaryPost.viewerIsAuthor),
+        viewerDeleteRequestStatus: secondaryPost.viewerDeleteRequestStatus ?? null,
+      });
+    } else if (historyState.homeSecondaryOverlay !== 'post-report') {
+      setReportModal(createEmptyReportModalState());
+    }
+    if (historyState.homeSecondaryOverlay === 'post-delete-request' && secondaryPost) {
+      setDeleteRequestModal((current) => (
+        current.isOpen && current.postId === secondaryPost.id
+          ? current
+          : { isOpen: true, postId: secondaryPost.id, content: secondaryPost.content, reason: '' }
+      ));
+    } else if (historyState.homeSecondaryOverlay !== 'post-delete-request') {
+      setDeleteRequestModal({ isOpen: false, postId: '', content: '', reason: '' });
+    }
+    if (overlayPostId && (overlay === 'comments' || overlay === 'comment-composer')) {
+      setCommentPostId(overlayPostId);
+      setFocusCommentId(nextRouteState.commentId || null);
+      setCommentModalOpen(true);
+      return;
+    }
+    if (!nextRouteState.commentId) {
+      setCommentModalOpen(false);
+      setCommentPostId(null);
+      setFocusCommentId(null);
+    }
+  }, [allPosts]);
 
   const persistViewMode = useCallback((mode: HomeViewMode) => {
     setPreferredViewMode(mode);
@@ -180,15 +283,19 @@ const HomeView: React.FC = () => {
     }
   }, []);
 
-  const updateHistoryPath = useCallback((path: string, replace = false) => {
+  const updateHistoryPath = useCallback((path: string, replace = false, statePatch?: HomeHistoryState) => {
     if (window.location.pathname + window.location.search === path) {
       return;
     }
+    const nextState = {
+      ...readHomeHistoryState(),
+      ...(statePatch || {}),
+    };
     if (replace) {
-      window.history.replaceState({}, '', path);
+      window.history.replaceState(nextState, '', path);
       return;
     }
-    window.history.pushState({}, '', path);
+    window.history.pushState(nextState, '', path);
   }, []);
 
   const navigateToHomeRoot = useCallback((replace = false) => {
@@ -196,10 +303,16 @@ const HomeView: React.FC = () => {
     setRouteState({ postId: '', commentId: null, homeIndex: null });
   }, [updateHistoryPath]);
 
-  const openPostInFocus = useCallback((postId: string, options?: { commentId?: string | null; homeIndex?: number | null; replace?: boolean }) => {
+  const openPostInFocus = useCallback((postId: string, options?: {
+    commentId?: string | null;
+    homeIndex?: number | null;
+    replace?: boolean;
+    historyState?: HomeHistoryState;
+  }) => {
     updateHistoryPath(
       buildPostPath(postId, options?.commentId || null, { homeIndex: options?.homeIndex ?? null }),
-      Boolean(options?.replace)
+      Boolean(options?.replace),
+      options?.historyState
     );
     setRouteState({ postId, commentId: options?.commentId || null, homeIndex: options?.homeIndex ?? null });
     const targetIndex = posts.findIndex((item) => item.id === postId);
@@ -250,53 +363,138 @@ const HomeView: React.FC = () => {
   const handleLike = useCallback(async (postId: string) => {
     const wasLiked = isLiked(postId);
     try {
-      await likePost(postId);
-      if (!wasLiked) {
+      const result = await runPostInteraction(postId, () => likePost(postId));
+      if (result.executed && !wasLiked) {
         showToast('已点赞', 'success');
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : '点赞失败，请稍后重试';
       showToast(message, 'error');
     }
-  }, [isLiked, likePost, showToast]);
+  }, [isLiked, likePost, runPostInteraction, showToast]);
 
   const handleDislike = useCallback(async (postId: string) => {
     const wasDisliked = isDisliked(postId);
     try {
-      await dislikePost(postId);
-      if (!wasDisliked) {
+      const result = await runPostInteraction(postId, () => dislikePost(postId));
+      if (result.executed && !wasDisliked) {
         showToast('已点踩', 'info');
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : '操作失败，请稍后重试';
       showToast(message, 'error');
     }
-  }, [dislikePost, isDisliked, showToast]);
+  }, [dislikePost, isDisliked, runPostInteraction, showToast]);
 
   const handleFavorite = useCallback(async (postId: string) => {
     try {
-      const favorited = await toggleFavoritePost(postId);
-      showToast(favorited ? '已收藏' : '已取消收藏', 'success');
+      const result = await runPostInteraction(postId, () => toggleFavoritePost(postId));
+      if (result.executed) {
+        showToast(result.value ? '已收藏' : '已取消收藏', 'success');
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : '操作失败';
       showToast(message, 'error');
     }
-  }, [showToast, toggleFavoritePost]);
+  }, [runPostInteraction, showToast, toggleFavoritePost]);
 
-  const openCommentModal = useCallback((postId: string, commentId?: string | null) => {
+  const openCommentModal = useCallback((
+    postId: string,
+    commentId?: string | null,
+    options?: { pushHistory?: boolean }
+  ) => {
     if (effectiveViewMode === 'grid') {
       return;
     }
     setCommentPostId(postId);
     setFocusCommentId(commentId || null);
     setCommentModalOpen(true);
+    if (
+      options?.pushHistory === false
+      || document.documentElement.clientWidth > 767
+      || readHomeHistoryState().homeOverlay
+    ) {
+      return;
+    }
+    window.history.pushState({
+      ...readHomeHistoryState(),
+      homeOverlay: 'comments',
+      homeCommentPostId: postId,
+    }, '', window.location.pathname + window.location.search);
   }, [effectiveViewMode]);
 
-  const closeCommentModal = useCallback(() => {
+  const openRouteComment = useCallback((postId: string, commentId: string, homeIndex: number | null) => {
+    const currentState = readHomeHistoryState();
+    if (document.documentElement.clientWidth <= 767 && !currentState.homeOverlay) {
+      const baseState = { ...currentState };
+      delete baseState.homeOverlay;
+      delete baseState.homeCommentPostId;
+      delete baseState.homeSecondaryOverlay;
+      delete baseState.homeSecondaryOverlayId;
+      const basePath = buildPostPath(postId, null, { homeIndex });
+      const commentPath = buildPostPath(postId, commentId, { homeIndex });
+
+      // 将深链当前记录改造成单帖基座，再压入评论层；Back 会先收起评论，而不是直接离开帖子。
+      window.history.replaceState(baseState, '', basePath);
+      window.history.pushState({
+        ...baseState,
+        homeOverlay: 'comments',
+        homeCommentPostId: postId,
+      }, '', commentPath);
+      setRouteState({ postId, commentId, homeIndex });
+    }
+    openCommentModal(postId, commentId, { pushHistory: false });
+  }, [openCommentModal]);
+
+  const finalizeCommentModalClose = useCallback(() => {
     setCommentModalOpen(false);
     setCommentPostId(null);
     setFocusCommentId(null);
   }, []);
+
+  const cleanCommentRoute = useCallback(() => {
+    const nextHistoryState = { ...readHomeHistoryState() };
+    delete nextHistoryState.homeOverlay;
+    delete nextHistoryState.homeCommentPostId;
+    delete nextHistoryState.homeSecondaryOverlay;
+    delete nextHistoryState.homeSecondaryOverlayId;
+    delete nextHistoryState.homeSecondaryOverlayIndex;
+    const nextPath = routePostId
+      ? buildPostPath(routePostId, null, { homeIndex: routeHomeIndex })
+      : window.location.pathname + window.location.search;
+    window.history.replaceState(nextHistoryState, '', nextPath);
+    if (routePostId && routeCommentId) {
+      setRouteState({ postId: routePostId, commentId: null, homeIndex: routeHomeIndex });
+    }
+  }, [routeCommentId, routeHomeIndex, routePostId]);
+
+  const closeCommentModal = useCallback(() => {
+    const overlay = readHomeHistoryState().homeOverlay;
+    if (overlay === 'comments' || overlay === 'comment-composer') {
+      requestOverlayHistoryBack();
+      return;
+    }
+    cleanCommentRoute();
+    finalizeCommentModalClose();
+  }, [cleanCommentRoute, finalizeCommentModalClose]);
+
+  const forceCloseCommentModal = useCallback(() => {
+    const historyState = readHomeHistoryState();
+    const mainDepth = historyState.homeOverlay === 'comment-composer'
+      ? 2
+      : historyState.homeOverlay === 'comments'
+        ? 1
+        : 0;
+    const secondaryDepth = historyState.homeSecondaryOverlay ? 1 : 0;
+    const overlayDepth = mainDepth + secondaryDepth;
+    if (overlayDepth > 0) {
+      requestOverlayHistoryNavigation(-overlayDepth);
+      return true;
+    }
+    cleanCommentRoute();
+    finalizeCommentModalClose();
+    return false;
+  }, [cleanCommentRoute, finalizeCommentModalClose]);
 
   const closeFeedbackModal = useCallback(() => {
     setFeedbackOpen(false);
@@ -311,8 +509,49 @@ const HomeView: React.FC = () => {
     if (deleteRequestSubmitting) {
       return;
     }
+    const currentState = readHomeHistoryState();
+    if (currentState.homeSecondaryOverlay === 'post-delete-request') {
+      requestOverlayHistoryBack();
+      return;
+    }
     setDeleteRequestModal({ isOpen: false, postId: '', content: '', reason: '' });
   }, [deleteRequestSubmitting]);
+
+  useEffect(() => {
+    if (!isMobileLayout) {
+      return;
+    }
+    const currentState = readHomeHistoryState();
+    if (deleteRequestModal.isOpen && deleteRequestModal.postId) {
+      if (currentState.homeSecondaryOverlay === 'post-delete-request') {
+        return;
+      }
+      const nextState: HomeHistoryState = {
+        ...currentState,
+        homeSecondaryOverlay: 'post-delete-request',
+        homeSecondaryOverlayId: deleteRequestModal.postId,
+      };
+      if (currentState.homeSecondaryOverlay === 'post-report') {
+        window.history.replaceState(nextState, '', window.location.pathname + window.location.search);
+      } else {
+        window.history.pushState(nextState, '', window.location.pathname + window.location.search);
+      }
+      return;
+    }
+    if (reportModal.isOpen && reportModal.postId && currentState.homeSecondaryOverlay !== 'post-report') {
+      window.history.pushState({
+        ...currentState,
+        homeSecondaryOverlay: 'post-report',
+        homeSecondaryOverlayId: reportModal.postId,
+      }, '', window.location.pathname + window.location.search);
+    }
+  }, [
+    deleteRequestModal.isOpen,
+    deleteRequestModal.postId,
+    isMobileLayout,
+    reportModal.isOpen,
+    reportModal.postId,
+  ]);
 
   const isCommentModalActiveForPost = useCallback((postId: string) => (
     commentModalOpen && commentPostId === postId
@@ -331,27 +570,49 @@ const HomeView: React.FC = () => {
     openCommentModal(postId, nextFocusCommentId);
   }, [closeCommentModal, commentModalOpen, commentPostId, focusCommentId, openCommentModal]);
 
-  const loadMorePosts = useCallback(async (limit?: number) => {
+  const loadMorePosts = useCallback(async (limit?: number): Promise<boolean> => {
     if (loading || loadingMore || !hasMore) {
-      return;
+      return false;
     }
     const batchSize = limit ?? (effectiveViewMode === 'grid' ? HOME_GRID_PAGE_SIZE : HOME_FOCUS_PAGE_SIZE);
+    const knownPostIds = new Set(allPosts.map((post) => post.id));
     setLoadingMore(true);
     try {
-      await loadHomePosts({ limit: batchSize, offset: loadedPostCount, append: true });
+      const result = await loadHomePosts({ limit: batchSize, offset: loadedPostCount, append: true });
+      if (!result.applied) {
+        setPendingAdvance(false);
+        return false;
+      }
+      // 按 ID 临时注入的帖子若已出现在自然分页中，应恢复为服务端分页项，避免 offset 长期少算一位。
+      markHomePostsAsServerLoaded(result.items);
+      const addedPostCount = result.items.reduce((count, post) => (
+        knownPostIds.has(post.id) ? count : count + 1
+      ), 0);
+      if (addedPostCount === 0) {
+        // 防止总数与分页结果短暂不一致时，在同一 offset 上持续补页。
+        setHasMore(false);
+        setPendingAdvance(false);
+        return false;
+      }
+      return true;
     } catch {
+      setPendingAdvance(false);
       showToast('加载更多失败，请稍后重试', 'error');
+      return false;
     } finally {
       setLoadingMore(false);
     }
-  }, [effectiveViewMode, hasMore, loadHomePosts, loadedPostCount, loading, loadingMore, showToast]);
+  }, [allPosts, effectiveViewMode, hasMore, loadHomePosts, loadedPostCount, loading, loadingMore, markHomePostsAsServerLoaded, showToast]);
 
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
       setLoading(true);
       try {
-        await loadHomePosts(initialLoadLimitRef.current);
+        const result = await loadHomePosts(initialLoadLimitRef.current);
+        if (result.applied) {
+          markHomePostsAsServerLoaded(result.items);
+        }
       } catch {
         // 空态自行处理。
       } finally {
@@ -365,7 +626,7 @@ const HomeView: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [loadHomePosts]);
+  }, [loadHomePosts, markHomePostsAsServerLoaded]);
 
   useEffect(() => {
     syncRouteState();
@@ -374,6 +635,27 @@ const HomeView: React.FC = () => {
       window.removeEventListener('popstate', syncRouteState);
     };
   }, [syncRouteState]);
+
+  useEffect(() => {
+    if (
+      transientRoutePostIdsRef.current.size === 0
+      || (routePostId && transientRoutePostIdsRef.current.has(routePostId))
+    ) {
+      return;
+    }
+    const transientPostIds = [...transientRoutePostIdsRef.current];
+    transientRoutePostIdsRef.current.clear();
+    removeHomePostsFromMemory(transientPostIds);
+  }, [removeHomePostsFromMemory, routePostId]);
+
+  useEffect(() => () => {
+    if (transientRoutePostIdsRef.current.size === 0) {
+      return;
+    }
+    const transientPostIds = [...transientRoutePostIdsRef.current];
+    transientRoutePostIdsRef.current.clear();
+    removeHomePostsFromMemory(transientPostIds);
+  }, [removeHomePostsFromMemory]);
 
   useEffect(() => {
     const handleNavigate = (event: Event) => {
@@ -399,13 +681,17 @@ const HomeView: React.FC = () => {
   }, [routeCommentKey]);
 
   useEffect(() => {
+    setRoutePrefetchFailureKey('');
+  }, [routeHomeIndex, routePostId]);
+
+  useEffect(() => {
     if (!commentModalOpen || !commentPostId) {
       return;
     }
     if (!posts.some((post) => post.id === commentPostId)) {
-      closeCommentModal();
+      forceCloseCommentModal();
     }
-  }, [closeCommentModal, commentModalOpen, commentPostId, posts]);
+  }, [commentModalOpen, commentPostId, forceCloseCommentModal, posts]);
 
   useEffect(() => {
     if (!posts.length) {
@@ -421,7 +707,7 @@ const HomeView: React.FC = () => {
       return;
     }
     const shouldAutoOpenRouteComment = Boolean(routeCommentKey) && handledRouteCommentKeyRef.current !== routeCommentKey;
-    const existingIndex = allPosts.findIndex((post) => post.id === routePostId);
+    const existingIndex = homeIndexById.get(routePostId) ?? -1;
     if (existingIndex >= 0) {
       const targetIndex = (
         routeHomeIndex !== null
@@ -434,7 +720,7 @@ const HomeView: React.FC = () => {
       }
       if (shouldAutoOpenRouteComment && routeCommentId) {
         handledRouteCommentKeyRef.current = routeCommentKey;
-        openCommentModal(routePostId, routeCommentId);
+        openRouteComment(routePostId, routeCommentId, routeHomeIndex);
       }
       return;
     }
@@ -443,7 +729,25 @@ const HomeView: React.FC = () => {
       if (loading || loadingMore) {
         return;
       }
-      loadMorePosts(Math.max(HOME_FOCUS_PAGE_SIZE, routeHomeIndex - allPosts.length + HOME_FOCUS_PAGE_SIZE));
+      const routePrefetchKey = `${routePostId}:${routeHomeIndex}`;
+      const targetCount = Math.min(
+        HOME_ROUTE_PREFETCH_LIMIT,
+        routeHomeIndex + HOME_FOCUS_PAGE_SIZE
+      );
+      const remainingCount = targetCount - allPosts.length;
+      if (remainingCount > 0 && routePrefetchFailureKey !== routePrefetchKey) {
+        void loadMorePosts(remainingCount).then((loaded) => {
+          if (!loaded) {
+            // 自动补页失败后直接按帖子 ID 降级，避免同一路由持续重试和重复 Toast。
+            setRoutePrefetchFailureKey(routePrefetchKey);
+          }
+        });
+        return;
+      }
+    }
+
+    // 首页首批请求完成后再按 ID 加载，避免两个覆盖式写入互相移除目标帖子。
+    if (loading || loadingMore) {
       return;
     }
 
@@ -453,11 +757,12 @@ const HomeView: React.FC = () => {
         if (cancelled) {
           return;
         }
+        transientRoutePostIdsRef.current.add(data.post.id);
         upsertHomePost(data.post, { prepend: true });
         setCurrentIndex(0);
         if (shouldAutoOpenRouteComment && routeCommentId) {
           handledRouteCommentKeyRef.current = routeCommentKey;
-          openCommentModal(routePostId, routeCommentId);
+          openRouteComment(routePostId, routeCommentId, routeHomeIndex);
         }
       })
       .catch((error) => {
@@ -476,15 +781,17 @@ const HomeView: React.FC = () => {
     allPosts,
     currentIndex,
     hasMore,
+    homeIndexById,
     loadMorePosts,
     loading,
     loadingMore,
     navigateToHomeRoot,
-    openCommentModal,
+    openRouteComment,
     routeCommentId,
     routeCommentKey,
     routeHomeIndex,
     routePostId,
+    routePrefetchFailureKey,
     showToast,
     upsertHomePost,
   ]);
@@ -533,15 +840,21 @@ const HomeView: React.FC = () => {
 
   useEffect(() => {
     const handleRefresh = () => {
-      closeCommentModal();
+      forceCloseCommentModal();
       if (loading) {
         return;
       }
+      const latestRouteState = parseHomeLocation();
+      const refreshViewMode: HomeViewMode = latestRouteState.postId ? 'focus' : preferredViewMode;
+      setRouteState(latestRouteState);
       setLoading(true);
-      const refreshLimit = effectiveViewMode === 'grid' ? HOME_GRID_PAGE_SIZE : HOME_FOCUS_PAGE_SIZE;
+      const refreshLimit = refreshViewMode === 'grid' ? HOME_GRID_PAGE_SIZE : HOME_FOCUS_PAGE_SIZE;
       loadHomePosts(refreshLimit)
-        .then(() => {
-          if (!routePostId) {
+        .then((result) => {
+          if (result.applied) {
+            markHomePostsAsServerLoaded(result.items);
+          }
+          if (!latestRouteState.postId) {
             setCurrentIndex(0);
           }
         })
@@ -554,31 +867,15 @@ const HomeView: React.FC = () => {
     return () => {
       window.removeEventListener('home:refresh', handleRefresh as EventListener);
     };
-  }, [closeCommentModal, effectiveViewMode, loadHomePosts, loading, routePostId]);
+  }, [forceCloseCommentModal, loadHomePosts, loading, markHomePostsAsServerLoaded, preferredViewMode]);
 
   useEffect(() => {
-    if (state.homeTotal > 0) {
-      setHasMore(loadedPostCount < state.homeTotal);
+    if (homeTotal > 0) {
+      setHasMore(loadedPostCount < homeTotal);
       return;
     }
     setHasMore(false);
-  }, [loadedPostCount, state.homeTotal]);
-
-  useEffect(() => {
-    const prevCount = prevPostCountRef.current;
-    if (pendingAdvance && posts.length > prevCount) {
-      const nextIndex = Math.min(currentIndex + 1, posts.length - 1);
-      setCurrentIndex(nextIndex);
-      if (routePostId && posts[nextIndex]) {
-        openPostInFocus(posts[nextIndex].id, { homeIndex: nextIndex });
-      }
-      setPendingAdvance(false);
-    }
-    if (!hasMore && pendingAdvance) {
-      setPendingAdvance(false);
-    }
-    prevPostCountRef.current = posts.length;
-  }, [currentIndex, hasMore, openPostInFocus, pendingAdvance, posts, routePostId]);
+  }, [homeTotal, loadedPostCount]);
 
   useEffect(() => {
     if (effectiveViewMode !== 'focus' || loadingMore || !hasMore || posts.length === 0) {
@@ -593,12 +890,12 @@ const HomeView: React.FC = () => {
     if (!pendingGridPrefill || effectiveViewMode !== 'grid' || loading || loadingMore) {
       return;
     }
-    const targetCount = Math.min(state.homeTotal || HOME_GRID_PAGE_SIZE, HOME_GRID_PAGE_SIZE);
+    const targetCount = Math.min(homeTotal || HOME_GRID_PAGE_SIZE, HOME_GRID_PAGE_SIZE);
     setPendingGridPrefill(false);
     if (posts.length < targetCount && hasMore) {
       loadMorePosts(targetCount - posts.length);
     }
-  }, [effectiveViewMode, hasMore, loadMorePosts, loading, loadingMore, pendingGridPrefill, posts.length, state.homeTotal]);
+  }, [effectiveViewMode, hasMore, homeTotal, loadMorePosts, loading, loadingMore, pendingGridPrefill, posts.length]);
 
   const handleModeSwitch = (mode: HomeViewMode) => {
     persistViewMode(mode);
@@ -606,11 +903,16 @@ const HomeView: React.FC = () => {
       setPendingGridPrefill(false);
       return;
     }
-    closeCommentModal();
+    if (forceCloseCommentModal()) {
+      return;
+    }
     if (routePostId) {
       navigateToHomeRoot(true);
     }
-    const targetCount = Math.min(state.homeTotal || HOME_GRID_PAGE_SIZE, HOME_GRID_PAGE_SIZE);
+    window.requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, behavior: 'auto' });
+    });
+    const targetCount = Math.min(homeTotal || HOME_GRID_PAGE_SIZE, HOME_GRID_PAGE_SIZE);
     if (posts.length >= targetCount || !hasMore) {
       setPendingGridPrefill(false);
       return;
@@ -623,8 +925,64 @@ const HomeView: React.FC = () => {
     loadMorePosts(targetCount - posts.length);
   };
 
+  const scrollFocusPostToTop = useCallback(() => {
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        focusArticleRef.current?.scrollIntoView({
+          block: 'start',
+          behavior: reduceMotion ? 'auto' : 'smooth',
+        });
+      });
+    });
+  }, []);
+
+  const switchToPostIndex = useCallback((nextIndex: number) => {
+    if (switchingPost || !posts[nextIndex]) {
+      return;
+    }
+    if (forceCloseCommentModal()) {
+      return;
+    }
+    const targetPost = posts[nextIndex];
+    setSwitchingPost(true);
+    setAnimate(true);
+    if (postSwitchTimerRef.current !== null) {
+      window.clearTimeout(postSwitchTimerRef.current);
+    }
+    postSwitchTimerRef.current = window.setTimeout(() => {
+      const nextHistoryState = { ...readHomeHistoryState() };
+      delete nextHistoryState.homeOverlay;
+      delete nextHistoryState.homeCommentPostId;
+      delete nextHistoryState.homeSecondaryOverlay;
+      delete nextHistoryState.homeSecondaryOverlayId;
+      delete nextHistoryState.homeSecondaryOverlayIndex;
+      setCurrentIndex(nextIndex);
+      if (routePostId) {
+        openPostInFocus(targetPost.id, {
+          homeIndex: routeHomeIndexById.get(targetPost.id) ?? null,
+          replace: true,
+          historyState: nextHistoryState,
+        });
+      }
+      setAnimate(false);
+      setSwitchingPost(false);
+      postSwitchTimerRef.current = null;
+      scrollFocusPostToTop();
+    }, 180);
+  }, [
+    boundedIndex,
+    forceCloseCommentModal,
+    openPostInFocus,
+    posts,
+    routeHomeIndexById,
+    routePostId,
+    scrollFocusPostToTop,
+    switchingPost,
+  ]);
+
   const handleNext = () => {
-    if (!currentPost) {
+    if (!currentPost || switchingPost || pendingAdvance) {
       return;
     }
     if (boundedIndex >= posts.length - 1) {
@@ -636,39 +994,36 @@ const HomeView: React.FC = () => {
       }
       return;
     }
-    setAnimate(true);
-    closeCommentModal();
-    window.setTimeout(() => {
-      const nextIndex = Math.min(boundedIndex + 1, posts.length - 1);
-      const targetPost = posts[nextIndex];
-      setCurrentIndex(nextIndex);
-      if (routePostId && targetPost) {
-        openPostInFocus(targetPost.id, { homeIndex: nextIndex });
-      }
-      setAnimate(false);
-    }, 200);
+    switchToPostIndex(Math.min(boundedIndex + 1, posts.length - 1));
   };
 
   const handlePrev = () => {
-    if (!currentPost) {
+    if (!currentPost || switchingPost || pendingAdvance) {
       return;
     }
     if (boundedIndex <= 0) {
-      showToast('已经是最新一条', 'info');
       return;
     }
-    setAnimate(true);
-    closeCommentModal();
-    window.setTimeout(() => {
-      const nextIndex = Math.max(boundedIndex - 1, 0);
-      const targetPost = posts[nextIndex];
-      setCurrentIndex(nextIndex);
-      if (routePostId && targetPost) {
-        openPostInFocus(targetPost.id, { homeIndex: nextIndex });
-      }
-      setAnimate(false);
-    }, 200);
+    switchToPostIndex(Math.max(boundedIndex - 1, 0));
   };
+
+  useEffect(() => {
+    const prevCount = prevPostCountRef.current;
+    if (pendingAdvance && posts.length > prevCount) {
+      const nextIndex = Math.min(currentIndex + 1, posts.length - 1);
+      setPendingAdvance(false);
+      switchToPostIndex(nextIndex);
+    } else if (!hasMore && pendingAdvance) {
+      setPendingAdvance(false);
+    }
+    prevPostCountRef.current = posts.length;
+  }, [currentIndex, hasMore, pendingAdvance, posts.length, switchToPostIndex]);
+
+  useEffect(() => () => {
+    if (postSwitchTimerRef.current !== null) {
+      window.clearTimeout(postSwitchTimerRef.current);
+    }
+  }, []);
 
   const handleMascotClick = () => {
     setMascotPop(true);
@@ -725,9 +1080,24 @@ const HomeView: React.FC = () => {
       viewerIsAuthor: Boolean(post.viewerIsAuthor),
       viewerDeleteRequestStatus: post.viewerDeleteRequestStatus ?? null,
     });
+    if (document.documentElement.clientWidth <= 767) {
+      const currentState = readHomeHistoryState();
+      if (currentState.homeSecondaryOverlay !== 'post-report') {
+        window.history.pushState({
+          ...currentState,
+          homeSecondaryOverlay: 'post-report',
+          homeSecondaryOverlayId: post.id,
+        }, '', window.location.pathname + window.location.search);
+      }
+    }
   };
 
   const closeReportModal = () => {
+    const currentState = readHomeHistoryState();
+    if (currentState.homeSecondaryOverlay === 'post-report') {
+      requestOverlayHistoryBack();
+      return;
+    }
     setReportModal(createEmptyReportModalState());
   };
 
@@ -738,6 +1108,25 @@ const HomeView: React.FC = () => {
       content: post.content,
       reason: '',
     });
+    const currentState = readHomeHistoryState();
+    if (currentState.homeSecondaryOverlay === 'post-report') {
+      const nextState: HomeHistoryState = {
+        ...currentState,
+        homeSecondaryOverlay: 'post-delete-request',
+        homeSecondaryOverlayId: post.id,
+      };
+      window.history.replaceState(nextState, '', window.location.pathname + window.location.search);
+    } else if (
+      document.documentElement.clientWidth <= 767
+      && currentState.homeSecondaryOverlay !== 'post-delete-request'
+    ) {
+      const nextState: HomeHistoryState = {
+        ...currentState,
+        homeSecondaryOverlay: 'post-delete-request',
+        homeSecondaryOverlayId: post.id,
+      };
+      window.history.pushState(nextState, '', window.location.pathname + window.location.search);
+    }
   };
 
   const handleDeleteRequestSubmit = async (event: React.FormEvent) => {
@@ -760,6 +1149,11 @@ const HomeView: React.FC = () => {
       }
       showToast('删除申请已提交，等待管理员审核', 'success');
       setDeleteRequestModal({ isOpen: false, postId: '', content: '', reason: '' });
+      if (
+        readHomeHistoryState().homeSecondaryOverlay === 'post-delete-request'
+      ) {
+        requestOverlayHistoryBack();
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : '删除申请提交失败';
       showToast(message, 'error');
@@ -770,7 +1164,7 @@ const HomeView: React.FC = () => {
 
   const handleRequestPostDeletionFromReport = () => {
     const { postId, content } = reportModal;
-    closeReportModal();
+    setReportModal(createEmptyReportModalState());
     openDeleteRequestModal({ id: postId, content });
   };
 
@@ -903,7 +1297,11 @@ const HomeView: React.FC = () => {
 
     return (
       <>
-        <article className={`group relative my-auto w-full transition-all duration-200 ${animate ? 'translate-x-10 opacity-0' : 'translate-x-0 opacity-100'}`}>
+        <article
+          ref={focusArticleRef}
+          aria-busy={switchingPost || pendingAdvance}
+          className={`group relative my-auto w-full scroll-mt-20 transition-all duration-200 motion-reduce:transition-none ${animate ? 'pointer-events-none translate-x-10 select-none opacity-0' : 'translate-x-0 opacity-100'} ${pendingAdvance ? 'pointer-events-none select-none' : ''}`}
+        >
           <div className="pastel-post-shadow absolute inset-0 translate-x-2 translate-y-3 rounded-lg opacity-100 transition-opacity doodle-border !rounded-lg" />
           <div className="tape-mask" />
           <div className={`pastel-post-card relative flex flex-col overflow-hidden rounded-lg border-2 p-8 shadow-paper transition-transform duration-200 hover:-translate-y-1 doodle-border !rounded-lg ${isRumor ? 'border-red-300' : 'border-black'}`}>
@@ -972,10 +1370,14 @@ const HomeView: React.FC = () => {
             )}
 
             <div className="relative z-[1] text-lg leading-relaxed text-black">
-              <MarkdownRenderer content={currentPost.content} enableImageViewer />
+              <MarkdownRenderer
+                content={currentPost.content}
+                enableImageViewer
+                historyOverlayKey={`post:${currentPost.id}`}
+              />
             </div>
 
-            <div className="relative z-[1] mt-4 flex items-center justify-between border-t-2 border-dashed border-black pt-4">
+            <div className="relative z-[1] mt-6 flex items-center justify-between border-t-2 border-dashed border-black pt-4">
               <div className="flex items-center gap-6 pr-2">
                 <button
                   type="button"
@@ -1042,6 +1444,7 @@ const HomeView: React.FC = () => {
             <ArrowRight className="h-[30px] w-[30px] transition-transform group-hover:rotate-12" />
           </button>
         </div>
+
       </>
     );
   };
@@ -1050,7 +1453,7 @@ const HomeView: React.FC = () => {
     <>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:gap-5">
         {posts.map((post) => {
-          const homeIndex = allPosts.findIndex((item) => item.id === post.id);
+          const homeIndex = routeHomeIndexById.get(post.id) ?? -1;
           return (
           <HomePostGridCard
             key={post.id}
@@ -1086,7 +1489,7 @@ const HomeView: React.FC = () => {
     </>
   );
 
-  if (loading && posts.length === 0) {
+  if ((loading && posts.length === 0) || routePostResolving) {
     return (
       <div className={`relative mx-auto flex min-h-[80vh] w-full max-w-6xl flex-grow flex-col overflow-x-hidden px-4 py-6 ${effectiveViewMode === 'grid' ? 'pb-20' : 'pb-8'}`}>
         {shouldShowBanner && effectiveViewMode === 'grid' && (

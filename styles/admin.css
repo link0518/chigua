@@ -1,0 +1,53 @@
+.admin-font,
+.admin-font .font-hand,
+.admin-font .font-display,
+.admin-font .font-sans,
+.admin-font .font-mono {
+  font-family: 'Source Han Sans', 'Source Han Sans SC', 'Noto Sans CJK SC', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+}
+
+/* 登录壳层使用系统中文字体，避免慢速网络下 WebFont 换字延后 LCP。 */
+.admin-gate-font,
+.admin-gate-font .font-hand,
+.admin-gate-font .font-display,
+.admin-gate-font .font-sans,
+.admin-gate-font .font-mono {
+  font-family: 'Microsoft YaHei', 'PingFang SC', 'Segoe UI', system-ui, sans-serif;
+}
+
+.min-h-60vh-safe {
+  min-height: 60vh;
+}
+
+.sticky-curl {
+  position: relative;
+}
+
+.sticky-curl::after {
+  content: '';
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  width: 30px;
+  height: 30px;
+  background: linear-gradient(135deg, transparent 50%, rgba(0, 0, 0, 0.1) 50.1%);
+  box-shadow: -2px -2px 5px rgba(0, 0, 0, 0.1);
+  z-index: 1;
+  pointer-events: none;
+  transform: rotate(3deg);
+}
+
+/* WikiMarkdownComposer 同时服务 Wiki 与后台，后台路由需保留工具栏滚动体验。 */
+.wiki-editor-toolbar {
+  scrollbar-gutter: stable;
+  mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 1.25rem), transparent 100%);
+}
+
+.wiki-scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.wiki-scrollbar-none::-webkit-scrollbar {
+  display: none;
+}

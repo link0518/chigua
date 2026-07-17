@@ -133,15 +133,23 @@ export const api = {
     q,
     page = 1,
     limit = 20,
-    options: { tag?: string; startDate?: string; endDate?: string } = {}
-  ) => apiFetch(`/posts/search${toQuery({
-    q,
-    page,
-    limit,
-    tag: options.tag,
-    startDate: options.startDate,
-    endDate: options.endDate,
-  })}`),
+    options: {
+      tag?: string;
+      startDate?: string;
+      endDate?: string;
+      signal?: AbortSignal;
+    } = {}
+  ) => apiFetch(
+    `/posts/search${toQuery({
+      q,
+      page,
+      limit,
+      tag: options.tag,
+      startDate: options.startDate,
+      endDate: options.endDate,
+    })}`,
+    { signal: options.signal }
+  ),
   createPost: (content, tags = [], turnstileToken) => apiFetch('/posts', {
     method: 'POST',
     body: JSON.stringify({ content, tags, turnstileToken }),

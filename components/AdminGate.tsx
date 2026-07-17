@@ -1,11 +1,15 @@
 ﻿import React, { useEffect, useState } from 'react';
 import { Lock } from 'lucide-react';
-import { useApp } from '../store/AppContext';
-import AdminDashboard from './AdminDashboard';
+import '../styles/admin.css';
+import { useAdmin } from '../store/AdminContext';
+import { useAppActions } from '../store/AppActionsContext';
 import { SketchButton, SketchCard, Tape } from './SketchUI';
 
+const AdminDashboard = React.lazy(() => import('./AdminDashboard'));
+
 const AdminGate: React.FC = () => {
-  const { state, loadAdminSession, loginAdmin, showToast } = useApp();
+  const { adminSession, loadAdminSession, loginAdmin } = useAdmin();
+  const { showToast } = useAppActions();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -14,20 +18,12 @@ const AdminGate: React.FC = () => {
     loadAdminSession().catch(() => {});
   }, [loadAdminSession]);
 
-  if (!state.adminSession.checked) {
-    return (
-      <div className="admin-font flex flex-col items-center justify-center min-h-60vh-safe">
-        <div className="font-hand text-xl text-pencil">正在检查登录状态...</div>
-      </div>
-    );
-  }
-
-  if (state.adminSession.loggedIn) {
+  if (adminSession.loggedIn) {
     return <AdminDashboard />;
   }
-  if (state.adminSession.disabled) {
+  if (adminSession.disabled) {
     return (
-      <div className="admin-font flex flex-col items-center justify-center min-h-70vh-safe p-4">
+      <div className="admin-font admin-gate-font flex flex-col items-center justify-center min-h-70vh-safe p-4">
         <div className="max-w-md w-full text-center">
           <SketchCard rotate className="relative">
             <Tape />
@@ -46,6 +42,9 @@ const AdminGate: React.FC = () => {
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (!adminSession.checked) {
+      return;
+    }
     if (!username.trim() || !password.trim()) {
       showToast('请输入管理员账号和密码', 'warning');
       return;
@@ -63,8 +62,9 @@ const AdminGate: React.FC = () => {
     }
   };
 
+  // 会话确认期间沿用最终登录卡布局，仅禁用提交，避免占位切换造成移动端布局偏移。
   return (
-    <div className="admin-font flex flex-col items-center justify-center min-h-70vh-safe p-4">
+    <div className="admin-font admin-gate-font flex flex-col items-center justify-center min-h-70vh-safe p-4">
       <div className="max-w-md w-full">
         <SketchCard rotate className="relative">
           <Tape />
@@ -103,9 +103,9 @@ const AdminGate: React.FC = () => {
               type="submit"
               fullWidth
               className="h-12 text-xl"
-              disabled={isSubmitting}
+              disabled={isSubmitting || !adminSession.checked}
             >
-              {isSubmitting ? '登录中...' : '进入后台'}
+              {!adminSession.checked ? '检查登录状态...' : isSubmitting ? '登录中...' : '进入后台'}
             </SketchButton>
           </form>
         </SketchCard>

@@ -3,8 +3,6 @@ import { ViewType } from './types';
 import type { NotificationItem } from './types';
 import Toast from './components/Toast';
 import Modal from './components/Modal';
-import MarkdownRenderer from './components/MarkdownRenderer';
-import StreakCelebration from './components/StreakCelebration';
 import { api } from './api';
 import {
   AlertTriangle,
@@ -27,23 +25,33 @@ import {
   X,
   XCircle,
 } from 'lucide-react';
-import { useApp } from './store/AppContext';
-import AntigravityBackground from './components/AntigravityBackground';
-import Lantern from './components/CNY/Lantern';
-import FallingDecorations from './components/CNY/FallingDecorations';
-import HeaderDecoration from './components/CNY/HeaderDecoration';
-import CNYAtmosphereBackground from './components/CNY/CNYAtmosphereBackground';
-import UserMeModal from './components/UserMeModal';
+import { useAppShell } from './store/AppShellContext';
 import { buildPostPath } from './components/clipboard';
 import AppViewRenderer, { prefetchFeedView } from '@/features/app/AppViewRenderer';
+import LazyFeatureErrorBoundary from '@/features/app/LazyFeatureErrorBoundary';
 import ViewLoadErrorBoundary from '@/features/app/ViewLoadErrorBoundary';
 import { getPathForView, resolveViewFromPath } from '@/features/app/routing';
 import { useAccessStatus } from '@/features/app/hooks/useAccessStatus';
+import { useDeferredVisualEffects } from '@/features/app/hooks/useDeferredVisualEffects';
 import { useStreakCelebration } from '@/features/app/hooks/useStreakCelebration';
 import WikiLoadingScreen from './components/wiki/WikiLoadingScreen';
 import SiteFooter from './components/SiteFooter';
 import { setFrameRegistry } from './components/nicknameFrames';
 import { setNameStyleRegistry } from './components/nameStyles';
+
+const loadAntigravityBackground = () => import('./components/AntigravityBackground');
+const loadAnnouncementContent = () => import('@/features/app/AnnouncementContent');
+const loadCNYVisualEffects = () => import('./components/CNY/CNYVisualEffects');
+const loadHeaderDecoration = () => import('./components/CNY/HeaderDecoration');
+const loadStreakCelebration = () => import('./components/StreakCelebration');
+const loadUserMeModal = () => import('./components/UserMeModal');
+
+const LazyAntigravityBackground = React.lazy(loadAntigravityBackground);
+const LazyAnnouncementContent = React.lazy(loadAnnouncementContent);
+const LazyCNYVisualEffects = React.lazy(loadCNYVisualEffects);
+const LazyHeaderDecoration = React.lazy(loadHeaderDecoration);
+const LazyStreakCelebration = React.lazy(loadStreakCelebration);
+const LazyUserMeModal = React.lazy(loadUserMeModal);
 
 const syncDocumentThemeClass = (className: string, enabled: boolean) => {
   document.documentElement.classList.toggle(className, enabled);
@@ -51,7 +59,7 @@ const syncDocumentThemeClass = (className: string, enabled: boolean) => {
 };
 
 const App: React.FC = () => {
-  const { loadSettings, prefetchFeedPosts, state } = useApp();
+  const { loadSettings, prefetchFeedPosts, settings } = useAppShell();
   const [currentView, setCurrentView] = useState<ViewType>(() => resolveViewFromPath(window.location.pathname));
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [headerCompact, setHeaderCompact] = useState(() => window.scrollY > 36);
@@ -69,7 +77,13 @@ const App: React.FC = () => {
   const [backgroundTasksReady, setBackgroundTasksReady] = useState(false);
   const isWikiView = currentView === ViewType.WIKI;
   const showSiteChrome = currentView !== ViewType.ADMIN && !isWikiView;
-  const isCnyTheme = currentView !== ViewType.ADMIN && !isWikiView && state.settings.cnyThemeActive;
+  const isCnyTheme = currentView !== ViewType.ADMIN && !isWikiView && settings.cnyThemeActive;
+  const {
+    effectsEnabled,
+    isMobile,
+    pageVisible,
+    prefersReducedMotion,
+  } = useDeferredVisualEffects();
   const { accessBlocked, accessExpiresAt, accessChecked } = useAccessStatus();
   const {
     streakCelebrationOpen,
@@ -84,6 +98,14 @@ const App: React.FC = () => {
     prefetchFeedView();
     void prefetchFeedPosts('today').catch(() => { });
   }, [prefetchFeedPosts]);
+
+  const prefetchAnnouncementRenderer = useCallback(() => {
+    void loadAnnouncementContent().catch(() => undefined);
+  }, []);
+
+  const prefetchUserMeModal = useCallback(() => {
+    void loadUserMeModal().catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setBackgroundTasksReady(true), 15000);
@@ -306,6 +328,7 @@ const App: React.FC = () => {
   };
 
   const openAnnouncement = () => {
+    prefetchAnnouncementRenderer();
     setAnnouncementOpen(true);
     if (announcementUpdatedAt) {
       localStorage.setItem('announcement:lastSeen', String(announcementUpdatedAt));
@@ -314,6 +337,7 @@ const App: React.FC = () => {
   };
 
   const openUserMe = () => {
+    prefetchUserMeModal();
     setUserMeOpen(true);
     setMobileMenuOpen(false);
   };
@@ -446,6 +470,10 @@ const App: React.FC = () => {
     }
   }, [currentView, prefetchHotFeed]);
 
+  const navigateHome = useCallback(() => {
+    navigate(ViewType.HOME);
+  }, [navigate]);
+
   useEffect(() => {
     if (!backgroundTasksReady) {
       return;
@@ -571,30 +599,59 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen-safe flex flex-col font-sans selection:bg-highlight selection:text-black relative overflow-x-clip">
-      {isCnyTheme && <FallingDecorations />}
-      {isCnyTheme && (
-        <>
-          <CNYAtmosphereBackground density={80} speed={0.5} />
-          <div className="fixed top-0 left-4 z-40 hidden md:block pointer-events-none">
-            <Lantern size={78} delay={0.3} />
-          </div>
-          <div className="fixed top-0 right-4 z-40 hidden lg:block pointer-events-none">
-            <Lantern size={72} delay={1.1} />
-          </div>
-        </>
+      {isCnyTheme && effectsEnabled && (
+        <LazyFeatureErrorBoundary featureName="新春主题动态效果">
+          <React.Suspense fallback={null}>
+            <LazyCNYVisualEffects compact={isMobile} />
+          </React.Suspense>
+        </LazyFeatureErrorBoundary>
       )}
-      {!isCnyTheme && showSiteChrome && <AntigravityBackground density={60} speed={0.5} />}
+      {!isCnyTheme && showSiteChrome && effectsEnabled && (
+        <LazyFeatureErrorBoundary featureName="背景动态效果">
+          <React.Suspense fallback={null}>
+            <LazyAntigravityBackground
+              density={isMobile ? 32 : 60}
+              speed={0.5}
+              interactive={!isMobile}
+            />
+          </React.Suspense>
+        </LazyFeatureErrorBoundary>
+      )}
 
-      <StreakCelebration
-        open={streakCelebrationOpen}
-        onClose={closeStreakCelebration}
-        title={`连续登录 ${streakCelebrationDays} 天！`}
-        subtitle="彩纸礼花送给你～"
-      />
+      {streakCelebrationOpen && pageVisible && (
+        <LazyFeatureErrorBoundary
+          featureName="连续登录庆祝效果"
+          fallback={(
+            <Modal
+              isOpen
+              onClose={closeStreakCelebration}
+              title={`连续登录 ${streakCelebrationDays} 天！`}
+            >
+              <p className="text-sm text-pencil">彩纸礼花送给你～</p>
+            </Modal>
+          )}
+        >
+          <React.Suspense fallback={null}>
+            <LazyStreakCelebration
+              key={prefersReducedMotion ? 'reduced-motion' : 'full-motion'}
+              open
+              onClose={closeStreakCelebration}
+              title={`连续登录 ${streakCelebrationDays} 天！`}
+              subtitle="彩纸礼花送给你～"
+            />
+          </React.Suspense>
+        </LazyFeatureErrorBoundary>
+      )}
       {/* 品牌区 */}
       {showSiteChrome && (
         <header className={`noticeboard-header ${headerCompact ? 'is-compact' : ''} ${isCnyTheme ? 'is-cny' : ''}`}>
-          {isCnyTheme && <HeaderDecoration />}
+          {isCnyTheme && (
+            <LazyFeatureErrorBoundary featureName="新春顶栏装饰">
+              <React.Suspense fallback={null}>
+                <LazyHeaderDecoration />
+              </React.Suspense>
+            </LazyFeatureErrorBoundary>
+          )}
           <span className="noticeboard-header__texture" aria-hidden="true" />
           <span className="noticeboard-header__torn-edge" aria-hidden="true" />
           <div className="noticeboard-header__inner">
@@ -699,6 +756,8 @@ const App: React.FC = () => {
               <button
                 type="button"
                 onClick={openAnnouncement}
+                onMouseEnter={prefetchAnnouncementRenderer}
+                onFocus={prefetchAnnouncementRenderer}
                 className="noticeboard-header__icon-button hidden sm:inline-flex"
                 aria-label="公告"
                 title="公告"
@@ -732,6 +791,7 @@ const App: React.FC = () => {
               <MobileNavItem
                 label="我的"
                 dot={updateAnnouncementUnread}
+                onIntent={prefetchUserMeModal}
                 onClick={openUserMe}
               />
               <MobileNavItem
@@ -780,6 +840,7 @@ const App: React.FC = () => {
               <MobileNavItem
                 label="公告"
                 dot={announcementUnread}
+                onIntent={prefetchAnnouncementRenderer}
                 onClick={() => {
                   openAnnouncement();
                   setMobileMenuOpen(false);
@@ -839,6 +900,7 @@ const App: React.FC = () => {
               label="我的"
               icon={<UserCircle className="size-5" />}
               dot={updateAnnouncementUnread}
+              onIntent={prefetchUserMeModal}
               onClick={openUserMe}
             />
           </nav>
@@ -871,11 +933,11 @@ const App: React.FC = () => {
         >
           <ViewLoadErrorBoundary
             key={currentView}
-            onNavigateHome={() => navigate(ViewType.HOME)}
+            onNavigateHome={navigateHome}
           >
             <AppViewRenderer
               currentView={currentView}
-              onNavigateHome={() => navigate(ViewType.HOME)}
+              onNavigateHome={navigateHome}
             />
           </ViewLoadErrorBoundary>
         </React.Suspense>
@@ -894,20 +956,61 @@ const App: React.FC = () => {
             {announcementUpdatedAt && (
               <div className="text-xs text-pencil">更新时间：{formatAnnouncementTime(announcementUpdatedAt)}</div>
             )}
-            <MarkdownRenderer content={announcementContent} className="text-sm text-ink" />
+            {announcementOpen && (
+              <LazyFeatureErrorBoundary
+                featureName="公告内容"
+                fallback={(
+                  <p className="text-sm text-pencil" role="alert">
+                    公告内容加载失败，请刷新页面后重试。
+                  </p>
+                )}
+              >
+                <React.Suspense fallback={<p className="text-sm text-pencil">公告加载中...</p>}>
+                  <LazyAnnouncementContent content={announcementContent} />
+                </React.Suspense>
+              </LazyFeatureErrorBoundary>
+            )}
           </div>
         ) : (
           <p className="text-sm text-pencil">暂无公告</p>
         )}
       </Modal>
 
-      <UserMeModal
-        isOpen={userMeOpen}
-        onClose={() => setUserMeOpen(false)}
-        updateAnnouncementsUnread={updateAnnouncementUnread}
-        onUpdateAnnouncementsSeen={markUpdateAnnouncementsSeen}
-        onNavigate={navigate}
-      />
+      {userMeOpen && (
+        <LazyFeatureErrorBoundary
+          featureName="我的面板"
+          fallback={(
+            <Modal isOpen onClose={() => setUserMeOpen(false)} title="我的">
+              <p className="mb-4 text-sm text-pencil" role="alert">
+                面板加载失败，可能刚刚完成版本更新。
+              </p>
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="rounded-full border-2 border-ink bg-highlight px-5 py-2 font-hand font-bold shadow-sketch"
+              >
+                刷新页面
+              </button>
+            </Modal>
+          )}
+        >
+          <React.Suspense
+            fallback={(
+              <Modal isOpen onClose={() => setUserMeOpen(false)} title="我的">
+                <p className="text-sm text-pencil" aria-live="polite">面板加载中...</p>
+              </Modal>
+            )}
+          >
+            <LazyUserMeModal
+              isOpen
+              onClose={() => setUserMeOpen(false)}
+              updateAnnouncementsUnread={updateAnnouncementUnread}
+              onUpdateAnnouncementsSeen={markUpdateAnnouncementsSeen}
+              onNavigate={navigate}
+            />
+          </React.Suspense>
+        </LazyFeatureErrorBoundary>
+      )}
 
       {/* Footer only for non-admin / non-wiki */}
       {showSiteChrome && <SiteFooter isCnyTheme={isCnyTheme} />}

@@ -11,14 +11,14 @@ import {
 } from 'lucide-react';
 
 import { api } from '../api';
-import type { Toast } from '../store/AppContext';
+import type { ToastMessage } from '../store/ToastUIContext';
 import type { RumorReviewItem } from '../types';
 import MarkdownRenderer from './MarkdownRenderer';
 import Modal from './Modal';
 import { Badge, SketchButton } from './SketchUI';
 
 interface AdminRumorPanelProps {
-  showToast: (message: string, type?: Toast['type']) => void;
+  showToast: (message: string, type?: ToastMessage['type']) => void;
   onPendingCountChange?: () => void;
   canManage?: boolean;
 }

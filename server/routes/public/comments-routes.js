@@ -22,6 +22,22 @@ export const registerPublicCommentsRoutes = (app, deps) => {
     getEquippedNameStyleIdForIdentity,
   } = deps;
 
+  const parsePositiveInt = (value, fallback) => {
+    const parsed = Number(value);
+    if (!Number.isSafeInteger(parsed) || parsed < 1) {
+      return fallback;
+    }
+    return parsed;
+  };
+
+  const parseNonNegativeInt = (value, fallback = 0) => {
+    const parsed = Number(value);
+    if (!Number.isSafeInteger(parsed) || parsed < 0) {
+      return fallback;
+    }
+    return parsed;
+  };
+
   const resolveNameStyleForFingerprint = (fingerprint) => {
     if (typeof getEquippedNameStyleIdForIdentity === 'function') {
       return getEquippedNameStyleIdForIdentity(fingerprint);
@@ -235,8 +251,8 @@ export const registerPublicCommentsRoutes = (app, deps) => {
       return;
     }
     const postId = req.params.id;
-    const limit = Math.min(Number(req.query.limit || 10), 200);
-    const offset = Math.max(Number(req.query.offset || 0), 0);
+    const limit = Math.min(parsePositiveInt(req.query.limit, 10), 200);
+    const offset = parseNonNegativeInt(req.query.offset);
     const visiblePost = db.prepare('SELECT id FROM posts WHERE id = ? AND deleted = 0 AND hidden = 0').get(postId);
     if (!visiblePost) {
       return res.status(404).json({ error: '内容不存在' });

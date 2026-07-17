@@ -2,19 +2,24 @@ import React, { useEffect, useState } from 'react';
 import { ArrowUpRight, MessageCircle, Share2, Star, ThumbsDown, ThumbsUp } from 'lucide-react';
 import { api } from '../api';
 import { Post } from '../types';
-import { useApp } from '../store/AppContext';
+import { useAppActions } from '../store/AppActionsContext';
+import { useUserPreferences } from '../store/UserPreferencesContext';
 import MarkdownRenderer from './MarkdownRenderer';
 import { buildPostPath, buildPostShareUrl, copyTextToClipboard } from './clipboard';
 import FeaturedBadge from './FeaturedBadge';
+import { usePostInteractionGuard } from './usePostInteractionGuard';
 
 const FavoritesView: React.FC = () => {
-  const { showToast, isFavorited, toggleFavoritePost } = useApp();
+  const { showToast, toggleFavoritePost } = useAppActions();
+  const { isFavorited } = useUserPreferences();
+  const runPostInteraction = usePostInteractionGuard();
   const [items, setItems] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
   const [offset, setOffset] = useState(0);
+  const [total, setTotal] = useState(0);
   const pageSize = 10;
+  const hasMore = offset < total;
 
   const load = async (offset: number, append: boolean) => {
     if (append) {
@@ -36,7 +41,8 @@ const FavoritesView: React.FC = () => {
       });
       const nextOffset = offset + nextItems.length;
       setOffset(nextOffset);
-      setHasMore(nextOffset < total);
+      // 成功返回空尾页时收口游标，避免反复请求同一 offset。
+      setTotal(append && nextItems.length === 0 ? Math.min(total, offset) : total);
     } catch (error) {
       const message = error instanceof Error ? error.message : '收藏加载失败';
       showToast(message, 'error');
@@ -70,9 +76,17 @@ const FavoritesView: React.FC = () => {
 
   const handleFavorite = async (postId: string) => {
     try {
-      const favorited = await toggleFavoritePost(postId);
-      setItems((prev) => (favorited ? prev : prev.filter((item) => item.id !== postId)));
-      showToast(favorited ? '已收藏' : '已取消收藏', 'success');
+      const result = await runPostInteraction(postId, () => toggleFavoritePost(postId));
+      if (!result.executed) {
+        return;
+      }
+      if (!result.value) {
+        setItems((prev) => prev.filter((item) => item.id !== postId));
+        // 服务端收藏序列会前移一位；同步回退游标，避免下一页跳过原首条。
+        setOffset((prev) => Math.max(prev - 1, 0));
+        setTotal((prev) => Math.max(prev - 1, 0));
+      }
+      showToast(result.value ? '已收藏' : '已取消收藏', 'success');
     } catch (error) {
       const message = error instanceof Error ? error.message : '收藏失败，请稍后重试';
       showToast(message, 'error');

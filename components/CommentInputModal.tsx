@@ -7,11 +7,13 @@ import MemePicker, { useMemeInsert } from './MemePicker';
 import { useInsertAtCursor } from './useInsertAtCursor';
 import { SketchIconButton } from './SketchIconButton';
 import { isImageUploadFile, uploadImageAsMarkdown } from './imageUpload';
+import useMediaQuery from './useMediaQuery';
+import { requestOverlayHistoryBack } from './overlayHistory';
 
 interface CommentInputModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (text: string) => Promise<void> | void;
+  onSubmit: (text: string) => Promise<boolean | void> | boolean | void;
   maxLength: number;
   submitting: boolean;
   uploading: boolean;
@@ -21,7 +23,19 @@ interface CommentInputModalProps {
   initialText?: string;
   helperText?: string;
   onCancelReply?: () => void;
+  onDraftChange?: (text: string) => void;
 }
+
+type CommentInputHistoryState = Record<string, unknown> & {
+  homeSecondaryOverlay?: 'comment-report' | 'comment-meme' | 'markdown-image';
+  homeSecondaryOverlayId?: string;
+};
+
+const readCommentInputHistoryState = (): CommentInputHistoryState => (
+  window.history.state && typeof window.history.state === 'object'
+    ? window.history.state as CommentInputHistoryState
+    : {}
+);
 
 const CommentInputModal: React.FC<CommentInputModalProps> = ({
   isOpen,
@@ -36,17 +50,35 @@ const CommentInputModal: React.FC<CommentInputModalProps> = ({
   initialText = '',
   helperText,
   onCancelReply,
+  onDraftChange,
 }) => {
   const [text, setText] = useState(initialText);
   const [memeOpen, setMemeOpen] = useState(false);
-  const [viewportTopInset, setViewportTopInset] = useState(0);
-  const [panelMaxHeight, setPanelMaxHeight] = useState<number | null>(null);
-  const isMobile = typeof window !== 'undefined' ? window.matchMedia('(max-width: 767px)').matches : false;
+  const [mobileViewport, setMobileViewport] = useState<{ top: number; height: number } | null>(null);
+  const isMobile = useMediaQuery('(max-width: 767px)');
   const memeButtonRef = useRef<HTMLButtonElement | null>(null);
-  const { textareaRef, insertMeme } = useMemeInsert(text, setText);
-  const { insertAtCursor } = useInsertAtCursor(text, setText, textareaRef);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const uploadDraftVersionRef = useRef(0);
+  const wasOpenRef = useRef(false);
+  const syncedInitialTextRef = useRef(initialText);
+  const textRef = useRef(initialText);
+  const onDraftChangeRef = useRef(onDraftChange);
+
+  useLayoutEffect(() => {
+    onDraftChangeRef.current = onDraftChange;
+  }, [onDraftChange]);
+
+  const updateText = useCallback<React.Dispatch<React.SetStateAction<string>>>((nextValue) => {
+    const nextText = typeof nextValue === 'function'
+      ? nextValue(textRef.current)
+      : nextValue;
+    textRef.current = nextText;
+    setText(nextText);
+    onDraftChangeRef.current?.(nextText);
+  }, []);
+
+  const { textareaRef, insertMeme } = useMemeInsert(text, updateText);
+  const { insertAtCursor } = useInsertAtCursor(text, updateText, textareaRef);
 
   useLayoutEffect(() => {
     // 弹窗关闭、重新打开或切换到另一份初始草稿后，使旧上传结果失效。
@@ -54,10 +86,54 @@ const CommentInputModal: React.FC<CommentInputModalProps> = ({
     return () => {
       uploadDraftVersionRef.current += 1;
     };
-  }, [initialText, isOpen]);
+  }, [isOpen]);
+
+  const closeMemePicker = useCallback(() => {
+    const currentState = readCommentInputHistoryState();
+    if (
+      currentState.homeSecondaryOverlay === 'comment-meme'
+      && currentState.homeSecondaryOverlayId !== 'comment-inline'
+    ) {
+      requestOverlayHistoryBack();
+      return;
+    }
+    setMemeOpen(false);
+  }, [isMobile]);
+
+  const openMemePicker = useCallback(() => {
+    setMemeOpen(true);
+    if (!isMobile) {
+      return;
+    }
+    const currentState = readCommentInputHistoryState();
+    if (
+      currentState.homeSecondaryOverlay === 'comment-meme'
+      && currentState.homeSecondaryOverlayId === 'comment-composer'
+    ) {
+      return;
+    }
+    window.history.pushState({
+      ...currentState,
+      homeSecondaryOverlay: 'comment-meme',
+      homeSecondaryOverlayId: 'comment-composer',
+    }, '', window.location.pathname + window.location.search);
+  }, [isMobile]);
+
+  const toggleMemePicker = useCallback(() => {
+    if (memeOpen) {
+      closeMemePicker();
+      return;
+    }
+    openMemePicker();
+  }, [closeMemePicker, memeOpen, openMemePicker]);
 
   const handleClose = () => {
+    if (memeOpen) {
+      closeMemePicker();
+      return;
+    }
     uploadDraftVersionRef.current += 1;
+    onDraftChangeRef.current?.(textRef.current);
     onClose();
   };
 
@@ -104,15 +180,60 @@ const CommentInputModal: React.FC<CommentInputModalProps> = ({
 
   useEffect(() => {
     if (!isOpen) {
+      wasOpenRef.current = false;
       return;
     }
-    setText(initialText);
+    if (wasOpenRef.current) {
+      return;
+    }
+    wasOpenRef.current = true;
+    syncedInitialTextRef.current = initialText;
+    updateText(initialText);
     setMemeOpen(false);
-    setViewportTopInset(0);
-    requestAnimationFrame(() => {
+    setMobileViewport(null);
+  }, [initialText, isOpen, updateText]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      syncedInitialTextRef.current = initialText;
+      return;
+    }
+    const previousInitialText = syncedInitialTextRef.current;
+    if (previousInitialText === initialText) {
+      return;
+    }
+    syncedInitialTextRef.current = initialText;
+    // 草稿异步恢复时仅覆盖尚未编辑的空初始值，避免抢走用户刚输入的内容。
+    if (textRef.current === previousInitialText) {
+      updateText(initialText);
+    }
+  }, [initialText, isOpen, updateText]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+    const focusFrame = requestAnimationFrame(() => {
       textareaRef.current?.focus();
     });
-  }, [initialText, isOpen, textareaRef]);
+    return () => cancelAnimationFrame(focusFrame);
+  }, [isOpen, textareaRef]);
+
+  useEffect(() => {
+    if (!isOpen || !isMobile) {
+      return undefined;
+    }
+    const syncMemeOverlay = () => {
+      const currentState = readCommentInputHistoryState();
+      setMemeOpen(
+        currentState.homeSecondaryOverlay === 'comment-meme'
+        && currentState.homeSecondaryOverlayId !== 'comment-inline'
+      );
+    };
+    syncMemeOverlay();
+    window.addEventListener('popstate', syncMemeOverlay);
+    return () => window.removeEventListener('popstate', syncMemeOverlay);
+  }, [isMobile, isOpen]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -120,6 +241,9 @@ const CommentInputModal: React.FC<CommentInputModalProps> = ({
     }
     const vv = window.visualViewport;
     if (!vv) {
+      if (isMobile) {
+        setMobileViewport({ top: 0, height: Math.max(240, window.innerHeight) });
+      }
       return;
     }
     let rafId: number | null = null;
@@ -129,16 +253,14 @@ const CommentInputModal: React.FC<CommentInputModalProps> = ({
       }
       rafId = requestAnimationFrame(() => {
         if (!isMobile) {
-          setViewportTopInset(0);
-          setPanelMaxHeight(null);
+          setMobileViewport(null);
           return;
         }
-        // iOS/部分安卓：键盘弹起时 visualViewport 可能会有 offsetTop，
-        // 这里把它作为“需要额外向下避让”的量，避免弹窗顶部被导航栏/状态栏遮到。
-        setViewportTopInset(Math.max(0, Math.round(vv.offsetTop)));
-        // 面板最大高度绑定到可视视口高度，确保底部按钮不会落到键盘后面
-        // 预留一点点上下边距（12px）避免贴边。
-        setPanelMaxHeight(Math.max(240, Math.round(vv.height - 12)));
+        // 编辑器直接绑定可视视口，避免同时使用顶部占位和高度压缩造成二次偏移。
+        setMobileViewport({
+          top: Math.max(0, Math.round(vv.offsetTop)),
+          height: Math.max(240, Math.round(vv.height)),
+        });
       });
     };
     update();
@@ -161,32 +283,39 @@ const CommentInputModal: React.FC<CommentInputModalProps> = ({
     }
     const trimmed = text.trim();
     if (!trimmed) {
-      await onSubmit('');
+      const submitted = await onSubmit('');
+      if (submitted === true) {
+        updateText('');
+      }
       return;
     }
     if (trimmed.length > maxLength) {
-      await onSubmit(text);
+      const submitted = await onSubmit(text);
+      if (submitted === true) {
+        updateText('');
+      }
       return;
     }
-    await onSubmit(trimmed);
+    const submitted = await onSubmit(trimmed);
+    if (submitted === true) {
+      // 历史返回事件可能晚于提交完成；先清空本地值，避免关闭阶段把旧稿写回。
+      updateText('');
+    }
   };
 
-  // 脱离评论底部面板的堆叠上下文，避免移动端导航栏盖住输入弹窗。
+  // 通过 Portal 脱离评论面板的堆叠上下文，保持原有居中编辑弹窗。
   return createPortal(
     <Modal
       isOpen={isOpen}
       onClose={handleClose}
       title={title}
       titleClassName="mb-2"
-      panelClassName="max-w-xl p-4 sm:p-6 overflow-hidden"
-      closeButtonClassName="top-2 right-2"
-      overlayClassName="items-start sm:items-center pt-[calc(env(safe-area-inset-top)+72px)]"
-      panelStyle={panelMaxHeight ? { maxHeight: `${panelMaxHeight}px` } : undefined}
+      panelClassName="max-w-xl overflow-hidden p-4 sm:p-6"
+      closeButtonClassName="top-2 right-2 z-10"
+      overlayClassName="items-start pt-[calc(env(safe-area-inset-top)+72px)] sm:items-center sm:pt-4"
+      panelStyle={mobileViewport ? { maxHeight: `${Math.max(240, mobileViewport.height - 12)}px` } : undefined}
     >
-      {isMobile && viewportTopInset > 0 && (
-        <div style={{ height: viewportTopInset }} />
-      )}
-      <form className="flex flex-col h-full" onSubmit={handleSubmit}>
+      <form className="flex h-full flex-col" onSubmit={handleSubmit}>
         <div className="flex-1 flex flex-col gap-2 min-h-0">
           {(helperText || onCancelReply) && (
             <div className="flex items-center justify-between gap-2 border-2 border-ink bg-highlight rounded-lg px-3 py-2 shadow-sketch -mt-1">
@@ -197,7 +326,7 @@ const CommentInputModal: React.FC<CommentInputModalProps> = ({
                 <button
                   type="button"
                   onClick={onCancelReply}
-                  className="px-3 py-1 border-2 border-ink rounded-lg bg-white hover:bg-gray-50 transition-colors shadow-sketch font-hand font-bold text-sm"
+                  className="rounded-lg border-2 border-ink bg-white px-3 py-1 font-hand text-sm font-bold shadow-sketch transition-colors hover:bg-gray-50"
                 >
                   取消回复
                 </button>
@@ -207,7 +336,7 @@ const CommentInputModal: React.FC<CommentInputModalProps> = ({
           <textarea
             ref={textareaRef}
             value={text}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => updateText(e.target.value)}
             onPaste={(e) => {
               const items = e.clipboardData?.items;
               if (!items) return;
@@ -260,7 +389,7 @@ const CommentInputModal: React.FC<CommentInputModalProps> = ({
             <div className="relative">
               <SketchIconButton
                 ref={memeButtonRef}
-                onClick={() => setMemeOpen((prev) => !prev)}
+                onClick={toggleMemePicker}
                 label="表情"
                 variant={memeOpen ? 'active' : 'doodle'}
                 icon={<Smile className="w-4 h-4" />}
@@ -269,11 +398,11 @@ const CommentInputModal: React.FC<CommentInputModalProps> = ({
               />
               <MemePicker
                 open={memeOpen}
-                onClose={() => setMemeOpen(false)}
+                onClose={closeMemePicker}
                 anchorRef={memeButtonRef}
                 onSelect={(packName, label) => {
                   insertMeme(packName, label);
-                  setMemeOpen(false);
+                  closeMemePicker();
                 }}
               />
             </div>
@@ -283,13 +412,13 @@ const CommentInputModal: React.FC<CommentInputModalProps> = ({
             <button
               type="button"
               onClick={handleClose}
-              className="px-4 h-10 border-2 border-ink rounded-lg bg-white hover:bg-highlight transition-colors shadow-sketch font-hand font-bold"
+              className="h-10 rounded-lg border-2 border-ink bg-white px-4 font-hand font-bold shadow-sketch transition-colors hover:bg-highlight"
             >
               取消
             </button>
             <SketchButton
               type="submit"
-              className="px-4 h-10 flex items-center justify-center gap-2"
+              className="flex h-10 items-center justify-center gap-2 px-4"
               disabled={submitting || uploading || !text.trim() || text.trim().length > maxLength}
             >
               <span>发布</span>

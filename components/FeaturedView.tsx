@@ -1,28 +1,29 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Star } from 'lucide-react';
 
-import { useApp } from '../store/AppContext';
+import { useAppActions } from '../store/AppActionsContext';
+import { useContent } from '../store/ContentContext';
+import { useUserPreferences } from '../store/UserPreferencesContext';
 import { postMatchesHiddenFilters } from '../store/hiddenPostTags';
 import type { Post } from '../types';
 import FeatureRequestConfirmModal from './FeatureRequestConfirmModal';
 import HomePostGridCard from './HomePostGridCard';
 import ReportModal from './ReportModal';
 import { buildPostPath, buildPostShareUrl, copyTextToClipboard } from './clipboard';
+import { usePostInteractionGuard } from './usePostInteractionGuard';
 
 const PAGE_SIZE = 20;
 
 const FeaturedView: React.FC = () => {
+  const { featuredPosts, featuredTotal, loadFeaturedPosts } = useContent();
+  const { hiddenPostTags, hiddenPostKeywords, isLiked, isDisliked, isFavorited } = useUserPreferences();
   const {
-    state,
-    loadFeaturedPosts,
     likePost,
     dislikePost,
     toggleFavoritePost,
-    isLiked,
-    isDisliked,
-    isFavorited,
     showToast,
-  } = useApp();
+  } = useAppActions();
+  const runPostInteraction = usePostInteractionGuard();
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [reportModal, setReportModal] = useState<{ postId: string; content: string } | null>(null);
@@ -38,12 +39,12 @@ const FeaturedView: React.FC = () => {
   }, [loadFeaturedPosts, showToast]);
 
   const posts = useMemo(
-    () => state.featuredPosts.filter((post) => (
-      !postMatchesHiddenFilters(post, state.hiddenPostTags, state.hiddenPostKeywords)
+    () => featuredPosts.filter((post) => (
+      !postMatchesHiddenFilters(post, hiddenPostTags, hiddenPostKeywords)
     )),
-    [state.featuredPosts, state.hiddenPostKeywords, state.hiddenPostTags]
+    [featuredPosts, hiddenPostKeywords, hiddenPostTags]
   );
-  const hasMore = state.featuredPosts.length < state.featuredTotal;
+  const hasMore = featuredPosts.length < featuredTotal;
 
   const handleLoadMore = async () => {
     if (loadingMore || !hasMore) {
@@ -53,7 +54,7 @@ const FeaturedView: React.FC = () => {
     try {
       await loadFeaturedPosts({
         limit: PAGE_SIZE,
-        offset: state.featuredPosts.length,
+        offset: featuredPosts.length,
         append: true,
       });
     } catch (error) {
@@ -65,7 +66,7 @@ const FeaturedView: React.FC = () => {
 
   const handleLike = async (postId: string) => {
     try {
-      await likePost(postId);
+      await runPostInteraction(postId, () => likePost(postId));
     } catch (error) {
       showToast(error instanceof Error ? error.message : '点赞失败，请稍后重试', 'error');
     }
@@ -73,7 +74,7 @@ const FeaturedView: React.FC = () => {
 
   const handleDislike = async (postId: string) => {
     try {
-      await dislikePost(postId);
+      await runPostInteraction(postId, () => dislikePost(postId));
     } catch (error) {
       showToast(error instanceof Error ? error.message : '操作失败，请稍后重试', 'error');
     }
@@ -81,8 +82,10 @@ const FeaturedView: React.FC = () => {
 
   const handleFavorite = async (postId: string) => {
     try {
-      const favorited = await toggleFavoritePost(postId);
-      showToast(favorited ? '已收藏' : '已取消收藏', 'success');
+      const result = await runPostInteraction(postId, () => toggleFavoritePost(postId));
+      if (result.executed) {
+        showToast(result.value ? '已收藏' : '已取消收藏', 'success');
+      }
     } catch (error) {
       showToast(error instanceof Error ? error.message : '收藏失败，请稍后重试', 'error');
     }
@@ -113,7 +116,7 @@ const FeaturedView: React.FC = () => {
         </div>
         <h2 className="font-display text-4xl text-ink">精华</h2>
         <p className="mt-2 font-hand text-lg text-pencil">挑过的好瓜，都在这儿</p>
-        {!loading && <p className="mt-2 text-xs text-pencil">当前共 {state.featuredTotal} 条精华</p>}
+        {!loading && <p className="mt-2 text-xs text-pencil">当前共 {featuredTotal} 条精华</p>}
       </header>
 
       {loading ? (

@@ -113,6 +113,7 @@ npm run dev:full
 | --- | --- |
 | `/` | 主站首页，包含最新、热门、投稿等主流程入口。 |
 | `/post/:id` | 单帖分享与详情聚焦页。 |
+| `/submit` | 匿名投稿页。 |
 | `/feed` | 热门榜单，支持今日、近 7 天和历史排行。 |
 | `/search` | 关键词和标签搜索。 |
 | `/featured` | 当前公开精华帖子。 |
@@ -131,7 +132,8 @@ npm run dev:full
 ├── api.ts                        # 前端 API 封装、CSRF、指纹和 cookie 请求配置
 ├── components/                   # 主站、投稿、评论、Wiki、后台等 React 组件
 ├── features/                     # 逐步拆出的前端领域模块
-├── store/AppContext.tsx          # 全局状态、业务动作和数据缓存
+├── store/                        # 兼容 AppContext、领域 Context、热门缓存与用户偏好
+├── styles/                       # Wiki 与后台路由级样式入口
 ├── server/                       # Express 后端、路由、服务、SQLite 初始化和测试
 ├── Vocabulary/                   # 敏感词库文本文件
 ├── public/                       # favicon、robots、sitemap、表情包等静态资源

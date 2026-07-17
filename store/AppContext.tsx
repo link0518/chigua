@@ -1,8 +1,6 @@
 ﻿import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import { api } from '../api';
 import {
-  AdminPermissionDefinitions,
-  AdminPermissions,
   Comment,
   FeatureRequestSubmissionResult,
   Post,
@@ -22,44 +20,29 @@ import {
   writeHiddenPostTags,
 } from './hiddenPostTags';
 import { dispatchAutoHiddenEvent } from './contentVisibility';
+import { FeedProvider } from './FeedContext';
+import type { FeedContextValue, FeedFilter } from './FeedContext';
+import { AppShellProvider } from './AppShellContext';
+import type { AppShellContextValue, AppShellSettings } from './AppShellContext';
+import { AppActionsProvider } from './AppActionsContext';
+import type { AppActionsContextValue } from './AppActionsContext';
+import { ContentProvider } from './ContentContext';
+import type { ContentContextValue, HomePostsLoadResult } from './ContentContext';
+import { UserPreferencesProvider } from './UserPreferencesContext';
+import type { UserPreferencesContextValue } from './UserPreferencesContext';
+import { AdminProvider } from './AdminContext';
+import type {
+  AdminContextValue,
+  AdminReportAction,
+  AdminSession,
+  AdminStats,
+  HandleReportOptions,
+  HandleReportTargetContext,
+} from './AdminContext';
+import { ToastUIProvider } from './ToastUIContext';
+import type { ToastMessage, ToastUIContextValue } from './ToastUIContext';
 
-export interface Toast {
-  id: string;
-  message: string;
-  type: 'success' | 'error' | 'info' | 'warning';
-}
-
-interface Stats {
-  todayReports: number;
-  bannedUsers: number;
-  weeklyVisits: number[];
-  weeklyPosts: number[];
-  totalPosts: number;
-  totalVisits: number;
-  onlineCount: number;
-}
-
-interface AdminSession {
-  loggedIn: boolean;
-  id?: number;
-  username?: string;
-  role?: 'admin' | 'super_admin';
-  isSuperAdmin?: boolean;
-  permissions?: AdminPermissions;
-  permissionDefinitions?: AdminPermissionDefinitions | null;
-  checked: boolean;
-  csrfToken?: string | null;
-  disabled?: boolean;
-}
-
-interface AppSettings {
-  turnstileEnabled: boolean;
-  cnyThemeEnabled: boolean;
-  cnyThemeAutoActive: boolean;
-  cnyThemeActive: boolean;
-  /** 商城总开关，默认关闭 */
-  shopEnabled: boolean;
-}
+export type Toast = ToastMessage;
 
 interface AppState {
   homePosts: Post[];
@@ -73,7 +56,7 @@ interface AppState {
   featuredPosts: Post[];
   featuredTotal: number;
   reports: Report[];
-  stats: Stats;
+  stats: AdminStats;
   toasts: Toast[];
   likedPosts: Set<string>;
   dislikedPosts: Set<string>;
@@ -81,21 +64,8 @@ interface AppState {
   hiddenPostTags: string[];
   hiddenPostKeywords: string[];
   adminSession: AdminSession;
-  settings: AppSettings;
+  settings: AppShellSettings;
 }
-
-type AdminReportAction = 'ignore' | 'delete' | 'ban';
-type HandleReportOptions = {
-  permissions?: string[];
-  expiresAt?: number | null;
-  deleteComment?: boolean;
-};
-type HandleReportTargetContext = {
-  targetId?: string | null;
-  targetType?: Report['targetType'];
-};
-
-type FeedFilter = 'week' | 'today' | 'all';
 
 interface FeedSnapshot {
   items: Post[];
@@ -125,8 +95,11 @@ type FeedPostOverride = Pick<
 
 interface FeedPostOverrideEntry {
   patch: Partial<FeedPostOverride>;
-  updatedAt: number;
-  expiresAt: number;
+  updatedAtByField: Partial<Record<keyof FeedPostOverride, number>>;
+}
+
+interface FeedPostTombstone {
+  removedAt: number;
 }
 
 interface FeedLoadStatus {
@@ -139,7 +112,6 @@ const FEED_PAGE_SIZE = 30;
 const FEED_DISPLAY_LIMIT = 10;
 const FEED_MAX_PAGES_PER_LOAD = 20;
 const FEED_MAX_RANKING_RESTARTS = 2;
-const FEED_POST_OVERRIDE_TTL_MS = 60 * 1000;
 const FEED_CONTENT_TTL_MS = 2 * 60 * 1000;
 const FEED_CACHE_MAX_ENTRIES = 12;
 const FEED_CACHE_STALE_RETENTION_MS = 60 * 60 * 1000;
@@ -153,6 +125,7 @@ const FEED_CACHE_TTL_MS: Record<FeedFilter, number> = {
 const feedCache = new Map<string, FeedCacheEntry>();
 const feedPageRequests = new Map<string, Promise<FeedSnapshot>>();
 const feedPostOverrides = new Map<string, FeedPostOverrideEntry>();
+const feedPostTombstones = new Map<string, FeedPostTombstone>();
 
 class FeedLoadCancelledError extends Error {
   constructor() {
@@ -209,12 +182,23 @@ const setFeedCacheEntry = (key: string, entry: FeedCacheEntry) => {
   pruneFeedCache(Date.now(), key);
 };
 
-const pruneFeedPostOverrides = (now = Date.now()) => {
-  feedPostOverrides.forEach((entry, postId) => {
-    if (entry.expiresAt <= now) {
-      feedPostOverrides.delete(postId);
-    }
+const filterFeedSnapshotForRequest = <T extends FeedSnapshot>(
+  snapshot: T,
+  requestedAt: number
+): T => {
+  const items = snapshot.items.filter((post) => {
+    const tombstone = feedPostTombstones.get(post.id);
+    // 只拦截删除前已发出的旧响应；删除后的新请求仍以服务端当前状态为准。
+    return !tombstone || tombstone.removedAt < requestedAt;
   });
+  if (items.length === snapshot.items.length) {
+    return snapshot;
+  }
+  return {
+    ...snapshot,
+    items,
+    total: Math.max(snapshot.total - (snapshot.items.length - items.length), 0),
+  };
 };
 
 const mergeUniqueFeedPosts = (existing: Post[], incoming: Post[]) => {
@@ -234,13 +218,23 @@ const reconcileFeedPost = (post: Post, requestedAt: number): Post => {
   if (!override) {
     return post;
   }
-  if (override.expiresAt <= Date.now()) {
-    feedPostOverrides.delete(post.id);
-    return post;
-  }
-  // 仅保护写操作之前已经发出的旧请求；写操作之后的新请求以服务端为准。
-  return override.updatedAt > requestedAt ? { ...post, ...override.patch } : post;
+  const applicablePatch: Partial<FeedPostOverride> = {};
+  (Object.keys(override.patch) as Array<keyof FeedPostOverride>).forEach((field) => {
+    if ((override.updatedAtByField[field] || 0) > requestedAt) {
+      (applicablePatch as Record<string, unknown>)[field] = override.patch[field];
+    }
+  });
+  // 每个字段独立判断写入时间，避免后续收藏等操作把较早的点赞补丁错误“续期”。
+  return Object.keys(applicablePatch).length > 0 ? { ...post, ...applicablePatch } : post;
 };
+
+const reconcileFeedSnapshotForRequest = <T extends FeedSnapshot>(
+  snapshot: T,
+  requestedAt: number
+): T => filterFeedSnapshotForRequest({
+  ...snapshot,
+  items: snapshot.items.map((post) => reconcileFeedPost(post, requestedAt)),
+}, requestedAt);
 
 const countVisibleFeedPosts = (
   posts: Post[],
@@ -290,7 +284,7 @@ const requestFeedPage = (
         ? data.hasMore
         : nextOffset < total;
 
-      return {
+      return filterFeedSnapshotForRequest({
         items,
         total,
         nextOffset,
@@ -302,7 +296,7 @@ const requestFeedPage = (
         rankingExpiresInMs: Number.isFinite(Number(data?.rankingExpiresInMs))
           ? Math.max(0, Number(data.rankingExpiresInMs))
           : undefined,
-      };
+      }, requestedAt);
     });
 
   const trackedRequest = request.then(
@@ -321,14 +315,17 @@ const requestFeedPage = (
 
 const patchFeedPostCache = (postId: string, patch: Partial<FeedPostOverride>) => {
   const now = Date.now();
-  pruneFeedPostOverrides(now);
+  const previous = feedPostOverrides.get(postId);
+  const updatedAtByField = { ...previous?.updatedAtByField };
+  (Object.keys(patch) as Array<keyof FeedPostOverride>).forEach((field) => {
+    updatedAtByField[field] = now;
+  });
   feedPostOverrides.set(postId, {
     patch: {
-      ...feedPostOverrides.get(postId)?.patch,
+      ...previous?.patch,
       ...patch,
     },
-    updatedAt: now,
-    expiresAt: now + FEED_POST_OVERRIDE_TTL_MS,
+    updatedAtByField,
   });
   feedCache.forEach((entry, key) => {
     if (!entry.items.some((post) => post.id === postId)) {
@@ -361,19 +358,26 @@ const incrementFeedPostCommentCache = (postId: string) => {
   });
   if (latestComments !== undefined) {
     const now = Date.now();
-    pruneFeedPostOverrides(now);
+    const previous = feedPostOverrides.get(postId);
     feedPostOverrides.set(postId, {
       patch: {
-        ...feedPostOverrides.get(postId)?.patch,
+        ...previous?.patch,
         comments: latestComments,
       },
-      updatedAt: now,
-      expiresAt: now + FEED_POST_OVERRIDE_TTL_MS,
+      updatedAtByField: {
+        ...previous?.updatedAtByField,
+        comments: now,
+      },
     });
   }
 };
 
 const removeFeedPostFromCache = (postId: string) => {
+  const now = Date.now();
+  // 保留本次页面会话内的删除时刻，阻止任意迟到的旧请求把帖子重新写回榜单。
+  feedPostTombstones.set(postId, {
+    removedAt: now,
+  });
   feedPostOverrides.delete(postId);
   feedCache.forEach((entry, key) => {
     if (!entry.items.some((post) => post.id === postId)) {
@@ -427,10 +431,11 @@ const fillFeedCache = async (
     shouldContinue?: () => boolean;
   } = {}
 ): Promise<FeedCacheEntry> => {
+  const requestedAt = Date.now();
   const normalizedSearch = normalizeFeedSearch(search);
   const cacheKey = getFeedCacheKey(filter, normalizedSearch);
   const cached = getFeedCacheEntry(filter, normalizedSearch);
-  const now = Date.now();
+  const now = requestedAt;
   const rankingIsFresh = Boolean(cached && cached.expiresAt > now);
   const contentIsFresh = Boolean(cached && cached.contentExpiresAt > now);
   const shouldContinue = options.shouldContinue || (() => true);
@@ -497,15 +502,15 @@ const fillFeedCache = async (
       pageCount += 1;
       continue;
     }
-    snapshot = {
+    snapshot = reconcileFeedSnapshotForRequest({
       items: mergeUniqueFeedPosts(snapshot.items, page.items),
-      total: page.total,
+      total: snapshot.total > 0 ? Math.min(snapshot.total, page.total) : page.total,
       nextOffset: page.nextOffset,
       hasMore: page.hasMore,
       rankingUpdatedAt: page.rankingUpdatedAt,
       rankingExpiresAt: page.rankingExpiresAt,
       rankingExpiresInMs: page.rankingExpiresInMs,
-    };
+    }, requestedAt);
     // 优先使用服务端给出的剩余有效时间，避免客户端时钟偏差和两层 TTL 叠加。
     expiresAt = resolveFeedCacheExpiresAt(page, filter);
     pageCount += 1;
@@ -524,12 +529,13 @@ const fillFeedCache = async (
   if (!canAppendCached) {
     contentExpiresAt = Date.now() + FEED_CONTENT_TTL_MS;
   }
-  const entry = { ...snapshot, expiresAt, contentExpiresAt };
+  const filteredSnapshot = reconcileFeedSnapshotForRequest(snapshot, requestedAt);
+  const entry = { ...filteredSnapshot, expiresAt, contentExpiresAt };
   setFeedCacheEntry(cacheKey, entry);
   if (
-    snapshot.hasMore
+    filteredSnapshot.hasMore
     && pageCount >= FEED_MAX_PAGES_PER_LOAD
-    && countVisibleFeedPosts(snapshot.items, hiddenTags, hiddenKeywords) < FEED_DISPLAY_LIMIT
+    && countVisibleFeedPosts(filteredSnapshot.items, hiddenTags, hiddenKeywords) < FEED_DISPLAY_LIMIT
   ) {
     throw new Error('热门榜单分页达到加载上限，结果可能不完整，请重试');
   }
@@ -556,6 +562,34 @@ const getSyncedReactionSets = (state: AppState, posts: Post[]) => {
   });
 
   return { likedPosts, dislikedPosts, favoritedPosts };
+};
+
+const updatePostInList = (
+  posts: Post[],
+  postId: string,
+  updatePost: (post: Post) => Post
+) => {
+  const index = posts.findIndex((post) => post.id === postId);
+  if (index < 0) {
+    return posts;
+  }
+
+  const updatedPost = updatePost(posts[index]);
+  if (updatedPost === posts[index]) {
+    return posts;
+  }
+
+  const nextPosts = [...posts];
+  nextPosts[index] = updatedPost;
+  return nextPosts;
+};
+
+const removePostFromList = (posts: Post[], postId: string) => {
+  const index = posts.findIndex((post) => post.id === postId);
+  if (index < 0) {
+    return posts;
+  }
+  return [...posts.slice(0, index), ...posts.slice(index + 1)];
 };
 
 interface AppContextType {
@@ -588,7 +622,9 @@ interface AppContextType {
   getHomePosts: () => Post[];
   getFeedPosts: (filter?: FeedFilter) => Post[];
   getPendingReports: () => Report[];
-  loadHomePosts: (options?: number | { limit?: number; offset?: number; append?: boolean }) => Promise<void>;
+  loadHomePosts: (
+    options?: number | { limit?: number; offset?: number; append?: boolean }
+  ) => Promise<HomePostsLoadResult>;
   loadFeedPosts: (filter?: FeedFilter, search?: string) => Promise<void>;
   cancelFeedPostsLoad: () => void;
   prefetchFeedPosts: (filter?: FeedFilter, search?: string) => Promise<void>;
@@ -601,11 +637,12 @@ interface AppContextType {
   loginAdmin: (username: string, password: string) => Promise<void>;
   logoutAdmin: () => Promise<void>;
   upsertHomePost: (post: Post, options?: { prepend?: boolean }) => void;
+  removeHomePostsFromMemory: (postIds: string[]) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-const initialStats: Stats = {
+const initialStats: AdminStats = {
   todayReports: 0,
   bannedUsers: 0,
   weeklyVisits: [0, 0, 0, 0, 0, 0, 0],
@@ -644,7 +681,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       shopEnabled: false,
     },
   });
+  const homeRequestGenerationRef = React.useRef(0);
   const feedRequestIdRef = React.useRef(0);
+  const invalidateHomeRequests = useCallback(() => {
+    homeRequestGenerationRef.current += 1;
+  }, []);
 
   React.useEffect(() => {
     writeHiddenPostTags(state.hiddenPostTags);
@@ -657,9 +698,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const commitFeedSnapshot = useCallback((
     requestId: number,
     snapshot: FeedSnapshot,
-    status: FeedLoadStatus
+    status: FeedLoadStatus,
+    requestedAt: number
   ) => {
-    const items = snapshot.items;
     const cacheSnapshot = snapshot as Partial<FeedCacheEntry>;
     const refreshCandidates = [cacheSnapshot.expiresAt, cacheSnapshot.contentExpiresAt]
       .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
@@ -667,11 +708,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (requestId !== feedRequestIdRef.current) {
         return prev;
       }
+      const filteredSnapshot = reconcileFeedSnapshotForRequest(snapshot, requestedAt);
+      const items = filteredSnapshot.items;
       return {
         ...prev,
         ...getSyncedReactionSets(prev, items),
         feedPosts: items,
-        feedTotal: snapshot.total,
+        feedTotal: filteredSnapshot.total,
         feedLoading: status.loading,
         feedRefreshing: status.refreshing,
         feedError: status.error,
@@ -761,12 +804,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const limit = resolved.limit;
     const offset = resolved.offset ?? 0;
     const append = Boolean(resolved.append);
+    const requestGeneration = append
+      ? homeRequestGenerationRef.current
+      : homeRequestGenerationRef.current + 1;
+    if (!append) {
+      // replace 建立新代次，使此前尚未完成的 replace/append 响应全部失效。
+      homeRequestGenerationRef.current = requestGeneration;
+    }
     const data = await api.getHomePosts(limit, offset);
     const items: Post[] = data.items || [];
+    const total = Number(data.total ?? items.length);
+    if (requestGeneration !== homeRequestGenerationRef.current) {
+      return { items, total, applied: false };
+    }
     setState((prev) => {
-      const existingIds = new Set(prev.homePosts.map((post) => post.id));
+      const incomingIds = new Set(items.map((post) => post.id));
       const merged = append
-        ? [...prev.homePosts, ...items.filter((post) => !existingIds.has(post.id))]
+        // 当前分页对命中的帖子顺序具有权威性；先移除旧位置再追加，也能让按 ID 临时注入项回归自然位置。
+        ? [...prev.homePosts.filter((post) => !incomingIds.has(post.id)), ...items]
         : items;
       return {
         ...prev,
@@ -775,18 +830,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
     });
     syncReactions(items);
+    return {
+      items,
+      total,
+      applied: true,
+    };
   }, [syncReactions]);
 
   const loadFeedPosts = useCallback(async (
     filter: FeedFilter = 'week',
     search = ''
   ) => {
+    const requestedAt = Date.now();
     const normalizedSearch = normalizeFeedSearch(search);
     const requestId = feedRequestIdRef.current + 1;
     feedRequestIdRef.current = requestId;
 
     const cached = getFeedCacheEntry(filter, normalizedSearch);
-    const now = Date.now();
+    const now = requestedAt;
     const rankingIsFresh = Boolean(cached && cached.expiresAt > now);
     const contentIsFresh = Boolean(cached && cached.contentExpiresAt > now);
     const needsMoreCachedPosts = Boolean(
@@ -810,12 +871,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         loading: needsRequest && cached.items.length === 0,
         refreshing: needsRequest && cached.items.length > 0,
         error: null,
-      });
+      }, requestedAt);
     } else {
       commitFeedSnapshot(
         requestId,
         { items: [], total: 0, nextOffset: 0, hasMore: true },
-        { loading: true, refreshing: false, error: null }
+        { loading: true, refreshing: false, error: null },
+        requestedAt
       );
     }
 
@@ -837,7 +899,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         loading: false,
         refreshing: false,
         error: null,
-      });
+      }, requestedAt);
     } catch (error) {
       // 旧筛选请求失效后只停止后续补页，不应覆盖当前筛选的状态或错误提示。
       if (requestId !== feedRequestIdRef.current || error instanceof FeedLoadCancelledError) {
@@ -850,7 +912,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         loading: false,
         refreshing: false,
         error: getFeedErrorMessage(error),
-      });
+      }, requestedAt);
       throw error;
     }
   }, [commitFeedSnapshot, state.hiddenPostKeywords, state.hiddenPostTags]);
@@ -861,18 +923,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   const prefetchFeedPosts = useCallback(async (filter: FeedFilter = 'today', search = '') => {
+    const requestedAt = Date.now();
     const normalizedSearch = normalizeFeedSearch(search);
     const cached = getFeedCacheEntry(filter, normalizedSearch);
-    const now = Date.now();
+    const now = requestedAt;
     if (cached && cached.expiresAt > now && cached.contentExpiresAt > now) {
       return;
     }
 
     // 导航意图只预取首批，真正进入热门页后再按本地隐藏规则补足 10 条。
     const page = await requestFeedPage(filter, normalizedSearch, 0);
+    const filteredPage = reconcileFeedSnapshotForRequest(page, requestedAt);
     setFeedCacheEntry(getFeedCacheKey(filter, normalizedSearch), {
-      ...page,
-      expiresAt: resolveFeedCacheExpiresAt(page, filter),
+      ...filteredPage,
+      expiresAt: resolveFeedCacheExpiresAt(filteredPage, filter),
       contentExpiresAt: Date.now() + FEED_CONTENT_TTL_MS,
     });
   }, []);
@@ -1004,25 +1068,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const addPost = useCallback(async (post: Omit<Post, 'id' | 'likes' | 'dislikes' | 'comments' | 'createdAt'>, turnstileToken: string) => {
     const data = await api.createPost(post.content, post.tags || [], turnstileToken);
     const newPost: Post = data.post;
+    invalidateHomeRequests();
     setState((prev) => ({
       ...prev,
       homePosts: [newPost, ...prev.homePosts],
       homeTotal: prev.homeTotal + 1,
     }));
     return newPost;
-  }, []);
+  }, [invalidateHomeRequests]);
 
   const addComment = useCallback(async (postId: string, content: string, turnstileToken: string, parentId?: string | null, replyToId?: string | null) => {
     const data = await api.addComment(postId, content, turnstileToken, parentId, replyToId);
     const comment: Comment = data.comment;
+    invalidateHomeRequests();
     incrementFeedPostCommentCache(postId);
     setState((prev) => {
-      const updateList = (list: Post[]) =>
-        list.map((post) =>
-          post.id === postId
-            ? { ...post, comments: post.comments + 1 }
-            : post
-        );
+      const updateList = (list: Post[]) => updatePostInList(
+        list,
+        postId,
+        (post) => ({ ...post, comments: post.comments + 1 })
+      );
       return {
         ...prev,
         homePosts: updateList(prev.homePosts),
@@ -1031,10 +1096,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
     });
     return comment;
-  }, []);
+  }, [invalidateHomeRequests]);
 
   const likePost = useCallback(async (postId: string) => {
     const data = await api.likePost(postId);
+    invalidateHomeRequests();
     patchFeedPostCache(postId, {
       ...(typeof data.likes === 'number' ? { likes: data.likes } : {}),
       ...(typeof data.dislikes === 'number' ? { dislikes: data.dislikes } : {}),
@@ -1055,17 +1121,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         dislikedPosts.add(postId);
       }
 
-      const updateList = (list: Post[]) =>
-        list.map((post) =>
-          post.id === postId
-            ? {
-              ...post,
-              likes: data.likes ?? post.likes,
-              dislikes: data.dislikes ?? post.dislikes,
-              viewerReaction: data.reaction,
-            }
-            : post
-        );
+      const updateList = (list: Post[]) => updatePostInList(
+        list,
+        postId,
+        (post) => ({
+          ...post,
+          likes: data.likes ?? post.likes,
+          dislikes: data.dislikes ?? post.dislikes,
+          viewerReaction: data.reaction,
+        })
+      );
 
       return {
         ...prev,
@@ -1076,10 +1141,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         featuredPosts: updateList(prev.featuredPosts),
       };
     });
-  }, []);
+  }, [invalidateHomeRequests]);
 
   const dislikePost = useCallback(async (postId: string) => {
     const data = await api.dislikePost(postId);
+    invalidateHomeRequests();
     patchFeedPostCache(postId, {
       ...(typeof data.likes === 'number' ? { likes: data.likes } : {}),
       ...(typeof data.dislikes === 'number' ? { dislikes: data.dislikes } : {}),
@@ -1100,17 +1166,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         dislikedPosts.add(postId);
       }
 
-      const updateList = (list: Post[]) =>
-        list.map((post) =>
-          post.id === postId
-            ? {
-              ...post,
-              likes: data.likes ?? post.likes,
-              dislikes: data.dislikes ?? post.dislikes,
-              viewerReaction: data.reaction,
-            }
-            : post
-        );
+      const updateList = (list: Post[]) => updatePostInList(
+        list,
+        postId,
+        (post) => ({
+          ...post,
+          likes: data.likes ?? post.likes,
+          dislikes: data.dislikes ?? post.dislikes,
+          viewerReaction: data.reaction,
+        })
+      );
 
       return {
         ...prev,
@@ -1121,11 +1186,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         featuredPosts: updateList(prev.featuredPosts),
       };
     });
-  }, []);
+  }, [invalidateHomeRequests]);
 
   const toggleFavoritePost = useCallback(async (postId: string) => {
     const data = await api.toggleFavoritePost(postId);
     const favorited = Boolean(data?.favorited);
+    invalidateHomeRequests();
     patchFeedPostCache(postId, { viewerFavorited: favorited });
     setState((prev) => {
       const favoritedPosts = new Set(prev.favoritedPosts);
@@ -1135,12 +1201,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         favoritedPosts.delete(postId);
       }
 
-      const updateList = (list: Post[]) =>
-        list.map((post) =>
-          post.id === postId
-            ? { ...post, viewerFavorited: favorited }
-            : post
-        );
+      const updateList = (list: Post[]) => updatePostInList(
+        list,
+        postId,
+        (post) => ({ ...post, viewerFavorited: favorited })
+      );
 
       return {
         ...prev,
@@ -1151,38 +1216,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
     });
     return favorited;
-  }, []);
+  }, [invalidateHomeRequests]);
 
   const deletePost = useCallback((postId: string) => {
+    // 删除或自动隐藏后立即淘汰所有在途首页请求，避免较早响应把治理内容重新写回。
+    invalidateHomeRequests();
     removeFeedPostFromCache(postId);
-    setState((prev) => ({
-      ...prev,
-      homePosts: prev.homePosts.filter((post) => post.id !== postId),
-      homeTotal: Math.max(prev.homeTotal - 1, 0),
-      feedPosts: prev.feedPosts.filter((post) => post.id !== postId),
-      feedTotal: Math.max(prev.feedTotal - 1, 0),
-      featuredPosts: prev.featuredPosts.filter((post) => post.id !== postId),
-      featuredTotal: Math.max(
-        prev.featuredTotal - (prev.featuredPosts.some((post) => post.id === postId) ? 1 : 0),
-        0
-      ),
-      likedPosts: (() => {
-        const next = new Set(prev.likedPosts);
-        next.delete(postId);
-        return next;
-      })(),
-      dislikedPosts: (() => {
-        const next = new Set(prev.dislikedPosts);
-        next.delete(postId);
-        return next;
-      })(),
-      favoritedPosts: (() => {
-        const next = new Set(prev.favoritedPosts);
-        next.delete(postId);
-        return next;
-      })(),
-    }));
-  }, []);
+    setState((prev) => {
+      const feedContainsPost = prev.feedPosts.some((post) => post.id === postId);
+      return {
+        ...prev,
+        homePosts: removePostFromList(prev.homePosts, postId),
+        homeTotal: Math.max(prev.homeTotal - 1, 0),
+        feedPosts: removePostFromList(prev.feedPosts, postId),
+        // 无法确认帖子属于当前排行时不盲减总数，交由下次内容重验证校正。
+        feedTotal: feedContainsPost ? Math.max(prev.feedTotal - 1, 0) : prev.feedTotal,
+        featuredPosts: removePostFromList(prev.featuredPosts, postId),
+        featuredTotal: Math.max(
+          prev.featuredTotal - (prev.featuredPosts.some((post) => post.id === postId) ? 1 : 0),
+          0
+        ),
+        likedPosts: (() => {
+          const next = new Set(prev.likedPosts);
+          next.delete(postId);
+          return next;
+        })(),
+        dislikedPosts: (() => {
+          const next = new Set(prev.dislikedPosts);
+          next.delete(postId);
+          return next;
+        })(),
+        favoritedPosts: (() => {
+          const next = new Set(prev.favoritedPosts);
+          next.delete(postId);
+          return next;
+        })(),
+      };
+    });
+  }, [invalidateHomeRequests]);
 
   const reportPost = useCallback(async (postId: string, payload: ReportSubmissionPayload) => {
     const data: ReportSubmissionResult = await api.reportPost(postId, payload);
@@ -1202,13 +1273,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const requestPostFeature = useCallback(async (postId: string) => {
     const data = await api.requestPostFeature(postId);
     const request: FeatureRequestSubmissionResult = data.request;
+    invalidateHomeRequests();
     patchFeedPostCache(postId, { viewerFeatureRequestStatus: 'pending' });
     setState((prev) => {
-      const updateList = (list: Post[]) => list.map((post) => (
-        post.id === postId
-          ? { ...post, viewerFeatureRequestStatus: 'pending' }
-          : post
-      ));
+      const updateList = (list: Post[]) => updatePostInList(
+        list,
+        postId,
+        (post) => ({ ...post, viewerFeatureRequestStatus: 'pending' })
+      );
       return {
         ...prev,
         homePosts: updateList(prev.homePosts),
@@ -1217,7 +1289,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
     });
     return request;
-  }, []);
+  }, [invalidateHomeRequests]);
 
 
   const handleReport = useCallback(async (
@@ -1243,6 +1315,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   const upsertHomePost = useCallback((post: Post, options?: { prepend?: boolean }) => {
+    invalidateHomeRequests();
     setState((prev) => {
       const exists = prev.homePosts.some((item) => item.id === post.id);
       if (options?.prepend) {
@@ -1259,7 +1332,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
     });
     syncReactions([post]);
-  }, [syncReactions]);
+  }, [invalidateHomeRequests, syncReactions]);
+
+  const removeHomePostsFromMemory = useCallback((postIds: string[]) => {
+    const ids = new Set(postIds.map((postId) => String(postId || '').trim()).filter(Boolean));
+    if (ids.size === 0) {
+      return;
+    }
+    // 仅清理详情页临时注入项，不修改服务端返回的首页总数。
+    setState((prev) => {
+      const homePosts = prev.homePosts.filter((post) => !ids.has(post.id));
+      return homePosts.length === prev.homePosts.length ? prev : { ...prev, homePosts };
+    });
+  }, []);
 
   const isLiked = useCallback((postId: string) => state.likedPosts.has(postId), [state.likedPosts]);
   const isDisliked = useCallback((postId: string) => state.dislikedPosts.has(postId), [state.dislikedPosts]);
@@ -1268,6 +1353,149 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const getHomePosts = useCallback(() => state.homePosts, [state.homePosts]);
   const getFeedPosts = useCallback(() => state.feedPosts, [state.feedPosts]);
   const getPendingReports = useCallback(() => state.reports.filter((report) => report.status === 'pending'), [state.reports]);
+
+  const appActionsValue = useMemo<AppActionsContextValue>(() => ({
+    addPost,
+    addComment,
+    likePost,
+    dislikePost,
+    toggleFavoritePost,
+    deletePost,
+    reportPost,
+    reportComment,
+    requestPostFeature,
+    showToast,
+    viewPost,
+    upsertHomePost,
+    removeHomePostsFromMemory,
+  }), [
+    addPost,
+    addComment,
+    likePost,
+    dislikePost,
+    toggleFavoritePost,
+    deletePost,
+    reportPost,
+    reportComment,
+    requestPostFeature,
+    showToast,
+    viewPost,
+    upsertHomePost,
+    removeHomePostsFromMemory,
+  ]);
+
+  const contentValue = useMemo<ContentContextValue>(() => ({
+    homePosts: state.homePosts,
+    homeTotal: state.homeTotal,
+    featuredPosts: state.featuredPosts,
+    featuredTotal: state.featuredTotal,
+    loadHomePosts,
+    loadFeaturedPosts,
+  }), [
+    state.homePosts,
+    state.homeTotal,
+    state.featuredPosts,
+    state.featuredTotal,
+    loadHomePosts,
+    loadFeaturedPosts,
+  ]);
+
+  const userPreferencesValue = useMemo<UserPreferencesContextValue>(() => ({
+    likedPosts: state.likedPosts,
+    dislikedPosts: state.dislikedPosts,
+    favoritedPosts: state.favoritedPosts,
+    hiddenPostTags: state.hiddenPostTags,
+    hiddenPostKeywords: state.hiddenPostKeywords,
+    toggleHiddenPostTag,
+    toggleHiddenPostKeyword,
+    clearHiddenPostTags,
+    clearHiddenPostKeywords,
+    isLiked,
+    isDisliked,
+    isFavorited,
+  }), [
+    state.likedPosts,
+    state.dislikedPosts,
+    state.favoritedPosts,
+    state.hiddenPostTags,
+    state.hiddenPostKeywords,
+    toggleHiddenPostTag,
+    toggleHiddenPostKeyword,
+    clearHiddenPostTags,
+    clearHiddenPostKeywords,
+    isLiked,
+    isDisliked,
+    isFavorited,
+  ]);
+
+  const adminValue = useMemo<AdminContextValue>(() => ({
+    adminSession: state.adminSession,
+    reports: state.reports,
+    stats: state.stats,
+    handleReport,
+    getPendingReports,
+    loadReports,
+    loadStats,
+    loadAdminSession,
+    loginAdmin,
+    logoutAdmin,
+  }), [
+    state.adminSession,
+    state.reports,
+    state.stats,
+    handleReport,
+    getPendingReports,
+    loadReports,
+    loadStats,
+    loadAdminSession,
+    loginAdmin,
+    logoutAdmin,
+  ]);
+
+  const toastUIValue = useMemo<ToastUIContextValue>(() => ({
+    toasts: state.toasts,
+    removeToast,
+  }), [state.toasts, removeToast]);
+
+  const feedValue = useMemo<FeedContextValue>(() => ({
+    state: {
+      feedPosts: state.feedPosts,
+      feedTotal: state.feedTotal,
+      feedLoading: state.feedLoading,
+      feedRefreshing: state.feedRefreshing,
+      feedError: state.feedError,
+      feedRefreshAt: state.feedRefreshAt,
+      hiddenPostTags: state.hiddenPostTags,
+      hiddenPostKeywords: state.hiddenPostKeywords,
+    },
+    loadFeedPosts,
+    cancelFeedPostsLoad,
+    likePost,
+    dislikePost,
+    toggleFavoritePost,
+    showToast,
+  }), [
+    state.feedPosts,
+    state.feedTotal,
+    state.feedLoading,
+    state.feedRefreshing,
+    state.feedError,
+    state.feedRefreshAt,
+    state.hiddenPostTags,
+    state.hiddenPostKeywords,
+    loadFeedPosts,
+    cancelFeedPostsLoad,
+    likePost,
+    dislikePost,
+    toggleFavoritePost,
+    showToast,
+  ]);
+
+  const appShellValue = useMemo<AppShellContextValue>(() => ({
+    settings: state.settings,
+    loadSettings,
+    prefetchFeedPosts,
+  }), [state.settings, loadSettings, prefetchFeedPosts]);
 
   const value = useMemo<AppContextType>(
     () => ({
@@ -1307,6 +1535,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       loginAdmin,
       logoutAdmin,
       upsertHomePost,
+      removeHomePostsFromMemory,
     }),
     [
       state,
@@ -1345,10 +1574,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       loginAdmin,
       logoutAdmin,
       upsertHomePost,
+      removeHomePostsFromMemory,
     ]
   );
 
-  return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
+  return (
+    <AppContext.Provider value={value}>
+      <AppActionsProvider value={appActionsValue}>
+        <ContentProvider value={contentValue}>
+          <UserPreferencesProvider value={userPreferencesValue}>
+            <AdminProvider value={adminValue}>
+              <ToastUIProvider value={toastUIValue}>
+                <FeedProvider value={feedValue}>
+                  <AppShellProvider value={appShellValue}>{children}</AppShellProvider>
+                </FeedProvider>
+              </ToastUIProvider>
+            </AdminProvider>
+          </UserPreferencesProvider>
+        </ContentProvider>
+      </AppActionsProvider>
+    </AppContext.Provider>
+  );
 };
 
 export const useApp = (): AppContextType => {

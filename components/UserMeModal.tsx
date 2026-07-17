@@ -16,7 +16,9 @@ import {
 import { api } from '../api';
 import { ViewType } from '../types';
 import type { UpdateAnnouncementItem } from '../types';
-import { useApp } from '../store/AppContext';
+import { useAppActions } from '../store/AppActionsContext';
+import { useAppShell } from '../store/AppShellContext';
+import { useUserPreferences } from '../store/UserPreferencesContext';
 import {
   HIDDEN_POST_KEYWORDS_LIMIT,
   normalizeHiddenPostKeyword,
@@ -219,12 +221,13 @@ const SketchIconBtn: React.FC<{
 
 const SettingsPanel: React.FC = () => {
   const {
-    state,
+    hiddenPostTags,
+    hiddenPostKeywords,
     toggleHiddenPostTag,
     toggleHiddenPostKeyword,
     clearHiddenPostTags,
     clearHiddenPostKeywords,
-  } = useApp();
+  } = useUserPreferences();
   const [loadingTags, setLoadingTags] = useState(false);
   const [availableTags, setAvailableTags] = useState<string[]>([]);
   const [keywordInput, setKeywordInput] = useState('');
@@ -254,24 +257,24 @@ const SettingsPanel: React.FC = () => {
   }, []);
 
   const hiddenTagKeys = useMemo(
-    () => new Set(state.hiddenPostTags.map((tag) => tag.toLowerCase())),
-    [state.hiddenPostTags]
+    () => new Set(hiddenPostTags.map((tag) => tag.toLowerCase())),
+    [hiddenPostTags]
   );
 
   const selectableTags = useMemo(() => {
     const merged = [...availableTags];
-    state.hiddenPostTags.forEach((tag) => {
+    hiddenPostTags.forEach((tag) => {
       if (!merged.some((item) => item.toLowerCase() === tag.toLowerCase())) {
         merged.push(tag);
       }
     });
     return normalizeHiddenPostTagList(merged);
-  }, [availableTags, state.hiddenPostTags]);
+  }, [availableTags, hiddenPostTags]);
 
   const addHiddenPostKeyword = () => {
     const normalized = normalizeHiddenPostKeyword(keywordInput);
     if (!normalized) return;
-    if (state.hiddenPostKeywords.some((keyword) => keyword.toLowerCase() === normalized.toLowerCase())) {
+    if (hiddenPostKeywords.some((keyword) => keyword.toLowerCase() === normalized.toLowerCase())) {
       setKeywordInput('');
       return;
     }
@@ -287,11 +290,11 @@ const SettingsPanel: React.FC = () => {
 
   return (
     <div className="space-y-4 sm:space-y-5">
-      <SectionCard title={`已屏蔽标签 · ${state.hiddenPostTags.length}`}>
+      <SectionCard title={`已屏蔽标签 · ${hiddenPostTags.length}`}>
         <div className="p-4 sm:p-5">
-          {state.hiddenPostTags.length > 0 ? (
+          {hiddenPostTags.length > 0 ? (
             <div className="flex flex-wrap gap-2">
-              {state.hiddenPostTags.map((tag) => (
+              {hiddenPostTags.map((tag) => (
                 <button
                   key={`hidden-${tag}`}
                   type="button"
@@ -309,12 +312,12 @@ const SettingsPanel: React.FC = () => {
       </SectionCard>
 
       <SectionCard
-        title={`已屏蔽关键词 · ${state.hiddenPostKeywords.length}/${HIDDEN_POST_KEYWORDS_LIMIT}`}
+        title={`已屏蔽关键词 · ${hiddenPostKeywords.length}/${HIDDEN_POST_KEYWORDS_LIMIT}`}
       >
         <div className="space-y-3 p-4 sm:p-5">
-          {state.hiddenPostKeywords.length > 0 && (
+          {hiddenPostKeywords.length > 0 && (
             <div className="flex flex-wrap gap-2">
-              {state.hiddenPostKeywords.map((keyword) => (
+              {hiddenPostKeywords.map((keyword) => (
                 <button
                   key={`hidden-keyword-${keyword}`}
                   type="button"
@@ -340,14 +343,14 @@ const SettingsPanel: React.FC = () => {
                 }
               }}
               className="min-w-0 flex-1 rounded-full border-2 border-ink bg-white px-4 py-2.5 text-sm font-sans outline-none focus:shadow-sketch-sm"
-              disabled={state.hiddenPostKeywords.length >= HIDDEN_POST_KEYWORDS_LIMIT}
+              disabled={hiddenPostKeywords.length >= HIDDEN_POST_KEYWORDS_LIMIT}
             />
             <SketchButton
               type="button"
               variant="secondary"
               className="px-5 text-base sm:shrink-0"
               onClick={addHiddenPostKeyword}
-              disabled={state.hiddenPostKeywords.length >= HIDDEN_POST_KEYWORDS_LIMIT}
+              disabled={hiddenPostKeywords.length >= HIDDEN_POST_KEYWORDS_LIMIT}
             >
               添加
             </SketchButton>
@@ -390,7 +393,7 @@ const SettingsPanel: React.FC = () => {
         variant="secondary"
         className="w-full text-base"
         onClick={clearHiddenPostFilters}
-        disabled={state.hiddenPostTags.length === 0 && state.hiddenPostKeywords.length === 0}
+        disabled={hiddenPostTags.length === 0 && hiddenPostKeywords.length === 0}
       >
         清空屏蔽
       </SketchButton>
@@ -882,7 +885,9 @@ const UserMeModal: React.FC<UserMeModalProps> = ({
   onNavigate,
   onMenuCallback,
 }) => {
-  const { showToast, state } = useApp();
+  const { showToast } = useAppActions();
+  const { settings } = useAppShell();
+  const { hiddenPostTags, hiddenPostKeywords } = useUserPreferences();
   const [panel, setPanel] = useState<MePanelId>('home');
   const [loadingAnnouncements, setLoadingAnnouncements] = useState(false);
   const [updateAnnouncements, setUpdateAnnouncements] = useState<UpdateAnnouncementItem[]>([]);
@@ -890,7 +895,7 @@ const UserMeModal: React.FC<UserMeModalProps> = ({
   const [shopLoading, setShopLoading] = useState(false);
   const [shopBusy, setShopBusy] = useState(false);
 
-  const shopEnabled = Boolean(state.settings?.shopEnabled);
+  const shopEnabled = Boolean(settings.shopEnabled);
 
   const menuSections: MeMenuSection[] = useMemo(
     () => {
@@ -1110,7 +1115,7 @@ const UserMeModal: React.FC<UserMeModalProps> = ({
   const equippedFrameId = shop?.equippedFrameId || null;
   const equippedNameStyleId = shop?.equippedNameStyleId || null;
 
-  const hiddenCount = state.hiddenPostTags.length + state.hiddenPostKeywords.length;
+  const hiddenCount = hiddenPostTags.length + hiddenPostKeywords.length;
 
   const renderPanel = () => {
     switch (panel) {
