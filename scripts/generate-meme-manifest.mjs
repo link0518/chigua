@@ -3,7 +3,7 @@ import path from 'path';
 
 const ROOT = process.cwd();
 const MEME_ROOT = path.join(ROOT, 'public', 'meme');
-const TS_MANIFEST_PATH = path.join(ROOT, 'components', 'memeManifest.ts');
+const TS_MANIFEST_PATH = path.join(ROOT, 'src', 'components', 'memeManifest.ts');
 
 const ALLOWED_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.avif', '.bmp', '.svg']);
 

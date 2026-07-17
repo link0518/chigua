@@ -128,16 +128,18 @@ npm run dev:full
 
 ```text
 .
-├── App.tsx                       # 顶层应用壳、导航、站点级弹窗与路由状态
-├── api.ts                        # 前端 API 封装、CSRF、指纹和 cookie 请求配置
-├── components/                   # 主站、投稿、评论、Wiki、后台等 React 组件
-├── features/                     # 逐步拆出的前端领域模块
-├── store/                        # 兼容 AppContext、领域 Context、热门缓存与用户偏好
-├── styles/                       # Wiki 与后台路由级样式入口
+├── src/                          # React 前端源码
+│   ├── App.tsx                   # 顶层应用壳、导航、站点级弹窗与路由状态
+│   ├── api.ts                    # 前端 API 封装、CSRF、指纹和 cookie 请求配置
+│   ├── components/               # 主站、投稿、评论、Wiki、后台等 React 组件
+│   ├── features/                 # 按领域拆分的前端模块
+│   ├── store/                    # 兼容 AppContext、领域 Context、缓存与用户偏好
+│   └── styles/                   # Wiki 与后台路由级样式入口
 ├── server/                       # Express 后端、路由、服务、SQLite 初始化和测试
 ├── Vocabulary/                   # 敏感词库文本文件
 ├── public/                       # favicon、robots、sitemap、表情包等静态资源
-├── scripts/                      # 开发、测试、SEO、性能预算辅助脚本
+├── scripts/                      # 开发、测试、部署、SEO、性能预算辅助脚本
+├── config/                       # Lighthouse 等非默认工具配置
 ├── docs/                         # 详细项目文档
 ├── jx3wiki/                      # Wiki 视觉参考与生成资产
 └── dist/                         # 前端构建产物，不手动编辑
@@ -188,12 +190,12 @@ npm run build
 - 根据 SEO/分享需求，将 `/post/*`、`/robots.txt`、`/sitemap.xml` 等路径按 `docs/06-部署与运维.md` 的说明处理。
 - 定期备份 `server/data/app.db`。
 
-仓库提供 `deploy.sh`、`update.sh`、`update-force.sh` 作为 Debian VPS + pm2 + Caddy 的参考脚本。执行会影响部署目录和进程状态，运行前请先阅读脚本内容。
+仓库在 `scripts/deploy/` 下提供 `deploy.sh`、`update.sh`、`update-force.sh`，作为 Debian VPS + pm2 + Caddy 的参考脚本。脚本应从仓库根目录执行；执行会影响部署目录和进程状态，运行前请先阅读脚本内容。
 
 ## 开发约定
 
 - 文档、注释和面向项目维护者的说明默认使用中文。
 - TypeScript/React 文件保持现有 2 空格缩进、分号、单引号风格。
-- 新增功能优先复用现有 `api.ts`、`AppContext`、路由和服务层模式。
+- 新增功能优先复用现有 `src/api.ts`、领域 Context、路由和服务层模式。
 - 不手动编辑 `dist/`、`server/data/app.db`、日志文件和本地环境文件。
 - 修改跨前后端的数据流时，至少运行 `npx tsc --noEmit`、`npm run test:server` 和 `npm run build` 中与改动相关的检查。

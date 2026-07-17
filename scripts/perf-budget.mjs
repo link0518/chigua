@@ -148,8 +148,8 @@ const main = async () => {
     finalUrls.forEach((u) => console.log(`- ${u}`));
 
     const npx = getNpxBin();
-    const mobileConfig = 'lighthouserc.mobile.cjs';
-    const desktopConfig = 'lighthouserc.desktop.cjs';
+    const mobileConfig = 'config/lighthouse/mobile.cjs';
+    const desktopConfig = 'config/lighthouse/desktop.cjs';
 
     console.log('运行 Lighthouse CI（Mobile）...');
     await runCommand(npx, ['lhci', 'autorun', `--config=${mobileConfig}`, ...urlArgs]);

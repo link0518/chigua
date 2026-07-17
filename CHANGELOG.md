@@ -29,6 +29,7 @@
 
 ### Changed
 
+- 将 React 前端源码统一迁移到 `src/`，部署脚本归入 `scripts/deploy/`，Lighthouse 配置归入 `config/lighthouse/`，Frame Package 示例归入 `docs/examples/`；同步更新 Vite、TypeScript、Tailwind、性能预算脚本与项目文档中的路径。
 - 完成前端三阶段性能优化：非首屏装饰、公告与“我的”面板改为条件懒加载，动画延迟到首帧后的空闲时段启动，并在页面隐藏或减弱动态效果时停止；热门列表从第 3 条起使用 `content-visibility` 渐进渲染。
 - 将 Wiki/Kumo 与后台专属样式拆为路由级 CSS，Kumo 扫描范围收窄到实际组件；主站不再加载 Wiki 组件库与大段专属样式。
 - 管理后台改为登录状态确认后再加载完整仪表盘、图表与 Markdown 编辑器，未登录页面只下载轻量登录入口。

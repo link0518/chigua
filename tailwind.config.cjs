@@ -1,13 +1,7 @@
 module.exports = {
   content: [
     './index.html',
-    './index.tsx',
-    './App.tsx',
-    './api.ts',
-    './types.ts',
-    './components/**/*.{ts,tsx}',
-    './features/**/*.{ts,tsx}',
-    './store/**/*.{ts,tsx}',
+    './src/**/*.{ts,tsx}',
   ],
   theme: {
     extend: {
