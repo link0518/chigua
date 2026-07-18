@@ -58,6 +58,32 @@ const syncDocumentThemeClass = (className: string, enabled: boolean) => {
   document.body.classList.toggle(className, enabled);
 };
 
+/**
+ * 通知跳转使用的是临时详情入口。若用户随后直接刷新页面，应回到最新首页，
+ * 同时不影响普通分享链接 `/post/:id` 的刷新直达能力。
+ */
+const normalizeNotificationReloadPath = () => {
+  if (typeof window === 'undefined' || !window.history.state?.homeNotificationTarget) {
+    return;
+  }
+
+  const navigationEntries = typeof window.performance?.getEntriesByType === 'function'
+    ? window.performance.getEntriesByType('navigation')
+    : [];
+  const isReload = navigationEntries.some((entry) => (
+    (entry as PerformanceNavigationTiming).type === 'reload'
+  ));
+  if (!isReload) {
+    return;
+  }
+
+  const nextHistoryState = { ...window.history.state };
+  delete nextHistoryState.homeNotificationTarget;
+  window.history.replaceState(nextHistoryState, '', '/');
+};
+
+normalizeNotificationReloadPath();
+
 const App: React.FC = () => {
   const { loadSettings, prefetchFeedPosts, settings } = useAppShell();
   const [currentView, setCurrentView] = useState<ViewType>(() => resolveViewFromPath(window.location.pathname));
@@ -442,8 +468,14 @@ const App: React.FC = () => {
       setMobileMenuOpen(false);
       setNotificationsOpen(false);
       const targetPath = buildPostPath(item.postId, item.commentId || null);
+      const nextHistoryState = {
+        ...(window.history.state && typeof window.history.state === 'object' ? window.history.state : {}),
+        homeNotificationTarget: true,
+      };
       if (window.location.pathname + window.location.search !== targetPath) {
-        window.history.pushState({}, '', targetPath);
+        window.history.pushState(nextHistoryState, '', targetPath);
+      } else {
+        window.history.replaceState(nextHistoryState, '', targetPath);
       }
       window.dispatchEvent(new CustomEvent('notification:navigate', {
         detail: { postId: item.postId, commentId: item.commentId || null },

@@ -261,6 +261,10 @@ const HomeView: React.FC = () => {
     } else if (historyState.homeSecondaryOverlay !== 'post-delete-request') {
       setDeleteRequestModal({ isOpen: false, postId: '', content: '', reason: '' });
     }
+    if (!nextRouteState.postId) {
+      // popstate 只改变了 URL，不会自动重置首页的焦点索引。
+      setCurrentIndex(0);
+    }
     if (overlayPostId && (overlay === 'comments' || overlay === 'comment-composer')) {
       setCommentPostId(overlayPostId);
       setFocusCommentId(nextRouteState.commentId || null);
@@ -301,6 +305,8 @@ const HomeView: React.FC = () => {
   const navigateToHomeRoot = useCallback((replace = false) => {
     updateHistoryPath('/', replace);
     setRouteState({ postId: '', commentId: null, homeIndex: null });
+    // 从详情回到首页时，必须立即回到最新一条，不能沿用详情页所在索引。
+    setCurrentIndex(0);
   }, [updateHistoryPath]);
 
   const openPostInFocus = useCallback((postId: string, options?: {
@@ -840,13 +846,16 @@ const HomeView: React.FC = () => {
 
   useEffect(() => {
     const handleRefresh = () => {
+      const latestRouteState = parseHomeLocation();
       forceCloseCommentModal();
+      setRouteState(latestRouteState);
+      if (!latestRouteState.postId) {
+        setCurrentIndex(0);
+      }
       if (loading) {
         return;
       }
-      const latestRouteState = parseHomeLocation();
       const refreshViewMode: HomeViewMode = latestRouteState.postId ? 'focus' : preferredViewMode;
-      setRouteState(latestRouteState);
       setLoading(true);
       const refreshLimit = refreshViewMode === 'grid' ? HOME_GRID_PAGE_SIZE : HOME_FOCUS_PAGE_SIZE;
       loadHomePosts(refreshLimit)
