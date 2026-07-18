@@ -929,13 +929,18 @@ const HomeView: React.FC = () => {
     const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     window.requestAnimationFrame(() => {
       window.requestAnimationFrame(() => {
+        if (isMobileLayout) {
+          // 长帖会让页面具备可滚动空间；移动端锚定文档顶部，避免切换器被帖子滚动目标带离原位。
+          window.scrollTo({ top: 0, behavior: 'auto' });
+          return;
+        }
         focusArticleRef.current?.scrollIntoView({
           block: 'start',
           behavior: reduceMotion ? 'auto' : 'smooth',
         });
       });
     });
-  }, []);
+  }, [isMobileLayout]);
 
   const switchToPostIndex = useCallback((nextIndex: number) => {
     if (switchingPost || !posts[nextIndex]) {

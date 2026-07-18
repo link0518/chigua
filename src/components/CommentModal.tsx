@@ -112,10 +112,14 @@ const getMostLikedComment = (items: Comment[]): Comment | null => {
       if (!item.deleted && !item.hidden && item.rumorStatus !== 'suspected') {
         const likes = Number(item.likes || 0);
         const createdAt = Number(item.createdAt || 0);
+        // 只有实际获得点赞的评论才能成为热评；全为 0 赞时不按时间兜底。
         if (
-          !best
-          || likes > best.likes
-          || (likes === best.likes && createdAt > best.createdAt)
+          likes > 0
+          && (
+            !best
+            || likes > best.likes
+            || (likes === best.likes && createdAt > best.createdAt)
+          )
         ) {
           best = { comment: item, likes, createdAt };
         }
@@ -1213,7 +1217,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
           </div>
         ) : (
           <div className="text-sm text-gray-400 font-sans">
-            还没有评论，先来抢个沙发吧
+            {totalCount > 0 ? '暂无热评' : '还没有评论，先来抢个沙发吧'}
           </div>
         )}
 
