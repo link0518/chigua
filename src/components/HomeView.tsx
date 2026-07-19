@@ -167,6 +167,8 @@ const HomeView: React.FC = () => {
   const [routePrefetchFailureKey, setRoutePrefetchFailureKey] = useState('');
   const prevPostCountRef = useRef(0);
   const handledRouteCommentKeyRef = useRef('');
+  const allPostsRef = useRef(homePosts);
+  const routeStateRef = useRef(routeState);
   const markHomePostsAsServerLoaded = useCallback((items: Post[]) => {
     items.forEach((post) => {
       transientRoutePostIdsRef.current.delete(post.id);
@@ -177,6 +179,8 @@ const HomeView: React.FC = () => {
   const routeHomeIndex = routeState.homeIndex;
   const routeCommentKey = routePostId && routeCommentId ? `${routePostId}:${routeCommentId}` : '';
   const allPosts = homePosts;
+  allPostsRef.current = allPosts;
+  routeStateRef.current = routeState;
   const homeIndexById = useMemo(
     () => new Map(allPosts.map((post, index) => [post.id, index] as const)),
     [allPosts]
@@ -237,9 +241,11 @@ const HomeView: React.FC = () => {
     const historyState = readHomeHistoryState();
     const overlay = historyState.homeOverlay;
     const overlayPostId = nextRouteState.postId || historyState.homeCommentPostId || '';
+    // 用 ref 读列表，避免 allPosts 变化导致本回调重建并被 effect 误触发。
     const secondaryPost = historyState.homeSecondaryOverlayId
-      ? allPosts.find((post) => post.id === historyState.homeSecondaryOverlayId) || null
+      ? allPostsRef.current.find((post) => post.id === historyState.homeSecondaryOverlayId) || null
       : null;
+    const previousPostId = routeStateRef.current.postId;
     setRouteState(nextRouteState);
     if (historyState.homeSecondaryOverlay === 'post-report' && secondaryPost) {
       setReportModal({
@@ -261,8 +267,8 @@ const HomeView: React.FC = () => {
     } else if (historyState.homeSecondaryOverlay !== 'post-delete-request') {
       setDeleteRequestModal({ isOpen: false, postId: '', content: '', reason: '' });
     }
-    if (!nextRouteState.postId) {
-      // popstate 只改变了 URL，不会自动重置首页的焦点索引。
+    // 仅从详情路由回到首页时重置焦点；补页/点赞等列表更新绝不能把索引打回 0。
+    if (!nextRouteState.postId && previousPostId) {
       setCurrentIndex(0);
     }
     if (overlayPostId && (overlay === 'comments' || overlay === 'comment-composer')) {
@@ -276,7 +282,7 @@ const HomeView: React.FC = () => {
       setCommentPostId(null);
       setFocusCommentId(null);
     }
-  }, [allPosts]);
+  }, []);
 
   const persistViewMode = useCallback((mode: HomeViewMode) => {
     setPreferredViewMode(mode);
@@ -995,11 +1001,20 @@ const HomeView: React.FC = () => {
     switchingPost,
   ]);
 
+  const resolveFocusIndex = useCallback((postId?: string | null) => {
+    if (!postId) {
+      return boundedIndex;
+    }
+    const byId = posts.findIndex((post) => post.id === postId);
+    return byId >= 0 ? byId : boundedIndex;
+  }, [boundedIndex, posts]);
+
   const handleNext = () => {
     if (!currentPost || switchingPost || pendingAdvance) {
       return;
     }
-    if (boundedIndex >= posts.length - 1) {
+    const fromIndex = resolveFocusIndex(currentPost.id);
+    if (fromIndex >= posts.length - 1) {
       if (hasMore) {
         setPendingAdvance(true);
         loadMorePosts(HOME_FOCUS_PAGE_SIZE);
@@ -1008,30 +1023,32 @@ const HomeView: React.FC = () => {
       }
       return;
     }
-    switchToPostIndex(Math.min(boundedIndex + 1, posts.length - 1));
+    switchToPostIndex(Math.min(fromIndex + 1, posts.length - 1));
   };
 
   const handlePrev = () => {
     if (!currentPost || switchingPost || pendingAdvance) {
       return;
     }
-    if (boundedIndex <= 0) {
+    const fromIndex = resolveFocusIndex(currentPost.id);
+    if (fromIndex <= 0) {
       return;
     }
-    switchToPostIndex(Math.max(boundedIndex - 1, 0));
+    switchToPostIndex(Math.max(fromIndex - 1, 0));
   };
 
   useEffect(() => {
     const prevCount = prevPostCountRef.current;
     if (pendingAdvance && posts.length > prevCount) {
-      const nextIndex = Math.min(currentIndex + 1, posts.length - 1);
+      const fromIndex = resolveFocusIndex(currentPost?.id);
+      const nextIndex = Math.min(fromIndex + 1, posts.length - 1);
       setPendingAdvance(false);
       switchToPostIndex(nextIndex);
     } else if (!hasMore && pendingAdvance) {
       setPendingAdvance(false);
     }
     prevPostCountRef.current = posts.length;
-  }, [currentIndex, hasMore, pendingAdvance, posts.length, switchToPostIndex]);
+  }, [currentPost?.id, hasMore, pendingAdvance, posts.length, resolveFocusIndex, switchToPostIndex]);
 
   useEffect(() => () => {
     if (postSwitchTimerRef.current !== null) {
