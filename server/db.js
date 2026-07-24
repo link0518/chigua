@@ -387,6 +387,170 @@ CREATE TABLE IF NOT EXISTS user_cosmetics (
   updated_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS recruitment_posts (
+  id TEXT PRIMARY KEY,
+  author_identity_hash TEXT NOT NULL,
+  xinfa_id TEXT NOT NULL,
+  content TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'closed')),
+  moderation_status TEXT NOT NULL DEFAULT 'visible' CHECK (moderation_status IN ('visible', 'hidden', 'removed')),
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  closed_at INTEGER,
+  moderated_at INTEGER,
+  moderated_by TEXT,
+  moderation_reason TEXT
+);
+
+CREATE TABLE IF NOT EXISTS recruitment_threads (
+  id TEXT PRIMARY KEY,
+  post_id TEXT NOT NULL,
+  publisher_identity_hash TEXT NOT NULL,
+  applicant_identity_hash TEXT NOT NULL,
+  applicant_xinfa_id TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'closed')),
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  last_message_seq INTEGER NOT NULL DEFAULT 0,
+  publisher_last_read_seq INTEGER NOT NULL DEFAULT 0,
+  applicant_last_read_seq INTEGER NOT NULL DEFAULT 0,
+  locked_at INTEGER,
+  locked_by TEXT,
+  lock_reason TEXT,
+  UNIQUE (post_id, applicant_identity_hash),
+  CHECK (publisher_identity_hash != applicant_identity_hash),
+  FOREIGN KEY (post_id) REFERENCES recruitment_posts(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS recruitment_messages (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT,
+  id TEXT NOT NULL UNIQUE,
+  thread_id TEXT NOT NULL,
+  sender_identity_hash TEXT NOT NULL,
+  client_msg_id TEXT NOT NULL,
+  content_ciphertext TEXT NOT NULL,
+  content_iv TEXT NOT NULL,
+  content_auth_tag TEXT NOT NULL,
+  crypto_version INTEGER NOT NULL DEFAULT 1,
+  moderation_status TEXT NOT NULL DEFAULT 'visible' CHECK (moderation_status IN ('visible', 'removed')),
+  deleted_at INTEGER,
+  deleted_by TEXT,
+  deletion_reason TEXT,
+  created_at INTEGER NOT NULL,
+  UNIQUE (thread_id, sender_identity_hash, client_msg_id),
+  FOREIGN KEY (thread_id) REFERENCES recruitment_threads(id) ON DELETE CASCADE
+);
+
+-- 消息治理事件使用独立递增游标，让已打开的密聊也能及时同步删除/恢复状态。
+CREATE TABLE IF NOT EXISTS recruitment_message_moderation_events (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT,
+  message_id TEXT NOT NULL,
+  thread_id TEXT NOT NULL,
+  moderation_status TEXT NOT NULL CHECK (moderation_status IN ('visible', 'removed')),
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (message_id) REFERENCES recruitment_messages(id) ON DELETE CASCADE,
+  FOREIGN KEY (thread_id) REFERENCES recruitment_threads(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS recruitment_contact_exchanges (
+  id TEXT PRIMARY KEY,
+  thread_id TEXT NOT NULL,
+  owner_identity_hash TEXT NOT NULL,
+  payload_ciphertext TEXT NOT NULL,
+  payload_iv TEXT NOT NULL,
+  payload_auth_tag TEXT NOT NULL,
+  crypto_version INTEGER NOT NULL DEFAULT 1,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'unlocked')),
+  moderation_status TEXT NOT NULL DEFAULT 'visible' CHECK (moderation_status IN ('visible', 'removed')),
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  unlocked_at INTEGER,
+  deleted_at INTEGER,
+  deleted_by TEXT,
+  deletion_reason TEXT,
+  UNIQUE (thread_id, owner_identity_hash),
+  FOREIGN KEY (thread_id) REFERENCES recruitment_threads(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS recruitment_exchange_consents (
+  exchange_id TEXT NOT NULL,
+  identity_hash TEXT NOT NULL,
+  consented_at INTEGER NOT NULL,
+  PRIMARY KEY (exchange_id, identity_hash),
+  FOREIGN KEY (exchange_id) REFERENCES recruitment_contact_exchanges(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS recruitment_reports (
+  id TEXT PRIMARY KEY,
+  reporter_identity_hash TEXT NOT NULL,
+  reported_identity_hash TEXT NOT NULL,
+  target_type TEXT NOT NULL CHECK (target_type IN ('post', 'thread', 'message', 'contact_exchange')),
+  post_id TEXT,
+  thread_id TEXT,
+  message_id TEXT,
+  contact_exchange_id TEXT,
+  reason_code TEXT NOT NULL,
+  detail TEXT,
+  contact_payload_ciphertext TEXT,
+  contact_payload_iv TEXT,
+  contact_payload_auth_tag TEXT,
+  contact_crypto_version INTEGER,
+  contact_was_unlocked INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'reviewing', 'resolved', 'dismissed')),
+  created_at INTEGER NOT NULL,
+  reviewed_at INTEGER,
+  reviewed_by TEXT,
+  resolution TEXT,
+  action TEXT,
+  FOREIGN KEY (post_id) REFERENCES recruitment_posts(id) ON DELETE SET NULL,
+  FOREIGN KEY (thread_id) REFERENCES recruitment_threads(id) ON DELETE SET NULL,
+  FOREIGN KEY (message_id) REFERENCES recruitment_messages(id) ON DELETE SET NULL,
+  FOREIGN KEY (contact_exchange_id) REFERENCES recruitment_contact_exchanges(id) ON DELETE SET NULL
+);
+
+-- 后台只能通过举报记录关联到被明确纳入证据链的消息。
+CREATE TABLE IF NOT EXISTS recruitment_report_evidence (
+  report_id TEXT NOT NULL,
+  message_id TEXT NOT NULL,
+  position INTEGER NOT NULL,
+  added_at INTEGER NOT NULL,
+  PRIMARY KEY (report_id, message_id),
+  UNIQUE (report_id, position),
+  FOREIGN KEY (report_id) REFERENCES recruitment_reports(id) ON DELETE CASCADE,
+  FOREIGN KEY (message_id) REFERENCES recruitment_messages(id) ON DELETE RESTRICT
+);
+
+CREATE TABLE IF NOT EXISTS recruitment_notifications (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT,
+  id TEXT NOT NULL UNIQUE,
+  recipient_identity_hash TEXT NOT NULL,
+  type TEXT NOT NULL,
+  post_id TEXT,
+  thread_id TEXT,
+  exchange_id TEXT,
+  created_at INTEGER NOT NULL,
+  read_at INTEGER,
+  FOREIGN KEY (post_id) REFERENCES recruitment_posts(id) ON DELETE CASCADE,
+  FOREIGN KEY (thread_id) REFERENCES recruitment_threads(id) ON DELETE CASCADE,
+  FOREIGN KEY (exchange_id) REFERENCES recruitment_contact_exchanges(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS recruitment_admin_audit_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  admin_id INTEGER,
+  admin_username TEXT NOT NULL,
+  action TEXT NOT NULL,
+  target_type TEXT NOT NULL,
+  target_id TEXT NOT NULL,
+  report_id TEXT,
+  before_json TEXT,
+  after_json TEXT,
+  reason TEXT,
+  ip TEXT,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (report_id) REFERENCES recruitment_reports(id) ON DELETE SET NULL
+);
+
 `);
 
 const ensureColumn = (table, column, definition) => {
@@ -453,6 +617,24 @@ ensureColumn('banned_identities', 'permissions', 'TEXT');
 ensureColumn('banned_identities', 'reason', 'TEXT');
 ensureColumn('feedback_messages', 'fingerprint', 'TEXT');
 ensureColumn('update_announcements', 'created_at', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('recruitment_posts', 'moderation_reason', 'TEXT');
+ensureColumn('recruitment_reports', 'contact_exchange_id', 'TEXT');
+ensureColumn('recruitment_reports', 'contact_payload_ciphertext', 'TEXT');
+ensureColumn('recruitment_reports', 'contact_payload_iv', 'TEXT');
+ensureColumn('recruitment_reports', 'contact_payload_auth_tag', 'TEXT');
+ensureColumn('recruitment_reports', 'contact_crypto_version', 'INTEGER');
+ensureColumn('recruitment_reports', 'contact_was_unlocked', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('recruitment_threads', 'locked_at', 'INTEGER');
+ensureColumn('recruitment_threads', 'locked_by', 'TEXT');
+ensureColumn('recruitment_threads', 'lock_reason', 'TEXT');
+ensureColumn('recruitment_messages', 'moderation_status', "TEXT NOT NULL DEFAULT 'visible'");
+ensureColumn('recruitment_messages', 'deleted_at', 'INTEGER');
+ensureColumn('recruitment_messages', 'deleted_by', 'TEXT');
+ensureColumn('recruitment_messages', 'deletion_reason', 'TEXT');
+ensureColumn('recruitment_contact_exchanges', 'moderation_status', "TEXT NOT NULL DEFAULT 'visible'");
+ensureColumn('recruitment_contact_exchanges', 'deleted_at', 'INTEGER');
+ensureColumn('recruitment_contact_exchanges', 'deleted_by', 'TEXT');
+ensureColumn('recruitment_contact_exchanges', 'deletion_reason', 'TEXT');
 db.prepare(`
   UPDATE update_announcements
   SET created_at = CASE
@@ -665,6 +847,44 @@ const ensureIndexes = () => {
   CREATE INDEX IF NOT EXISTS idx_vocabulary_updated_at ON vocabulary_words(updated_at);
   CREATE INDEX IF NOT EXISTS idx_identity_aliases_canonical_hash ON identity_aliases(canonical_hash, last_seen_at DESC);
   CREATE INDEX IF NOT EXISTS idx_identity_aliases_legacy_hash ON identity_aliases(legacy_fingerprint_hash, last_seen_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_recruitment_posts_feed
+    ON recruitment_posts(moderation_status, status, created_at DESC);
+  -- 过期检查只关心开放招募；部分索引避免高频轮询扫描全部历史记录。
+  CREATE INDEX IF NOT EXISTS idx_recruitment_posts_open_expiry
+    ON recruitment_posts(created_at)
+    WHERE status = 'open';
+  CREATE INDEX IF NOT EXISTS idx_recruitment_posts_xinfa
+    ON recruitment_posts(xinfa_id, moderation_status, status, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_recruitment_posts_author
+    ON recruitment_posts(author_identity_hash, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_recruitment_threads_publisher
+    ON recruitment_threads(publisher_identity_hash, updated_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_recruitment_threads_applicant
+    ON recruitment_threads(applicant_identity_hash, updated_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_recruitment_messages_thread_seq
+    ON recruitment_messages(thread_id, seq DESC);
+  CREATE INDEX IF NOT EXISTS idx_recruitment_messages_moderation
+    ON recruitment_messages(moderation_status, deleted_at);
+  CREATE INDEX IF NOT EXISTS idx_recruitment_message_moderation_events_thread_seq
+    ON recruitment_message_moderation_events(thread_id, seq);
+  CREATE INDEX IF NOT EXISTS idx_recruitment_contact_exchanges_thread
+    ON recruitment_contact_exchanges(thread_id, updated_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_recruitment_contact_exchanges_moderation
+    ON recruitment_contact_exchanges(moderation_status, deleted_at);
+  CREATE INDEX IF NOT EXISTS idx_recruitment_reports_status_created_at
+    ON recruitment_reports(status, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_recruitment_reports_reported_identity
+    ON recruitment_reports(reported_identity_hash, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_recruitment_report_evidence_report_position
+    ON recruitment_report_evidence(report_id, position);
+  CREATE INDEX IF NOT EXISTS idx_recruitment_notifications_recipient_seq
+    ON recruitment_notifications(recipient_identity_hash, seq DESC);
+  CREATE INDEX IF NOT EXISTS idx_recruitment_notifications_recipient_unread
+    ON recruitment_notifications(recipient_identity_hash, read_at, seq DESC);
+  CREATE INDEX IF NOT EXISTS idx_recruitment_admin_audit_created_at
+    ON recruitment_admin_audit_logs(created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_recruitment_admin_audit_report
+    ON recruitment_admin_audit_logs(report_id, created_at DESC);
   `);
 };
 

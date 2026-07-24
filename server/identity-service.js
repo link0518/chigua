@@ -4,6 +4,7 @@ import signature from 'cookie-signature';
 const CLIENT_ID_COOKIE_NAME = 'gs_client_id_v2';
 const CLIENT_ID_COOKIE_MAX_AGE_MS = 365 * 24 * 60 * 60 * 1000;
 const CLIENT_ID_HASH_NAMESPACE = 'client_id_v2';
+const IDENTITY_ALIAS_TOUCH_INTERVAL_MS = 5 * 60 * 1000;
 
 const normalizeHashList = (value) => {
   const source = Array.isArray(value) ? value : [value];
@@ -32,6 +33,7 @@ export const createIdentityService = ({
   sessionSecret,
   fingerprintSalt,
   fingerprintHeader,
+  now = () => Date.now(),
 }) => {
   const upsertIdentityAliasStmt = db.prepare(
     `
@@ -61,6 +63,13 @@ export const createIdentityService = ({
       FROM identity_aliases
       WHERE canonical_hash = ? OR legacy_fingerprint_hash = ?
       ORDER BY last_seen_at DESC
+    `
+  );
+  const getIdentityAliasTouchStateStmt = db.prepare(
+    `
+      SELECT source, last_seen_at
+      FROM identity_aliases
+      WHERE canonical_hash = ? AND legacy_fingerprint_hash = ?
     `
   );
 
@@ -127,8 +136,27 @@ export const createIdentityService = ({
     if (!canonicalHash || !legacyFingerprintHash) {
       return;
     }
-    const now = Date.now();
-    upsertIdentityAliasStmt.run(canonicalHash, legacyFingerprintHash, source, now, now);
+    const timestamp = now();
+    upsertIdentityAliasStmt.run(canonicalHash, legacyFingerprintHash, source, timestamp, timestamp);
+  };
+
+  const touchIdentityAlias = (canonicalHash, legacyFingerprintHash, source = 'request') => {
+    if (!canonicalHash || !legacyFingerprintHash) {
+      return;
+    }
+    const timestamp = now();
+    const existing = getIdentityAliasTouchStateStmt.get(canonicalHash, legacyFingerprintHash);
+    const lastSeenAt = Number(existing?.last_seen_at);
+    // 新映射或来源变化必须立即落库；稳定映射只定期刷新，避免轮询请求持续争用 SQLite 写锁。
+    if (
+      existing
+      && existing.source === source
+      && Number.isFinite(lastSeenAt)
+      && timestamp - lastSeenAt < IDENTITY_ALIAS_TOUCH_INTERVAL_MS
+    ) {
+      return;
+    }
+    upsertIdentityAliasStmt.run(canonicalHash, legacyFingerprintHash, source, timestamp, timestamp);
   };
 
   const buildLookupHashes = ({ canonicalHash = '', legacyFingerprintHash = '' } = {}) => normalizeHashList([
@@ -244,9 +272,9 @@ export const createIdentityService = ({
     const canonicalHash = hashClientId(clientId);
 
     if (canonicalHash && legacyFingerprintHash) {
-      upsertIdentityAlias(canonicalHash, legacyFingerprintHash);
+      touchIdentityAlias(canonicalHash, legacyFingerprintHash);
     } else if (canonicalHash) {
-      upsertIdentityAlias(canonicalHash, canonicalHash, 'canonical_only');
+      touchIdentityAlias(canonicalHash, canonicalHash, 'canonical_only');
     }
 
     const lookupHashes = getLookupHashesForCanonicalHash(canonicalHash, legacyFingerprintHash);

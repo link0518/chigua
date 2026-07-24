@@ -57,7 +57,7 @@ const buildCookieHeader = (response) => response.cookies
   .map((item) => `${item.name}=${item.value}`)
   .join('; ');
 
-const createHarness = () => {
+const createHarness = ({ now } = {}) => {
   const db = new Database(':memory:');
   createSchema(db);
   const service = createIdentityService({
@@ -66,9 +66,43 @@ const createHarness = () => {
     sessionSecret: 'test-session-secret',
     fingerprintSalt: 'test-fingerprint-salt',
     fingerprintHeader: 'x-client-fingerprint',
+    now,
   });
   return { db, service };
 };
+
+test('稳定身份映射最多每 5 分钟刷新一次 last_seen_at', () => {
+  let timestamp = 1000;
+  const { db, service } = createHarness({ now: () => timestamp });
+  const response = createResponse();
+  service.ensureRequestIdentity({
+    headers: { 'x-client-fingerprint': 'legacy-device-fingerprint' },
+  }, response);
+  const cookieHeader = buildCookieHeader(response);
+  const readLastSeenAt = () => db.prepare(
+    'SELECT last_seen_at FROM identity_aliases WHERE source = ?'
+  ).get('request').last_seen_at;
+
+  assert.equal(readLastSeenAt(), 1000);
+  timestamp += 60 * 1000;
+  service.ensureRequestIdentity({
+    headers: {
+      cookie: cookieHeader,
+      'x-client-fingerprint': 'legacy-device-fingerprint',
+    },
+  }, null);
+  assert.equal(readLastSeenAt(), 1000);
+
+  timestamp += 5 * 60 * 1000;
+  service.ensureRequestIdentity({
+    headers: {
+      cookie: cookieHeader,
+      'x-client-fingerprint': 'legacy-device-fingerprint',
+    },
+  }, null);
+  assert.equal(readLastSeenAt(), timestamp);
+  db.close();
+});
 
 test('请求身份上下文只保留当前 canonical 与当前 legacy 两个键', () => {
   const { db, service } = createHarness();

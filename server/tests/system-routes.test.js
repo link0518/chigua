@@ -11,12 +11,60 @@ const createNotificationsDb = () => {
     CREATE TABLE notifications (
       id TEXT PRIMARY KEY,
       recipient_fingerprint TEXT,
+      type TEXT,
+      post_id TEXT,
+      comment_id TEXT,
+      preview TEXT,
       created_at INTEGER,
       read_at INTEGER
     );
   `);
   return db;
 };
+
+test('通用通知可在同一响应中聚合招募通知', () => {
+  const db = createNotificationsDb();
+  db.prepare(
+    'INSERT INTO notifications (id, recipient_fingerprint, type, created_at) VALUES (?, ?, ?, ?)'
+  ).run('general-1', 'canonical-1', 'post_like', 10);
+  const app = createRouteApp();
+  const recruitmentCalls = [];
+  registerPublicSystemRoutes(app, {
+    db,
+    requireFingerprint: () => 'canonical-1',
+    getIdentityLookupHashes: () => ['canonical-1'],
+    getRequestIdentityContext: () => ({ canonicalHash: 'canonical-1' }),
+    checkBanFor: () => true,
+    touchOnlineSession: () => {},
+    getOnlineCount: () => 1,
+    formatDateKey: () => '2026-07-24',
+    verifyTurnstile: async () => ({ ok: true }),
+    getClientIp: () => '127.0.0.1',
+    getRateLimitConfig: () => ({ limit: 10, windowMs: 60_000 }),
+    crypto,
+    listRecruitmentNotifications: (params) => {
+      recruitmentCalls.push(params);
+      return {
+        items: [{ id: 'recruitment-1', type: 'recruitment_message', createdAt: 20 }],
+        unreadCount: 1,
+      };
+    },
+  });
+
+  const res = createResponse();
+  app.routes.get('GET /api/notifications')({
+    query: { status: 'all', limit: '20', includeRecruitment: '1' },
+  }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.payload.items.map((item) => item.id), ['general-1']);
+  assert.deepEqual(res.payload.recruitment.items.map((item) => item.id), ['recruitment-1']);
+  assert.deepEqual(recruitmentCalls, [{ identityHash: 'canonical-1', page: 1, limit: 20 }]);
+  assert.equal(res.getHeader('cache-control'), 'private, no-store, max-age=0');
+  assert.match(res.getHeader('vary'), /Cookie/);
+  assert.match(res.getHeader('vary'), /X-Client-Fingerprint/);
+  db.close();
+});
 
 test('通知查询同时命中旧指纹和新身份，不依赖通知创建时间', () => {
   const db = createNotificationsDb();
@@ -79,6 +127,7 @@ const createRouteApp = () => {
 const createResponse = () => {
   let statusCode = 200;
   let payload;
+  const headers = new Map();
   return {
     status(code) {
       statusCode = code;
@@ -88,8 +137,24 @@ const createResponse = () => {
       payload = data;
       return this;
     },
-    set() {
+    set(name, value) {
+      headers.set(String(name).toLowerCase(), String(value));
       return this;
+    },
+    vary(name) {
+      const key = 'vary';
+      const values = new Set(
+        String(headers.get(key) || '')
+          .split(',')
+          .map((item) => item.trim())
+          .filter(Boolean)
+      );
+      values.add(String(name));
+      headers.set(key, Array.from(values).join(', '));
+      return this;
+    },
+    getHeader(name) {
+      return headers.get(String(name).toLowerCase());
     },
     get statusCode() {
       return statusCode;

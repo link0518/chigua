@@ -2,6 +2,9 @@ import React from 'react';
 import { FileText, MagnifyingGlass, ShieldCheck } from '@phosphor-icons/react';
 import { cn } from '@cloudflare/kumo';
 
+// 只引入载入动画样式：完整 wiki.css 含独立 Tailwind/Kumo，提前挂到主包会冲掉站点工具类（如左栏 min-[1880px]:block）。
+import '../../styles/wiki-loading.css';
+
 type WikiLoadingVariant = 'page' | 'detail';
 
 interface WikiLoadingStep {

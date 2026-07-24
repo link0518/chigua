@@ -53,6 +53,27 @@ export function run(command, args, options = {}) {
   }
 }
 
+/**
+ * 执行只读命令并返回标准输出，供部署前置校验读取 Git 状态。
+ */
+export function capture(command, args, options = {}) {
+  const result = spawnSync(command, args, {
+    cwd: rootDir,
+    encoding: 'utf8',
+    shell: options.shell || false,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  if (result.error) {
+    throw result.error;
+  }
+  if (result.status !== 0) {
+    const detail = String(result.stderr || result.stdout || '').trim();
+    throw new Error(`${command} ${args.join(' ')} 执行失败（退出码 ${result.status}）${detail ? `：${detail}` : ''}`);
+  }
+  return String(result.stdout || '').trim();
+}
+
 export function required(name) {
   const value = process.env[name];
   if (!value) {

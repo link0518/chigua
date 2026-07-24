@@ -6,6 +6,10 @@ export enum ViewType {
   SEARCH = 'SEARCH',
   FAVORITES = 'FAVORITES',
   WIKI = 'WIKI',
+  /** 前台招募广场、我的招募和密聊列表。 */
+  RECRUITMENT = 'RECRUITMENT',
+  /** 招募密聊独立视图。 */
+  RECRUITMENT_CHAT = 'RECRUITMENT_CHAT',
   ADMIN = 'ADMIN',
   NOT_FOUND = 'NOT_FOUND'
 }
@@ -127,24 +131,121 @@ export interface SearchPost extends Post {
 
 export interface NotificationItem {
   id: string;
+  seq?: number;
   type:
-    | 'post_comment'
-    | 'post_like'
-    | 'comment_like'
-    | 'comment_reply'
-    | 'rumor_marked'
-    | 'rumor_rejected'
-    | 'feedback_reply'
-    | 'post_delete_request_approved'
-    | 'post_delete_request_rejected'
-    | 'post_feature_request_approved'
-    | 'post_feature_request_rejected';
+  | 'post_comment'
+  | 'post_like'
+  | 'comment_like'
+  | 'comment_reply'
+  | 'rumor_marked'
+  | 'rumor_rejected'
+  | 'feedback_reply'
+  | 'post_delete_request_approved'
+  | 'post_delete_request_rejected'
+  | 'post_feature_request_approved'
+  | 'post_feature_request_rejected'
+  /** 仅用于兼容过滤历史申请通知，新请求不再生成该类型。 */
+  | 'recruitment_application'
+  | 'recruitment_message'
+  | 'recruitment_contact_proposed'
+  | 'recruitment_contact_unlocked';
   postId?: string | null;
   commentId?: string | null;
+  /** 招募密聊通知使用的线程 id。 */
+  threadId?: string | null;
+  /** 招募联系方式通知使用的交换记录 id。 */
+  exchangeId?: string | null;
   preview?: string | null;
   createdAt: number;
   readAt?: number | null;
 }
+
+/** 招募目录中的可选心法。服务端目录是发布时的校验来源。 */
+export interface RecruitmentXinfaOption {
+  id: string;
+  name: string;
+  school: string;
+  damageType?: '内' | '外' | string;
+  sourceIds?: string[];
+}
+
+export type RecruitmentStatus = 'open' | 'closed';
+export type RecruitmentThreadStatus = 'active' | 'closed';
+export type RecruitmentWriteBlockedReason = 'thread_closed' | 'thread_locked' | 'post_unavailable';
+
+export interface RecruitmentPost {
+  id: string;
+  xinfaId: string;
+  xinfa?: RecruitmentXinfaOption | null;
+  content: string;
+  createdAt: number;
+  updatedAt?: number | null;
+  status: RecruitmentStatus;
+  threadCount?: number;
+  isOwner?: boolean;
+  /** 当前匿名身份已申请该招募时，指向原有密聊。 */
+  viewerThreadId?: string | null;
+}
+
+export type RecruitmentParticipantRole = 'publisher' | 'applicant';
+
+export type RecruitmentContactExchangeStatus = 'pending' | 'unlocked' | 'completed';
+
+export interface RecruitmentContactValue {
+  type: 'qq' | 'wechat' | 'phone' | 'email' | 'game' | 'other' | string;
+  value: string;
+  label?: string;
+}
+
+export interface RecruitmentContactExchange {
+  id: string;
+  threadId?: string;
+  ownerRole?: RecruitmentParticipantRole;
+  status: RecruitmentContactExchangeStatus;
+  deleted?: boolean;
+  consentCount?: number;
+  consentedByMe?: boolean;
+  /** 未解锁时仅本人提交的联系方式会返回。 */
+  contact?: RecruitmentContactValue | null;
+  createdAt?: number;
+  updatedAt?: number | null;
+  unlockedAt?: number | null;
+}
+
+export interface RecruitmentThread {
+  id: string;
+  postId: string;
+  role: RecruitmentParticipantRole;
+  status: RecruitmentThreadStatus;
+  locked?: boolean;
+  publisherXinfaId: string;
+  publisherXinfa?: RecruitmentXinfaOption | null;
+  applicantXinfaId: string;
+  applicantXinfa?: RecruitmentXinfaOption | null;
+  postContent: string;
+  postStatus: RecruitmentStatus;
+  postModerationStatus?: 'visible' | 'hidden' | 'removed' | string;
+  /** 服务端综合会话、锁定和招募治理状态计算出的有效可写状态。 */
+  writable: boolean;
+  writeBlockedReason?: RecruitmentWriteBlockedReason | null;
+  createdAt: number;
+  updatedAt?: number | null;
+  lastMessageSeq: number;
+  unreadCount: number;
+}
+
+export interface RecruitmentMessage {
+  id: string;
+  seq: number;
+  threadId?: string;
+  senderRole: RecruitmentParticipantRole;
+  content: string | null;
+  createdAt: number;
+  deleted?: boolean;
+  clientMsgId?: string | null;
+}
+
+export type RecruitmentReportTargetType = 'post' | 'thread' | 'message' | 'contact_exchange';
 
 export type WikiEntrySort = 'updated' | 'number';
 
@@ -425,6 +526,7 @@ export type AdminPermissionModuleKey =
   | 'posts'
   | 'wiki'
   | 'feedback'
+  | 'recruitment'
   | 'user_safety'
   | 'publish'
   | 'settings';

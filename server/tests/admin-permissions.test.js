@@ -12,6 +12,15 @@ import { registerAdminReportsRoutes } from '../routes/admin/reports-routes.js';
 import { registerAdminStatsRoutes } from '../routes/admin/stats-routes.js';
 import { hasAdminPermission } from '../admin-permissions.js';
 
+test('招募治理权限支持只读与处理等级', () => {
+  const reader = { role: 'admin', permissions: { recruitment: 'read' } };
+  const manager = { role: 'admin', permissions: { recruitment: 'manage' } };
+
+  assert.equal(hasAdminPermission(reader, 'recruitment', 'read'), true);
+  assert.equal(hasAdminPermission(reader, 'recruitment', 'manage'), false);
+  assert.equal(hasAdminPermission(manager, 'recruitment', 'manage'), true);
+});
+
 const createApp = () => {
   const routes = new Map();
   return {

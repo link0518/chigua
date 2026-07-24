@@ -1,4 +1,15 @@
 import { getBrowserFingerprint } from './fingerprint';
+import type {
+  NotificationItem,
+  RecruitmentContactExchange,
+  RecruitmentContactValue,
+  RecruitmentMessage,
+  RecruitmentPost,
+  RecruitmentStatus,
+  RecruitmentThread,
+  RecruitmentThreadStatus,
+  RecruitmentXinfaOption,
+} from './types';
 
 const toQuery = (params: Record<string, unknown>) => {
   const entries = Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== '');
@@ -44,6 +55,10 @@ const shouldAttachFingerprint = (path: string, options: RequestInit) => {
     return true;
   }
 
+  if (cleanPath.startsWith('/recruitment')) {
+    return true;
+  }
+
   if (cleanPath.startsWith('/uploads')) {
     return true;
   }
@@ -85,7 +100,7 @@ const normalizeHeaders = (headers?: HeadersInit) => {
   return headers;
 };
 
-const apiFetch = async (path: string, options: RequestInit = {}) => {
+const apiFetch = async <T = any>(path: string, options: RequestInit = {}): Promise<T> => {
   const fingerprint = shouldAttachFingerprint(path, options)
     ? await getBrowserFingerprint().catch(() => '')
     : '';
@@ -101,7 +116,7 @@ const apiFetch = async (path: string, options: RequestInit = {}) => {
   });
 
   if (response.status === 204) {
-    return null;
+    return null as T;
   }
 
   const data = await response.json().catch(() => ({}));
@@ -111,7 +126,7 @@ const apiFetch = async (path: string, options: RequestInit = {}) => {
     throw new Error(message);
   }
 
-  return data;
+  return data as T;
 };
 
 export const api = {
@@ -173,6 +188,152 @@ export const api = {
   }),
   toggleCommentLike: (commentId) => apiFetch(`/comments/${commentId}/like`, { method: 'POST' }),
   getFavorites: (limit = 20, offset = 0) => apiFetch(`/favorites${toQuery({ limit, offset })}`),
+  getRecruitmentXinfa: () => apiFetch<{
+    items: RecruitmentXinfaOption[];
+    optionCount?: number;
+    sourceRecordCount?: number;
+  }>('/recruitment/catalog'),
+  getRecruitmentPosts: (params: {
+    limit?: number;
+    page?: number;
+    xinfaId?: string;
+    status?: RecruitmentStatus;
+    mine?: boolean;
+  } = {}) => apiFetch<{
+    items: RecruitmentPost[];
+    total: number;
+    page: number;
+    limit: number;
+  }>(`/recruitment/posts${toQuery({
+    ...params,
+    mine: params.mine ? '1' : undefined,
+  })}`),
+  getRecruitmentPost: (postId: string) => apiFetch<{ post: RecruitmentPost }>(
+    `/recruitment/posts/${encodeURIComponent(String(postId || ''))}`
+  ),
+  createRecruitmentPost: (payload: { xinfaId: string; content: string; turnstileToken?: string }) => apiFetch<{ post: RecruitmentPost }>(
+    '/recruitment/posts',
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }
+  ),
+  closeRecruitmentPost: (postId: string) => apiFetch<{ post: RecruitmentPost }>(
+    `/recruitment/posts/${encodeURIComponent(String(postId || ''))}/close`,
+    { method: 'POST' }
+  ),
+  applyRecruitmentPost: (postId: string, xinfaId: string) => apiFetch<{ thread: RecruitmentThread } | RecruitmentThread>(
+    `/recruitment/posts/${encodeURIComponent(String(postId || ''))}/applications`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ xinfaId }),
+    }
+  ),
+  getRecruitmentThreads: (params: { limit?: number; page?: number; status?: RecruitmentThreadStatus } = {}) => apiFetch<{
+    items: RecruitmentThread[];
+    total: number;
+    page: number;
+    limit: number;
+    unreadCount: number;
+  }>(`/recruitment/threads${toQuery({
+    ...params,
+  })}`),
+  getRecruitmentThread: (threadId: string) => apiFetch<{ thread: RecruitmentThread }>(
+    `/recruitment/threads/${encodeURIComponent(String(threadId || ''))}`
+  ),
+  closeRecruitmentThread: (threadId: string) => apiFetch<{ thread: RecruitmentThread }>(
+    `/recruitment/threads/${encodeURIComponent(String(threadId || ''))}/close`,
+    { method: 'POST' }
+  ),
+  getRecruitmentMessages: (
+    threadId: string,
+    params: {
+      afterSeq?: number;
+      beforeSeq?: number;
+      afterModerationSeq?: number;
+      includeContactExchanges?: boolean;
+      limit?: number;
+    } = {}
+  ) => apiFetch<{
+    items: RecruitmentMessage[];
+    moderationItems?: RecruitmentMessage[];
+    contactExchanges?: RecruitmentContactExchange[];
+    thread?: RecruitmentThread;
+    hasMore?: boolean;
+    nextAfterSeq?: number;
+    oldestSeq?: number | null;
+    moderationCursor?: number;
+    moderationHasMore?: boolean;
+  }>(`/recruitment/threads/${encodeURIComponent(String(threadId || ''))}/messages${toQuery(params)}`),
+  sendRecruitmentMessage: (threadId: string, payload: { content: string; clientMsgId: string }) => apiFetch<{ message: RecruitmentMessage; created: boolean }>(
+    `/recruitment/threads/${encodeURIComponent(String(threadId || ''))}/messages`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }
+  ),
+  markRecruitmentThreadRead: (threadId: string, lastMessageSeq?: number) => apiFetch<{ threadId: string; lastReadSeq: number }>(
+    `/recruitment/threads/${encodeURIComponent(String(threadId || ''))}/read`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ lastMessageSeq }),
+    }
+  ),
+  getRecruitmentContactExchanges: (threadId: string) => apiFetch<{ items: RecruitmentContactExchange[] }>(
+    `/recruitment/threads/${encodeURIComponent(String(threadId || ''))}/contact-exchanges`
+  ),
+  createRecruitmentContactExchange: (threadId: string, contact: RecruitmentContactValue) => apiFetch<{
+    items: RecruitmentContactExchange[];
+    exchange?: RecruitmentContactExchange | null;
+  }>(
+    `/recruitment/threads/${encodeURIComponent(String(threadId || ''))}/contact-exchanges`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ contact }),
+    }
+  ),
+  consentRecruitmentContactExchange: (exchangeId: string, contact: RecruitmentContactValue) => apiFetch<{
+    items: RecruitmentContactExchange[];
+    changed: boolean;
+  }>(
+    `/recruitment/contact-exchanges/${encodeURIComponent(String(exchangeId || ''))}/consent`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ contact }),
+    }
+  ),
+  getRecruitmentNotifications: (params: { limit?: number; page?: number; afterSeq?: number } = {}) => apiFetch<{
+    items: Array<{
+      seq: number;
+      id: string;
+      type: 'recruitment_application' | 'recruitment_message' | 'recruitment_contact_proposed' | 'recruitment_contact_unlocked';
+      threadId?: string | null;
+      postId?: string | null;
+      exchangeId?: string | null;
+      createdAt: number;
+      readAt?: number | null;
+    }>;
+    hasMore?: boolean;
+    unreadCount: number;
+    page?: number;
+    limit?: number;
+    nextAfterSeq?: number;
+  }>(`/recruitment/notifications${toQuery(params)}`),
+  readRecruitmentNotifications: (payload: { notificationIds?: string[]; upToSeq?: number } = {}) => apiFetch<{ updated: number }>('/recruitment/notifications/read', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }),
+  reportRecruitment: (payload: {
+    targetType: 'post' | 'thread' | 'message' | 'contact_exchange';
+    targetId: string;
+    reasonCode: 'spam' | 'harassment' | 'privacy' | 'scam' | 'other';
+    detail?: string;
+    evidenceMessageIds?: string[];
+    turnstileToken?: string;
+  }) => apiFetch<{ report: { id: string } }>('/recruitment/reports', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }),
   reportPost: (postId, payload) => apiFetch('/reports', {
     method: 'POST',
     body: JSON.stringify({ postId, ...(payload || {}) }),
@@ -181,7 +342,22 @@ export const api = {
     method: 'POST',
     body: JSON.stringify({ commentId, ...(payload || {}) }),
   }),
-  getNotifications: (params = {}) => apiFetch(`/notifications${toQuery(params)}`),
+  getNotifications: (params: {
+    status?: 'all' | 'read' | 'unread';
+    limit?: number;
+    offset?: number;
+    includeRecruitment?: boolean | number;
+  } = {}) => apiFetch<{
+    items: NotificationItem[];
+    unreadCount: number;
+    total: number;
+    recruitment?: {
+      items: NotificationItem[];
+      unreadCount: number;
+      hasMore?: boolean;
+      nextAfterSeq?: number;
+    } | null;
+  }>(`/notifications${toQuery(params)}`),
   readNotifications: () => apiFetch('/notifications/read', { method: 'POST' }),
   getStreak7Status: () => apiFetch('/easter-eggs/streak7'),
   markStreak7Seen: () => apiFetch('/easter-eggs/streak7/seen', { method: 'POST' }),
@@ -302,6 +478,44 @@ export const api = {
     body: JSON.stringify(payload || {}),
   }),
   getAdminFeedback: (params = {}) => apiFetch(`/admin/feedback${toQuery(params)}`),
+  getAdminRecruitmentReports: (params: {
+    status?: 'pending' | 'reviewing' | 'resolved' | 'dismissed' | 'all';
+    targetType?: 'post' | 'thread' | 'message' | 'contact_exchange' | 'all';
+    page?: number;
+    limit?: number;
+  } = {}) => apiFetch(`/admin/recruitment/reports${toQuery(params)}`),
+  getAdminRecruitmentEvidence: (reportId: string, reason: string) => apiFetch(
+    `/admin/recruitment/reports/${encodeURIComponent(String(reportId || ''))}/evidence`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ reason, reportId }),
+    }
+  ),
+  handleAdminRecruitmentReport: (
+    reportId: string,
+    action: 'ignore' | 'dismiss' | 'resolve' | 'handle' | 'ban',
+    reason = '',
+    options: Record<string, unknown> = {}
+  ) => apiFetch(`/admin/recruitment/reports/${encodeURIComponent(String(reportId || ''))}/action`, {
+    method: 'POST',
+    body: JSON.stringify({ action, reason, ...options, reportId }),
+  }),
+  handleAdminRecruitmentPost: (postId: string, action: 'remove' | 'delete' | 'restore', reason: string, reportId: string) => apiFetch(
+    `/admin/recruitment/posts/${encodeURIComponent(String(postId || ''))}/action`,
+    { method: 'POST', body: JSON.stringify({ action, reason, reportId }) }
+  ),
+  handleAdminRecruitmentThread: (threadId: string, action: 'lock' | 'unlock', reason: string, reportId: string) => apiFetch(
+    `/admin/recruitment/threads/${encodeURIComponent(String(threadId || ''))}/action`,
+    { method: 'POST', body: JSON.stringify({ action, reason, reportId }) }
+  ),
+  handleAdminRecruitmentMessage: (messageId: string, action: 'remove' | 'delete' | 'restore', reason: string, reportId: string) => apiFetch(
+    `/admin/recruitment/messages/${encodeURIComponent(String(messageId || ''))}/action`,
+    { method: 'POST', body: JSON.stringify({ action, reason, reportId }) }
+  ),
+  handleAdminRecruitmentContactExchange: (exchangeId: string, action: 'remove' | 'delete' | 'restore', reason: string, reportId: string) => apiFetch(
+    `/admin/recruitment/contact-exchanges/${encodeURIComponent(String(exchangeId || ''))}/action`,
+    { method: 'POST', body: JSON.stringify({ action, reason, reportId }) }
+  ),
   getAdminWikiRevisions: (params = {}) => apiFetch(`/admin/wiki/revisions${toQuery(params)}`),
   getAdminWikiEntries: (params = {}) => apiFetch(`/admin/wiki/entries${toQuery(params)}`),
   createAdminWikiEntry: (payload = {}) => apiFetch('/admin/wiki/entries', {
@@ -367,7 +581,21 @@ export const api = {
     shopEnabled?: boolean;
     shopDailyClaimCoins?: number;
     defaultPostTags?: string[];
-    rateLimits?: Partial<Record<'post' | 'comment' | 'report' | 'feature' | 'feedback' | 'wiki' | 'upload', { limit?: number; windowMs?: number }>>;
+    rateLimits?: Partial<Record<
+      | 'post'
+      | 'comment'
+      | 'report'
+      | 'feature'
+      | 'feedback'
+      | 'wiki'
+      | 'upload'
+      | 'recruitment_publish'
+      | 'recruitment_apply'
+      | 'recruitment_message'
+      | 'recruitment_contact'
+      | 'recruitment_report',
+      { limit?: number; windowMs?: number }
+    >>;
     autoHideReportThreshold?: number;
     wecomWebhook?: { enabled?: boolean; url?: string; clearUrl?: boolean };
   }) => apiFetch('/admin/settings', {

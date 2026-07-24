@@ -137,7 +137,7 @@ const Modal: React.FC<ModalProps> = ({
             type="button"
             onClick={onClose}
             aria-label="关闭弹窗"
-            className={`absolute -top-3 -right-3 inline-flex h-11 w-11 items-center justify-center bg-white border-2 border-ink rounded-full shadow-sketch hover:bg-gray-100 hover:-translate-y-0.5 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2 ${closeButtonClassName}`}
+            className={`absolute -top-3 -right-3 z-10 inline-flex h-11 w-11 items-center justify-center bg-white border-2 border-ink rounded-full shadow-sketch hover:bg-gray-100 hover:-translate-y-0.5 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2 ${closeButtonClassName}`}
           >
             <X className="w-4 h-4" aria-hidden="true" />
           </button>

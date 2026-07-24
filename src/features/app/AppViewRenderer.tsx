@@ -29,6 +29,7 @@ const SearchView = React.lazy(() => import('@/components/SearchView'));
 const AdminGate = React.lazy(() => import('@/components/AdminGate'));
 const FavoritesView = React.lazy(() => import('@/components/FavoritesView'));
 const WikiView = React.lazy(() => import('@/components/wiki/WikiView'));
+const RecruitmentView = React.lazy(() => import('@/features/recruitment/RecruitmentView'));
 
 interface AppViewRendererProps {
   currentView: ViewType;
@@ -54,6 +55,11 @@ const AppViewRenderer: React.FC<AppViewRendererProps> = React.memo(({
       return <FavoritesView />;
     case ViewType.WIKI:
       return <WikiView />;
+    case ViewType.RECRUITMENT:
+      return <RecruitmentView />;
+    case ViewType.RECRUITMENT_CHAT:
+      // 兼容旧状态值，聊天内容统一在招募页的密聊区域展示。
+      return <RecruitmentView />;
     case ViewType.ADMIN:
       return (
         <React.Suspense

@@ -32,7 +32,9 @@ import { registerAdminNameStylesRoutes } from './routes/admin/name-styles-routes
 import { registerPublicNameStylesRoutes } from './routes/public/name-styles-routes.js';
 import { registerPublicUploadRoutes } from './routes/public/upload-routes.js';
 import { registerPublicWikiRoutes } from './routes/public/wiki-routes.js';
+import { registerPublicRecruitmentRoutes } from './routes/public/recruitment-routes.js';
 import { createPostHotScoreService } from './services/post-hot-score-service.js';
+import { shouldSkipSessionForRequest } from './session-policy.js';
 import { registerAdminAuthRoutes } from './routes/admin/auth-routes.js';
 import { registerAdminAnnouncementRoutes } from './routes/admin/announcement-routes.js';
 import { registerAdminReportsRoutes } from './routes/admin/reports-routes.js';
@@ -49,6 +51,7 @@ import { registerAdminVocabularyRoutes } from './routes/admin/vocabulary-routes.
 import { registerAdminStatsRoutes } from './routes/admin/stats-routes.js';
 import { registerAdminHiddenContentRoutes } from './routes/admin/hidden-content-routes.js';
 import { registerAdminUsersRoutes } from './routes/admin/admin-users-routes.js';
+import { registerAdminRecruitmentRoutes } from './routes/admin/recruitment-routes.js';
 import { createHiddenContentService } from './services/hidden-content-service.js';
 import { createWecomWebhookService } from './services/wecom-webhook-service.js';
 import {
@@ -287,19 +290,25 @@ const sessionStore = new SqliteStore({
 });
 const SESSION_COOKIE_NAME = 'connect.sid';
 
-app.use(
-  session({
-    secret: sessionSecret,
-    resave: false,
-    saveUninitialized: true,
-    store: sessionStore,
-    cookie: {
-      httpOnly: true,
-      sameSite: 'lax',
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    },
-  })
-);
+const sessionMiddleware = session({
+  secret: sessionSecret,
+  resave: false,
+  saveUninitialized: true,
+  store: sessionStore,
+  cookie: {
+    httpOnly: true,
+    sameSite: 'lax',
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+  },
+});
+
+app.use((req, res, next) => {
+  // 匿名轮询只依赖独立签名身份 cookie；跳过 Session 可避免每次读取都触发 SQLite touch。
+  if (shouldSkipSessionForRequest(req)) {
+    return next();
+  }
+  return sessionMiddleware(req, res, next);
+});
 
 app.use((req, res, next) => {
   identityService.ensureRequestIdentity(req, res);
@@ -568,6 +577,11 @@ const RATE_LIMIT_ERROR_MESSAGES = {
   feedback: '留言过于频繁，请稍后再试',
   wiki: 'Wiki 提交过于频繁，请稍后再试',
   upload: '图片上传过于频繁，请稍后再试',
+  recruitment_publish: '发布招募过于频繁，请稍后再试',
+  recruitment_apply: '申请招募过于频繁，请稍后再试',
+  recruitment_message: '发送密聊过于频繁，请稍后再试',
+  recruitment_contact: '交换联系方式过于频繁，请稍后再试',
+  recruitment_report: '提交招募举报过于频繁，请稍后再试',
 };
 const ONLINE_WINDOW_MS = 2 * 60 * 1000;
 const onlineSessions = new Map();
@@ -873,7 +887,7 @@ const enforceRateLimit = (req, res, action, fingerprint) => {
   return true;
 };
 
-const BAN_PERMISSIONS = ['post', 'comment', 'like', 'view', 'site'];
+const BAN_PERMISSIONS = ['post', 'comment', 'like', 'recruit', 'chat', 'view', 'site'];
 
 const parsePermissions = (value) => {
   if (!value) {
@@ -1338,6 +1352,16 @@ const hotScoreSql = `(
 )`;
 const postHotScoreService = createPostHotScoreService({ db });
 
+const recruitmentPublicRoutes = registerPublicRecruitmentRoutes(app, {
+  db,
+  sessionSecret,
+  sessionSecretConfigured,
+  privateFeaturesEnabled: sessionSecretConfigured,
+  getRequestIdentityContext,
+  checkBanFor,
+  enforceRateLimit,
+  verifyTurnstile,
+});
 
 registerPublicSystemRoutes(app, {
   db,
@@ -1353,6 +1377,9 @@ registerPublicSystemRoutes(app, {
   getRateLimitConfig,
   crypto,
   wecomWebhookService,
+  listRecruitmentNotifications: sessionSecretConfigured
+    ? (params) => recruitmentPublicRoutes.service.listNotifications(params)
+    : null,
 });
 
 registerPublicShopRoutes(app, {
@@ -1504,6 +1531,7 @@ const contentReviewAdmin = requireAdminModule('content_review');
 const postsAdmin = requireAdminModule('posts');
 const wikiAdmin = requireAdminModule('wiki');
 const feedbackAdmin = requireAdminModule('feedback');
+const recruitmentAdmin = requireAdminModule('recruitment');
 const userSafetyAdmin = requireAdminModule('user_safety');
 const publishAdmin = requireAdminModule('publish');
 const settingsAdmin = requireAdminModule('settings');
@@ -1545,6 +1573,24 @@ registerAdminReportsRoutes(app, {
   upsertBan,
   BAN_PERMISSIONS,
   resolveStoredIdentityHash,
+});
+
+registerAdminRecruitmentRoutes(app, {
+  db,
+  requireAdmin,
+  requireAdminCsrf,
+  requireAdminRead: recruitmentAdmin.read,
+  requireAdminManage: recruitmentAdmin.manage,
+  requireUserSafetyManage: userSafetyAdmin.manage,
+  getClientIp,
+  logAdminAction,
+  resolveBanOptions,
+  upsertBan,
+  resolveStoredIdentityHash,
+  sessionSecret,
+  recruitmentCrypto: recruitmentPublicRoutes.recruitmentCrypto,
+  recruitmentRepository: recruitmentPublicRoutes.repository,
+  recruitmentService: recruitmentPublicRoutes.service,
 });
 
 registerAdminPostFeaturesRoutes(app, {

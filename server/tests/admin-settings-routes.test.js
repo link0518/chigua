@@ -127,6 +127,8 @@ test('后台设置默认返回图片上传限流配置', async () => {
   assert.equal(res.statusCode, 200);
   assert.equal(res.payload.rateLimits.upload.limit, 12);
   assert.equal(res.payload.rateLimits.upload.windowMs, 60 * 1000);
+  assert.deepEqual(res.payload.rateLimits.recruitment_publish, { limit: 3, windowMs: 30 * 60 * 1000 });
+  assert.deepEqual(res.payload.rateLimits.recruitment_message, { limit: 30, windowMs: 60 * 1000 });
   db.close();
 });
 

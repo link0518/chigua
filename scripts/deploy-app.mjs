@@ -1,4 +1,27 @@
-import { getDeployConfig, run, runRemoteScript, shellQuote } from './deploy-utils.mjs';
+import { capture, getDeployConfig, run, runRemoteScript, shellQuote } from './deploy-utils.mjs';
+
+const assertDeploySourceReady = () => {
+  const worktreeStatus = capture('git', ['status', '--porcelain=v1', '--untracked-files=all']);
+  if (worktreeStatus) {
+    throw new Error('本地工作区存在未提交或未跟踪文件。请先完整提交招募前后端代码，再执行 deploy:app。');
+  }
+
+  // 先刷新 upstream 引用，避免本地使用旧的远端指针通过校验。
+  run('git', ['fetch', '--quiet', '--prune'], { label: 'deploy:app:preflight' });
+  const localHead = capture('git', ['rev-parse', 'HEAD']);
+  let upstreamHead;
+  try {
+    upstreamHead = capture('git', ['rev-parse', '@{upstream}']);
+  } catch {
+    throw new Error('当前分支没有 upstream。请先设置跟踪分支并推送当前提交。');
+  }
+  if (localHead !== upstreamHead) {
+    throw new Error('本地 HEAD 与 upstream 不一致。请先完成拉取或推送，确保前后端从同一提交部署。');
+  }
+  return localHead;
+};
+
+const expectedCommit = assertDeploySourceReady();
 
 const config = getDeployConfig();
 
@@ -7,6 +30,7 @@ set -euo pipefail
 cd ${shellQuote(config.remotePath)}
 api_port=${shellQuote(config.apiPort)}
 pm2_api_name=${shellQuote(config.pm2ApiName)}
+expected_commit=${shellQuote(expectedCommit)}
 
 if [ ! -d .git ]; then
   echo "[deploy:app] ERROR: ${config.remotePath} 不是 Git 仓库，无法自动更新后端代码" >&2
@@ -28,6 +52,11 @@ after=$(git rev-parse HEAD)
 if [ "$stash_created" = "1" ]; then
   echo "[deploy:app] 恢复服务器本地改动"
   git stash pop
+fi
+
+if [ "$after" != "$expected_commit" ]; then
+  echo "[deploy:app] ERROR: 服务器拉取后的提交 $after 与本次前端提交 $expected_commit 不一致" >&2
+  exit 3
 fi
 
 deps_changed=0

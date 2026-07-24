@@ -125,6 +125,10 @@ permissions 常见值（见服务端/前端映射）：
 - `like`：禁止点赞
 - `view`：禁止浏览
 - `site`：禁止进入站点
+- `recruit`：禁止发布或申请招募
+- `chat`：禁止发送招募密聊或交换联系方式
+
+招募举报触发的封禁默认只写入 `recruit` 与 `chat` 权限；`site` 必须由管理员明确选择，不能由招募封禁默认扩大为整站封禁。
 
 ### 1.6 identity_aliases（身份映射）
 
@@ -218,6 +222,25 @@ permissions 常见值（见服务端/前端映射）：
 
 - `post_edits`：后台编辑帖子内容的前后对比与原因
 - `admin_audit_logs`：后台动作审计（action、target、before_json/after_json、reason、ip、session_id）
+
+### 1.14 recruitment_*（队伍招募）
+
+招募业务使用独立表组，不复用普通帖子、评论或通知表：
+
+- `recruitment_posts`：招募正文、发布者 canonical 身份哈希、心法 ID、业务状态与治理状态。
+- `recruitment_threads`：发布者与申请者的一对一会话；同一招募与申请者只能建立一个会话。`status` 只表示 `active` / `closed`，后台锁定由独立的 `locked_at`、`locked_by`、`lock_reason` 表示。
+- `recruitment_messages`：密聊消息密文、加密参数、客户端幂等 ID 与软删除状态。
+- `recruitment_message_moderation_events`：消息删除与恢复的递增事件流；会话客户端以 `seq` 为治理游标同步已加载消息的最新状态。
+- `recruitment_contact_exchanges` / `recruitment_exchange_consents`：联系方式密文、双方同意状态与软删除状态。
+- `recruitment_reports` / `recruitment_report_evidence`：针对招募、会话、消息或联系方式的举报，以及举报时明确选入的消息证据。联系方式举报额外保存 `contact_payload_ciphertext`、`contact_payload_iv`、`contact_payload_auth_tag`、`contact_crypto_version` 和 `contact_was_unlocked`，用于保留提交瞬间的加密快照。
+- `recruitment_notifications`：申请、消息和联系方式交换产生的独立通知流。
+- `recruitment_admin_audit_logs`：招募证据查看和治理动作的专用审计记录。
+
+心法目录不落数据库，以 `server/recruitment-catalog.js` 为发布和申请时的权威校验来源。当前目录提供 23 个 UI 选项，对应 24 条源记录；藏剑使用统一目录 ID `cangjian`，并在 `sourceIds` 中保留问水诀 `10144` 与山居剑意 `10145`。数据库只写入统一 ID，`10144` / `10145` 不作为独立 UI 选项或可提交的目录 ID。
+
+密聊正文和联系方式只保存密文。联系方式只有在双方已完成解锁后才能被举报；提交举报时复制当时的密文快照，后续联系方式修改或删除不覆盖举报证据。后台不提供全量密聊列表或按会话浏览正文的接口，只能基于具体举报读取该举报已绑定的有限证据；联系方式快照仅在对应联系方式举报中按审计理由解密。
+
+帖子、会话、消息和联系方式的后台治理动作都必须关联具体 `report_id`，并在事务内校验举报的目标类型和目标 ID（消息还可校验其是否为该举报的证据）；不允许仅凭资源 ID 直接治理。
 
 ## 2. 删除语义（重要）
 

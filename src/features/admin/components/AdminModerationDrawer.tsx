@@ -71,6 +71,8 @@ const BAN_PERMISSION_LABELS: Record<string, string> = {
   post: '发帖',
   comment: '评论',
   like: '点赞',
+  recruit: '招募',
+  chat: '密聊',
   view: '浏览',
   site: '站点',
 };

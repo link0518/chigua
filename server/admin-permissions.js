@@ -26,6 +26,11 @@ export const ADMIN_PERMISSION_MODULES = [
     description: '留言查看、标记、删除与封禁',
   },
   {
+    key: 'recruitment',
+    label: '招募治理',
+    description: '招募举报、有限密聊证据与内容处置',
+  },
+  {
     key: 'user_safety',
     label: '用户处置',
     description: '封禁、解封与封禁权限调整',

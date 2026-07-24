@@ -18,6 +18,7 @@ export const ADMIN_PERMISSION_MODULE_LABELS: Record<AdminPermissionModuleKey, st
   posts: '帖子管理',
   wiki: 'Wiki 管理',
   feedback: '留言管理',
+  recruitment: '招募治理',
   user_safety: '用户处置',
   publish: '发布中心',
   settings: '系统设置',

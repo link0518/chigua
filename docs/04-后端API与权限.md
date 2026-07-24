@@ -44,6 +44,7 @@
 - `posts`：帖子管理
 - `wiki`：Wiki 管理
 - `feedback`：留言管理
+- `recruitment`：招募举报与资源治理
 - `user_safety`：用户处置
 - `publish`：发布中心
 - `settings`：系统设置
@@ -69,7 +70,7 @@
 在线/通知/彩蛋：
 
 - `POST /api/online/heartbeat`：在线心跳
-- `GET /api/notifications`：拉取通知列表
+- `GET /api/notifications`：拉取通知列表；传 `includeRecruitment=1` 时在同一响应的 `recruitment` 分区返回当前 canonical 身份的招募通知，避免前台另起轮询
 - `POST /api/notifications/read`：标记通知已读
 - 通知类型包括互动通知、谣言审核结果、管理员留言回复和帖子删除申请审核结果
 - `GET /api/easter-eggs/streak7`：查询“连续登录 7 天”状态
@@ -302,3 +303,44 @@
 - 附件 URL 默认接受 `https://img.zsix.de`、`https://ibed.933211.xyz`，并自动接受当前 `IMGBED_BASE_URL` 的来源；历史图床或独立 CDN 等额外来源通过 `WIKI_ATTACHMENT_ALLOWED_ORIGINS` 显式配置。所有新写入的外部附件必须使用 HTTPS，仅本地回环地址允许 HTTP；同时拒绝 `data:`、`blob:`、`javascript:` 等协议。
 - 图片上传代理对帖子、评论和 Wiki 三种用途统一执行相同的图床地址检查，并在发送 Bearer Token 前拒绝外部 HTTP、带账号密码或非 HTTP(S) 地址；上游重定向不自动跟随，避免 HTTPS 降级。
 - 后台审核、拒绝、删除、恢复、管理员创建和管理员编辑都写入 `admin_audit_logs`；审计查询会按 `action` 派生操作分类和风险等级，便于后台展示和筛选。
+
+## 7. 队伍招募 API
+
+### 7.1 心法目录
+
+- `GET /api/recruitment/catalog`：读取权威 DPS 心法目录。
+- `GET /api/recruitment/xinfa`：与 `/catalog` 相同的领域语义别名。
+- 目录返回 23 个 UI 选项和 24 条源记录计数。藏剑只返回一个可选 ID `cangjian`，其 `sourceIds` 保留问水诀 `10144` 与山居剑意 `10145`。
+- 发布、申请和按心法筛选均由服务端目录严格校验；`10144` / `10145` 不是可直接提交的目录 ID。
+
+### 7.2 公开与本人接口
+
+- `GET /api/recruitment/posts`、`GET /api/recruitment/posts/:postId`：读取公开招募；`mine=1` 时只读取当前 canonical 身份发布的招募，并可用 `status=open|closed` 筛选进行中或已结束。列表会为已经申请过的当前身份回显其 `viewerThreadId`，未参与该会话的身份只能得到 `null`。
+- `POST /api/recruitment/posts`、`POST /api/recruitment/posts/:postId/close`：发布或结束本人招募。招募自 `created_at` 起满 24 小时后，服务端在访问招募或密聊资源时先原子关闭招募及其全部进行中密聊；到期后不能再申请、发送消息或交换联系方式。
+- `POST /api/recruitment/posts/:postId/applications`：以所选心法申请招募并建立一对一会话；同一身份重复申请时返回原会话，不创建第二个会话。
+- 单纯申请只建立密聊，不生成通知；申请者实际发送第一条及后续消息时，才通过 `recruitment_message` 提醒另一方。
+- `GET /api/recruitment/threads`、`GET /api/recruitment/threads/:threadId`：读取当前身份参与的会话。会话对象通过 `writable` 和 `writeBlockedReason` 暴露综合可写状态；已关闭、被管理员锁定，或关联招募已结束/下架时均不可继续写入。
+- `POST /api/recruitment/threads/:threadId/close`：发布者或申请者均可关闭密聊，重复关闭保持幂等。关闭后历史内容仍可读取，但双方都不能继续发送消息或提交、同意联系方式交换。
+- `GET|POST /api/recruitment/threads/:threadId/messages`、`POST /api/recruitment/threads/:threadId/read`：读取、发送和标记密聊消息。增量读取可携带 `afterModerationSeq`，响应以 `moderationItems`、`moderationCursor`、`moderationHasMore` 同步后台删除/恢复事件；传 `includeContactExchanges=1` 时同一响应附带联系方式交换，前台无需单独轮询；已读游标仅在前进时落库。
+- `GET|POST /api/recruitment/threads/:threadId/contact-exchanges`、`POST /api/recruitment/contact-exchanges/:exchangeId/consent`：提交联系方式并由双方确认解锁。
+- `GET /api/recruitment/notifications`、`POST /api/recruitment/notifications/read`：独立读取和标记招募通知；读取接口为旧客户端与独立分页保留，前台常规轮询使用 `GET /api/notifications?includeRecruitment=1`。`unreadCount` 为当前身份的完整未读总数，不受当前分页大小影响。
+- `POST /api/recruitment/reports`：举报招募、会话、消息或联系方式，并可绑定最多 20 条当前会话内的消息证据。联系方式只有在双方已解锁后才能举报；提交时服务端复制联系方式当前密文快照，后续修改不影响举报证据。
+
+除公开目录和公开招募列表外，私有读取与写入都要求 canonical 身份，并仅在稳定 `SESSION_SECRET` 已配置时开放。所有私密响应、聚合招募通知，以及会按当前身份回显 `viewerThreadId` 的招募列表和详情响应，均返回 `Cache-Control: private, no-store, max-age=0`，并以 `Vary: Cookie, X-Client-Fingerprint` 隔离身份。发布与申请检查 `recruit` 封禁，发送消息以及提交或同意联系方式交换检查 `chat` 封禁。发布与举报执行 Turnstile；发布、申请、消息、联系方式和举报分别使用独立限流动作。消息正文与联系方式以服务端密钥加密保存，接口不会向会话外身份返回内容。
+
+匿名通知、密聊消息和联系方式等高频 `GET` 只依赖独立签名身份 Cookie，不创建或续期 Express Session，避免空轮询触发 Session Store 的 SQLite `UPDATE`；写接口、在线心跳和后台接口仍完整使用 Session。稳定的 `identity_aliases.last_seen_at` 最多每 5 分钟刷新一次。开放招募过期查询由 `idx_recruitment_posts_open_expiry` 部分索引覆盖，避免历史关闭记录随数据量增长反复参与扫描。
+
+### 7.3 后台治理接口
+
+- `GET /api/admin/recruitment/reports`：按状态、目标类型和分页读取举报（`recruitment:read`）。
+- `POST /api/admin/recruitment/reports/:id/evidence`：填写审计理由后读取该举报已绑定的有限证据（`recruitment:manage` + CSRF）。
+- `POST /api/admin/recruitment/reports/:id/action`：执行 `ignore` / `resolve` / `ban`；封禁还要求 `user_safety:manage`（`recruitment:manage` + CSRF）。
+- `POST /api/admin/recruitment/posts/:id/action`：执行 `remove` / `restore`；body 必须携带 `reportId`、`action` 和 `reason`。
+- `POST /api/admin/recruitment/threads/:id/action`：执行 `lock` / `unlock`，不改写会话业务状态；body 必须携带 `reportId`、`action` 和 `reason`。
+- `POST /api/admin/recruitment/messages/:id/action`：执行 `remove` / `restore`；body 必须携带 `reportId`、`action` 和 `reason`。
+- `POST /api/admin/recruitment/contact-exchanges/:id/action`：执行 `remove` / `restore`；body 必须携带 `reportId`、`action` 和 `reason`。
+
+上述四类资源动作会校验 `reportId` 确实关联路径中的目标和正确目标类型；消息还允许治理该举报明确绑定的证据消息。缺少 `reportId`、关联不匹配或目标类型不符时拒绝操作。后台不提供全量密聊列表、按会话浏览消息或全文搜索。证据接口只按具体举报读取最多 20 条已绑定消息，联系方式只在已解锁的 `contact_exchange` 举报密文快照中解密；证据访问与所有治理动作均写入专用审计日志。
+
+举报动作中的封禁默认范围为 `recruit` + `chat`，仅限制招募发布/申请、密聊发送和联系方式交换；`site` 必须由管理员在封禁选项中显式选择，不能隐式附加。
+身份解析到 canonical 时写入 `banned_identities`，并把关联的 legacy 指纹写入 `banned_fingerprints`；只有 legacy 指纹而没有 canonical 时只写 `banned_fingerprints`，不得把指纹值误存为 canonical 身份。

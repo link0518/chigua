@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Flag, Gavel, BarChart2, Bell, Search, Trash2, Ban, Eye, EyeOff, LayoutDashboard, LogOut, CheckCircle, XCircle, FileText, Pencil, RotateCcw, Shield, ClipboardList, MessageSquare, Menu, X, Settings, BookOpen, AlertTriangle, UserCog, Store, Star } from 'lucide-react';
+import { Flag, Gavel, BarChart2, Bell, Search, Trash2, Ban, Eye, EyeOff, LayoutDashboard, LogOut, CheckCircle, XCircle, FileText, Pencil, RotateCcw, Shield, ClipboardList, MessageSquare, Menu, X, Settings, BookOpen, AlertTriangle, UserCog, Store, Star, Users } from 'lucide-react';
 import { SketchButton, Badge } from './SketchUI';
 import { AdminAuditLog, AdminComment, AdminHiddenItem, AdminPermissionDefinitions, AdminPermissions, AdminUserAccount, AdminPost, FeedbackMessage, PostDeleteRequest, Report, UpdateAnnouncementItem } from '../types';
 import { useAdmin } from '../store/AdminContext';
@@ -28,6 +28,7 @@ import AdminReportsView from '@/features/admin/views/AdminReportsView';
 import AdminPublishCenterView from '@/features/admin/views/AdminPublishCenterView';
 import AdminSystemSettingsView from '@/features/admin/views/AdminSystemSettingsView';
 import AdminUsersView from '@/features/admin/views/AdminUsersView';
+import AdminRecruitmentView from '@/features/admin/views/AdminRecruitmentView';
 import AdminShopView from '@/features/admin/views/AdminShopView';
 import { hasPermission } from '@/features/admin/permissions';
 import type { AdminPostDeleteRequestAction, AdminPostDeleteRequestStatus, ReportAction } from '@/features/admin/types';
@@ -56,7 +57,7 @@ import AdminModerationDrawer, {
 } from '@/features/admin/components/AdminModerationDrawer';
 import AdminActionDrawer from '@/features/admin/components/AdminActionDrawer';
 
-type AdminView = 'overview' | 'reports' | 'processed' | 'posts' | 'hidden' | 'deleteRequests' | 'bans' | 'audit' | 'feedback' | 'announcement' | 'settings' | 'shop' | 'wiki' | 'rumors' | 'features' | 'adminUsers';
+type AdminView = 'overview' | 'reports' | 'processed' | 'posts' | 'hidden' | 'deleteRequests' | 'bans' | 'audit' | 'feedback' | 'recruitment' | 'announcement' | 'settings' | 'shop' | 'wiki' | 'rumors' | 'features' | 'adminUsers';
 type PostStatusFilter = 'all' | 'active' | 'hidden' | 'deleted';
 type PostSort = 'time' | 'hot' | 'reports';
 type HiddenTypeFilter = 'all' | 'post' | 'comment';
@@ -86,6 +87,8 @@ const BAN_PERMISSION_LABELS: Record<string, string> = {
   post: '发帖',
   comment: '回帖',
   like: '点赞',
+  recruit: '招募',
+  chat: '密聊',
   view: '查看',
   site: '禁止进入网站',
 };
@@ -458,6 +461,8 @@ const AdminDashboard: React.FC = () => {
   const canManageWiki = hasPermission(adminSession, 'wiki', 'manage');
   const canReadFeedback = hasPermission(adminSession, 'feedback', 'read');
   const canManageFeedback = hasPermission(adminSession, 'feedback', 'manage');
+  const canReadRecruitment = hasPermission(adminSession, 'recruitment', 'read');
+  const canManageRecruitment = hasPermission(adminSession, 'recruitment', 'manage');
   const canReadUserSafety = hasPermission(adminSession, 'user_safety', 'read');
   const canManageUserSafety = hasPermission(adminSession, 'user_safety', 'manage');
   const canReadPublish = hasPermission(adminSession, 'publish', 'read');
@@ -1192,7 +1197,7 @@ const AdminDashboard: React.FC = () => {
       reason: '',
       targetType,
       deleteComment: false,
-        });
+    });
   };
 
   const confirmAction = async () => {
@@ -2458,45 +2463,46 @@ const AdminDashboard: React.FC = () => {
   };
 
   const adminNavGroups: AdminNavGroup[] = ([
-      {
-        title: '今日处理',
-        items: [
-          { view: 'overview', icon: <LayoutDashboard size={18} />, label: '待办工作台', visible: true },
-          { view: 'reports', icon: <Flag size={18} />, label: '待处理举报', badge: pendingReportCount, visible: canReadContentReview },
-          { view: 'rumors', icon: <AlertTriangle size={18} />, label: '谣言审核', badge: rumorPendingCount, visible: canReadContentReview },
-          { view: 'features', icon: <Star size={18} />, label: '精华管理', badge: featurePendingCount, visible: canReadContentReview },
-          { view: 'deleteRequests', icon: <Trash2 size={18} />, label: '删除申请', badge: deleteRequestPendingCount, visible: canReadContentReview },
-          { view: 'wiki', icon: <BookOpen size={18} />, label: '瓜条审核', badge: wikiPendingCount, visible: canReadWiki },
-          { view: 'feedback', icon: <MessageSquare size={18} />, label: '留言管理', badge: feedbackUnreadCount, visible: canReadFeedback },
-        ],
-      },
-      {
-        title: '内容管理',
-        items: [
-          { view: 'posts', icon: <FileText size={18} />, label: '帖子管理', visible: canReadPosts },
-          { view: 'hidden', icon: <EyeOff size={18} />, label: '隐藏内容', badge: hiddenPendingCount, visible: canReadContentReview },
-          { view: 'announcement', icon: <Bell size={18} />, label: '发布中心', visible: canReadPublish },
-        ],
-      },
-      {
-        title: '用户与安全',
-        items: [
-          { view: 'bans', icon: <Shield size={18} />, label: '封禁管理', visible: canReadUserSafety },
-          { view: 'audit', icon: <ClipboardList size={18} />, label: '操作审计', visible: isSuperAdmin },
-          { view: 'processed', icon: <Gavel size={18} />, label: '已处理举报', visible: canReadContentReview },
-        ],
-      },
-      {
-        title: '系统',
-        items: [
-          { view: 'settings', icon: <Settings size={18} />, label: '系统设置', visible: canReadSettings },
-          { view: 'shop', icon: <Store size={18} />, label: '商城管理', visible: canReadSettings },
-          { view: 'adminUsers', icon: <UserCog size={18} />, label: '管理员管理', visible: isSuperAdmin },
-        ],
-      },
-    ] satisfies AdminNavGroup[])
-      .map((group) => ({ ...group, items: group.items.filter((item) => item.visible !== false) }))
-      .filter((group) => group.items.length > 0);
+    {
+      title: '今日处理',
+      items: [
+        { view: 'overview', icon: <LayoutDashboard size={18} />, label: '待办工作台', visible: true },
+        { view: 'reports', icon: <Flag size={18} />, label: '待处理举报', badge: pendingReportCount, visible: canReadContentReview },
+        { view: 'rumors', icon: <AlertTriangle size={18} />, label: '谣言审核', badge: rumorPendingCount, visible: canReadContentReview },
+        { view: 'features', icon: <Star size={18} />, label: '精华管理', badge: featurePendingCount, visible: canReadContentReview },
+        { view: 'deleteRequests', icon: <Trash2 size={18} />, label: '删除申请', badge: deleteRequestPendingCount, visible: canReadContentReview },
+        { view: 'wiki', icon: <BookOpen size={18} />, label: '瓜条审核', badge: wikiPendingCount, visible: canReadWiki },
+        { view: 'feedback', icon: <MessageSquare size={18} />, label: '留言管理', badge: feedbackUnreadCount, visible: canReadFeedback },
+        { view: 'recruitment', icon: <Users size={18} />, label: '招募治理', visible: canReadRecruitment },
+      ],
+    },
+    {
+      title: '内容管理',
+      items: [
+        { view: 'posts', icon: <FileText size={18} />, label: '帖子管理', visible: canReadPosts },
+        { view: 'hidden', icon: <EyeOff size={18} />, label: '隐藏内容', badge: hiddenPendingCount, visible: canReadContentReview },
+        { view: 'announcement', icon: <Bell size={18} />, label: '发布中心', visible: canReadPublish },
+      ],
+    },
+    {
+      title: '用户与安全',
+      items: [
+        { view: 'bans', icon: <Shield size={18} />, label: '封禁管理', visible: canReadUserSafety },
+        { view: 'audit', icon: <ClipboardList size={18} />, label: '操作审计', visible: isSuperAdmin },
+        { view: 'processed', icon: <Gavel size={18} />, label: '已处理举报', visible: canReadContentReview },
+      ],
+    },
+    {
+      title: '系统',
+      items: [
+        { view: 'settings', icon: <Settings size={18} />, label: '系统设置', visible: canReadSettings },
+        { view: 'shop', icon: <Store size={18} />, label: '商城管理', visible: canReadSettings },
+        { view: 'adminUsers', icon: <UserCog size={18} />, label: '管理员管理', visible: isSuperAdmin },
+      ],
+    },
+  ] satisfies AdminNavGroup[])
+    .map((group) => ({ ...group, items: group.items.filter((item) => item.visible !== false) }))
+    .filter((group) => group.items.length > 0);
 
   const AdminNavGroups: React.FC<{ onSelect?: () => void }> = ({ onSelect }) => (
     <nav className="flex flex-col gap-5 font-sans text-sm">
@@ -2641,6 +2647,7 @@ const AdminDashboard: React.FC = () => {
               {currentView === 'rumors' && <><AlertTriangle /> 谣言审核</>}
               {currentView === 'features' && <><Star /> 精华管理</>}
               {currentView === 'feedback' && <><MessageSquare /> 留言管理</>}
+              {currentView === 'recruitment' && <><Users /> 招募治理</>}
               {currentView === 'reports' && <><Flag /> 待处理举报</>}
               {currentView === 'processed' && <><Gavel /> 已处理</>}
               {currentView === 'bans' && <><Shield /> 封禁管理</>}
@@ -3307,6 +3314,13 @@ const AdminDashboard: React.FC = () => {
                 onFeedbackRead={handleFeedbackRead}
                 onOpenFeedbackReply={openFeedbackReplyModal}
                 onOpenFeedbackAction={openFeedbackActionModal}
+              />
+            )}
+
+            {currentView === 'recruitment' && (
+              <AdminRecruitmentView
+                canManage={canManageRecruitment}
+                canManageUserSafety={canManageUserSafety}
               />
             )}
 

@@ -15,6 +15,7 @@ export const registerPublicSystemRoutes = (app, deps) => {
     getRateLimitConfig,
     crypto,
     wecomWebhookService,
+    listRecruitmentNotifications,
   } = deps;
 
   const EASTER_EGG_STREAK7_KEY = 'streak7_confetti_v1';
@@ -120,7 +121,42 @@ export const registerPublicSystemRoutes = (app, deps) => {
       readAt: row.read_at || null,
     }));
 
-    return res.json({ items, unreadCount, total });
+    const includeRecruitment = ['1', 'true'].includes(
+      String(req.query.includeRecruitment || '').trim().toLowerCase()
+    );
+    let recruitment;
+    if (includeRecruitment) {
+      res.set('Cache-Control', 'private, no-store, max-age=0');
+      if (typeof res.vary === 'function') {
+        res.vary('Cookie');
+        res.vary('X-Client-Fingerprint');
+      }
+      const canonicalHash = String(identityContext?.canonicalHash || '').trim();
+      if (canonicalHash && typeof listRecruitmentNotifications === 'function') {
+        try {
+          recruitment = listRecruitmentNotifications({
+            identityHash: canonicalHash,
+            page: 1,
+            limit,
+          });
+        } catch (error) {
+          // 招募通知降级不能影响通用通知；null 用于区分旧后端未提供该字段。
+          console.error('聚合招募通知失败', {
+            error: error?.message || String(error),
+          });
+          recruitment = null;
+        }
+      } else {
+        recruitment = null;
+      }
+    }
+
+    return res.json({
+      items,
+      unreadCount,
+      total,
+      ...(includeRecruitment ? { recruitment } : {}),
+    });
   });
 
   app.post('/api/notifications/read', (req, res) => {

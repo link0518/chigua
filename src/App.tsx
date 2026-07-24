@@ -8,7 +8,6 @@ import {
   AlertTriangle,
   Bell,
   BookOpen,
-  Bookmark,
   CheckCircle,
   Clock3,
   Flame,
@@ -22,6 +21,7 @@ import {
   ThumbsUp,
   UserCircle,
   Trash2,
+  UsersRound,
   X,
   XCircle,
 } from 'lucide-react';
@@ -30,7 +30,7 @@ import { buildPostPath } from './components/clipboard';
 import AppViewRenderer, { prefetchFeedView } from '@/features/app/AppViewRenderer';
 import LazyFeatureErrorBoundary from '@/features/app/LazyFeatureErrorBoundary';
 import ViewLoadErrorBoundary from '@/features/app/ViewLoadErrorBoundary';
-import { getPathForView, resolveViewFromPath } from '@/features/app/routing';
+import { buildRecruitmentChatPath, getPathForView, resolveViewFromPath } from '@/features/app/routing';
 import { useAccessStatus } from '@/features/app/hooks/useAccessStatus';
 import { useDeferredVisualEffects } from '@/features/app/hooks/useDeferredVisualEffects';
 import { useStreakCelebration } from '@/features/app/hooks/useStreakCelebration';
@@ -87,6 +87,8 @@ normalizeNotificationReloadPath();
 const App: React.FC = () => {
   const { loadSettings, prefetchFeedPosts, settings } = useAppShell();
   const [currentView, setCurrentView] = useState<ViewType>(() => resolveViewFromPath(window.location.pathname));
+  // 只用 pathname 区分独立视图，招募页的 tab 查询参数由视图自身维护，避免切 tab 丢失列表状态。
+  const [currentRouteKey, setCurrentRouteKey] = useState(() => window.location.pathname);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [headerCompact, setHeaderCompact] = useState(() => window.scrollY > 36);
   const [announcementOpen, setAnnouncementOpen] = useState(false);
@@ -99,6 +101,17 @@ const App: React.FC = () => {
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [notificationsUnread, setNotificationsUnread] = useState(0);
+  const notificationSourcesRef = useRef<{
+    generalItems: NotificationItem[];
+    recruitmentItems: NotificationItem[];
+    generalUnread: number;
+    recruitmentUnread: number;
+  }>({
+    generalItems: [],
+    recruitmentItems: [],
+    generalUnread: 0,
+    recruitmentUnread: 0,
+  });
   const notificationRef = useRef<HTMLDivElement | null>(null);
   const [backgroundTasksReady, setBackgroundTasksReady] = useState(false);
   const isWikiView = currentView === ViewType.WIKI;
@@ -186,6 +199,7 @@ const App: React.FC = () => {
   useEffect(() => {
     const handlePopState = () => {
       setCurrentView(resolveViewFromPath(window.location.pathname));
+      setCurrentRouteKey(window.location.pathname);
       setMobileMenuOpen(false);
     };
 
@@ -415,6 +429,12 @@ const App: React.FC = () => {
         return '你申请的帖子已加精';
       case 'post_feature_request_rejected':
         return '你的加精申请未通过';
+      case 'recruitment_message':
+        return '你的密聊收到新消息';
+      case 'recruitment_contact_proposed':
+        return '对方提交了联系方式交换请求';
+      case 'recruitment_contact_unlocked':
+        return '联系方式交换已解锁';
       default:
         return '你有新提醒';
     }
@@ -444,6 +464,10 @@ const App: React.FC = () => {
         return <Star className={className} />;
       case 'post_feature_request_rejected':
         return <XCircle className={className} />;
+      case 'recruitment_message':
+      case 'recruitment_contact_proposed':
+      case 'recruitment_contact_unlocked':
+        return <MessageCircle className={className} />;
       default:
         return <Bell className={className} />;
     }
@@ -452,17 +476,95 @@ const App: React.FC = () => {
   const fetchNotifications = useCallback(async () => {
     setNotificationsLoading(true);
     try {
-      const data = await api.getNotifications({ status: 'all', limit: 20 });
-      setNotifications(data.items || []);
-      setNotificationsUnread(Number(data.unreadCount || 0));
+      const generalData = await api.getNotifications({
+        status: 'all',
+        limit: 20,
+        includeRecruitment: 1,
+      });
+      const nextSources = { ...notificationSourcesRef.current };
+      nextSources.generalItems = generalData?.items || [];
+      nextSources.generalUnread = Number(generalData?.unreadCount || 0);
+
+      let recruitmentData = generalData?.recruitment;
+      if (recruitmentData === undefined) {
+        // 兼容滚动发布期间尚未支持聚合响应的旧后端。
+        recruitmentData = await api.getRecruitmentNotifications({ page: 1, limit: 20 })
+          .catch(() => null);
+      }
+      if (recruitmentData) {
+        nextSources.recruitmentItems = (recruitmentData.items || [])
+          .filter((item) => item.type !== 'recruitment_application')
+          .map((item) => ({
+            ...item,
+            commentId: null,
+            preview: null,
+          }));
+        nextSources.recruitmentUnread = Number(recruitmentData.unreadCount || 0);
+      }
+      notificationSourcesRef.current = nextSources;
+      const merged = [...nextSources.generalItems, ...nextSources.recruitmentItems]
+        .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0))
+        .slice(0, 30);
+      setNotifications(merged);
+      setNotificationsUnread(nextSources.generalUnread + nextSources.recruitmentUnread);
+      // 通知轮询成功后同步触发招募密聊角标刷新（RecruitmentView 监听）。
+      window.dispatchEvent(new CustomEvent('recruitment:notifications-refreshed', {
+        detail: { recruitmentUnread: nextSources.recruitmentUnread },
+      }));
+      return merged;
     } catch {
-      // 忽略加载失败，保持现有提示
+      try {
+        // 聚合接口失败时仍保留原有招募通知可用性。
+        const recruitmentData = await api.getRecruitmentNotifications({ page: 1, limit: 20 });
+        const nextSources = {
+          ...notificationSourcesRef.current,
+          recruitmentItems: (recruitmentData.items || [])
+            .filter((item) => item.type !== 'recruitment_application')
+            .map((item) => ({
+              ...item,
+              commentId: null,
+              preview: null,
+            })),
+          recruitmentUnread: Number(recruitmentData.unreadCount || 0),
+        };
+        notificationSourcesRef.current = nextSources;
+        const merged = [...nextSources.generalItems, ...nextSources.recruitmentItems]
+          .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0))
+          .slice(0, 30);
+        setNotifications(merged);
+        setNotificationsUnread(nextSources.generalUnread + nextSources.recruitmentUnread);
+        window.dispatchEvent(new CustomEvent('recruitment:notifications-refreshed', {
+          detail: { recruitmentUnread: nextSources.recruitmentUnread },
+        }));
+        return merged;
+      } catch {
+        return null;
+      }
     } finally {
       setNotificationsLoading(false);
     }
   }, []);
 
   const openNotificationTarget = useCallback((item: NotificationItem) => {
+    if (item.threadId && item.type.startsWith('recruitment_')) {
+      setCurrentView(ViewType.RECRUITMENT);
+      setMobileMenuOpen(false);
+      setNotificationsOpen(false);
+      const targetPath = buildRecruitmentChatPath(item.threadId);
+      if (window.location.pathname + window.location.search !== targetPath) {
+        window.history.pushState({}, '', targetPath);
+      }
+      window.dispatchEvent(new PopStateEvent('popstate'));
+      return;
+    }
+    if (item.type.startsWith('recruitment_') && item.postId) {
+      setCurrentView(ViewType.RECRUITMENT);
+      setMobileMenuOpen(false);
+      setNotificationsOpen(false);
+      window.history.pushState({}, '', `/recruitment?post=${encodeURIComponent(item.postId)}`);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+      return;
+    }
     if (item.postId) {
       setCurrentView(ViewType.HOME);
       setMobileMenuOpen(false);
@@ -536,15 +638,18 @@ const App: React.FC = () => {
       return;
     }
     const run = async () => {
+      const visibleItems = await fetchNotifications();
+      const visibleRecruitmentIds = (visibleItems || [])
+        .filter((item) => item.type.startsWith('recruitment_'))
+        .map((item) => item.id);
+      await Promise.allSettled([
+        api.readNotifications(),
+        visibleRecruitmentIds.length
+          ? api.readRecruitmentNotifications({ notificationIds: visibleRecruitmentIds })
+          : Promise.resolve(null),
+      ]);
+      // 重新读取服务端未读数；未展示的招募通知仍保持未读。
       await fetchNotifications();
-      try {
-        const data = await api.readNotifications();
-        const readAt = typeof data?.readAt === 'number' ? data.readAt : Date.now();
-        setNotificationsUnread(0);
-        setNotifications((prev) => prev.map((item) => (item.readAt ? item : { ...item, readAt })));
-      } catch {
-        // 忽略标记失败
-      }
     };
     run();
   }, [notificationsOpen, fetchNotifications]);
@@ -856,9 +961,9 @@ const App: React.FC = () => {
                 }}
               />
               <MobileNavItem
-                label="收藏"
+                label="招募"
                 onClick={() => {
-                  navigate(ViewType.FAVORITES);
+                  navigate(ViewType.RECRUITMENT);
                   setMobileMenuOpen(false);
                 }}
               />
@@ -915,10 +1020,10 @@ const App: React.FC = () => {
               onClick={() => navigate(ViewType.SEARCH)}
             />
             <SideNavItem
-              label="收藏"
-              icon={<Bookmark className="size-5" />}
-              active={currentView === ViewType.FAVORITES}
-              onClick={() => navigate(ViewType.FAVORITES)}
+              label="招募"
+              icon={<UsersRound className="size-5" />}
+              active={currentView === ViewType.RECRUITMENT || currentView === ViewType.RECRUITMENT_CHAT}
+              onClick={() => navigate(ViewType.RECRUITMENT)}
             />
             <div className={`doodle-side-nav-divider my-1.5 ${isCnyTheme ? 'text-cny-dark-red/45' : 'text-ink/35'}`} aria-hidden="true">
               - - - - - -
@@ -964,7 +1069,7 @@ const App: React.FC = () => {
           )}
         >
           <ViewLoadErrorBoundary
-            key={currentView}
+            key={`${currentView}:${currentRouteKey}`}
             onNavigateHome={navigateHome}
           >
             <AppViewRenderer

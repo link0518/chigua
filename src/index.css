@@ -829,15 +829,11 @@ body.theme-wiki {
   }
 }
 
-/* 左侧导航像一张随手贴上的速写纸，不参与主内容布局。 */
-:root {
-  --doodle-side-nav-top: 300px;
-}
-
+/* 左侧导航像一张随手贴上的速写纸，不参与主内容布局；垂直居中。 */
 .doodle-side-nav {
-  top: var(--doodle-side-nav-top);
+  top: 50%;
   border-radius: 18px 10px 20px 12px / 12px 20px 10px 18px;
-  transform: rotate(-0.45deg);
+  transform: translateY(-50%) rotate(-0.45deg);
   box-shadow: 4px 5px 0 rgba(0, 0, 0, 0.16);
 }
 
@@ -881,6 +877,38 @@ body.theme-wiki {
   letter-spacing: 0.08em;
   transform: rotate(1.8deg);
   box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.13);
+}
+
+/* 招募标题使用同系手绘语言，但以蓝色喊话牌和强调线形成独立识别。 */
+.recruitment-callout-label {
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px 5px;
+  border: 2px solid #2c2c2c;
+  border-radius: 10px 5px 9px 6px / 6px 9px 5px 10px;
+  background: rgba(129, 212, 250, 0.55);
+  color: #2c2c2c;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.1em;
+  transform: rotate(-1.2deg);
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.11);
+}
+
+.recruitment-callout-label::after {
+  content: '';
+  position: absolute;
+  right: 8px;
+  bottom: -5px;
+  left: 10px;
+  z-index: -1;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(255, 245, 157, 0.9);
+  transform: rotate(2deg);
 }
 
 .doodle-side-nav-item {

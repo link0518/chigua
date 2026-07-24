@@ -25,6 +25,11 @@ const DEFAULT_RATE_LIMITS = Object.freeze({
   feedback: { limit: 1, windowMs: 60 * 60 * 1000 },
   wiki: { limit: 3, windowMs: 60 * 60 * 1000 },
   upload: { limit: 12, windowMs: 60 * 1000 },
+  recruitment_publish: { limit: 3, windowMs: 30 * 60 * 1000 },
+  recruitment_apply: { limit: 10, windowMs: 10 * 60 * 1000 },
+  recruitment_message: { limit: 30, windowMs: 60 * 1000 },
+  recruitment_contact: { limit: 5, windowMs: 60 * 60 * 1000 },
+  recruitment_report: { limit: 3, windowMs: 60 * 60 * 1000 },
 });
 const RATE_LIMIT_ACTIONS = Object.freeze(Object.keys(DEFAULT_RATE_LIMITS));
 const CNY_TIMEZONE = 'Asia/Shanghai';

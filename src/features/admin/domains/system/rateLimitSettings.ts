@@ -1,4 +1,16 @@
-export type RateLimitAction = 'post' | 'comment' | 'report' | 'feature' | 'feedback' | 'wiki' | 'upload';
+export type RateLimitAction =
+  | 'post'
+  | 'comment'
+  | 'report'
+  | 'feature'
+  | 'feedback'
+  | 'wiki'
+  | 'upload'
+  | 'recruitment_publish'
+  | 'recruitment_apply'
+  | 'recruitment_message'
+  | 'recruitment_contact'
+  | 'recruitment_report';
 export type RateLimitItem = { limit: number; windowMs: number };
 export type RateLimitSettings = Record<RateLimitAction, RateLimitItem>;
 
@@ -15,6 +27,11 @@ export const RATE_LIMIT_DEFAULTS: RateLimitSettings = {
   feedback: { limit: 1, windowMs: 60 * 60 * 1000 },
   wiki: { limit: 3, windowMs: 60 * 60 * 1000 },
   upload: { limit: 12, windowMs: 60 * 1000 },
+  recruitment_publish: { limit: 3, windowMs: 30 * 60 * 1000 },
+  recruitment_apply: { limit: 10, windowMs: 10 * 60 * 1000 },
+  recruitment_message: { limit: 30, windowMs: 60 * 1000 },
+  recruitment_contact: { limit: 5, windowMs: 60 * 60 * 1000 },
+  recruitment_report: { limit: 3, windowMs: 60 * 60 * 1000 },
 };
 
 export const RATE_LIMIT_FIELDS: Array<{ key: RateLimitAction; label: string; hint: string }> = [
@@ -25,6 +42,11 @@ export const RATE_LIMIT_FIELDS: Array<{ key: RateLimitAction; label: string; hin
   { key: 'feedback', label: '留言限流', hint: '限制反馈留言提交频率' },
   { key: 'wiki', label: '瓜条提交限流', hint: '限制角色瓜条新建和编辑提交频率' },
   { key: 'upload', label: '图片上传限流', hint: '统一限制帖子、评论和瓜条附件的图片上传频率' },
+  { key: 'recruitment_publish', label: '招募发布限流', hint: '限制匿名用户发布招募的频率' },
+  { key: 'recruitment_apply', label: '招募申请限流', hint: '限制匿名用户发起招募密聊的频率' },
+  { key: 'recruitment_message', label: '招募密聊限流', hint: '限制招募密聊消息的发送频率' },
+  { key: 'recruitment_contact', label: '联系方式交换限流', hint: '限制发起或同意联系方式交换的频率' },
+  { key: 'recruitment_report', label: '招募举报限流', hint: '限制招募及密聊举报的提交频率' },
 ];
 
 export const normalizeRateLimitNumber = (value: unknown, fallback: number, min: number, max: number) => {
